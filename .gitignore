@@ -1,0 +1,54 @@
+# Maven / Java build
+target/
+*.class
+*.jar
+*.war
+*.ear
+*.nar
+*.log
+*.tmp
+*.temp
+
+# Maven wrapper downloads
+.mvn/wrapper/maven-wrapper.jar
+
+# Spring Boot
+spring.log
+logs/
+application-local.properties
+application-*.local.properties
+
+# IDEs
+.idea/
+*.iws
+*.iml
+*.ipr
+.vscode/
+.classpath
+.project
+.settings/
+bin/
+
+# OS files
+.DS_Store
+Thumbs.db
+desktop.ini
+
+# Environment and local secrets
+.env
+.env.*
+!.env.example
+*.pem
+*.key
+*.crt
+*.p12
+*.jks
+
+# Test and coverage reports
+coverage/
+.coverage/
+jacoco.exec
+
+# Runtime / temporary files
+hs_err_pid*
+replay_pid*
