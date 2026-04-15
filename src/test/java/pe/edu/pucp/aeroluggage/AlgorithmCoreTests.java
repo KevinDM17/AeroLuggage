@@ -11,6 +11,7 @@ import pe.edu.pucp.aeroluggage.algorithms.Asignacion;
 import pe.edu.pucp.aeroluggage.algorithms.Individuo;
 import pe.edu.pucp.aeroluggage.algorithms.InstanciaProblema;
 import pe.edu.pucp.aeroluggage.algorithms.MaletaProcesada;
+import pe.edu.pucp.aeroluggage.algorithms.aco.AlgoritmoColoniaHormigas;
 import pe.edu.pucp.aeroluggage.domain.Aeropuerto;
 import pe.edu.pucp.aeroluggage.domain.Vuelo;
 
@@ -102,5 +103,35 @@ class AlgorithmCoreTests {
         assertEquals("MAL-001", individuo.getAsignaciones().get(0).getIdMaleta());
         assertEquals("VUE-001", individuo.getAsignaciones().get(0).getIdVuelo());
         assertNotSame(asignacion, individuo.getAsignaciones().get(0));
+    }
+
+    @Test
+    void algoritmo_colonia_hormigas_genera_individuo_ok() {
+        final List<MaletaProcesada> maletasProcesadas = new ArrayList<>();
+        final List<Vuelo> vuelos = new ArrayList<>();
+        final List<Aeropuerto> aeropuertos = new ArrayList<>();
+
+        maletasProcesadas.add(new MaletaProcesada("MAL-001", "ENV-001", "AEP-001", "AEP-002", 1));
+        vuelos.add(new Vuelo("VUE-001", "TA-100", new Date(), new Date(), 80, 25, "PROGRAMADO"));
+        aeropuertos.add(new Aeropuerto("AEP-001", "CIU-001", "Jorge Chavez", 500, 120, -77.1143f, -12.0219f));
+
+        final InstanciaProblema instanciaProblema = new InstanciaProblema(maletasProcesadas, vuelos, aeropuertos);
+        final AlgoritmoColoniaHormigas algoritmoColoniaHormigas = new AlgoritmoColoniaHormigas(
+            instanciaProblema,
+            3,
+            2,
+            0.1,
+            1.0,
+            2.0,
+            0.5,
+            1.0
+        );
+
+        final Individuo individuo = algoritmoColoniaHormigas.ejecutar();
+
+        assertEquals(1, individuo.getAsignaciones().size());
+        assertEquals("MAL-001", individuo.getAsignaciones().get(0).getIdMaleta());
+        assertEquals("VUE-001", individuo.getAsignaciones().get(0).getIdVuelo());
+        assertEquals(1, algoritmoColoniaHormigas.getFeromonas().size());
     }
 }
