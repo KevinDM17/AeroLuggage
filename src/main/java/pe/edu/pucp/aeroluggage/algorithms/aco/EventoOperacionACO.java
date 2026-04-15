@@ -1,4 +1,4 @@
-package pe.edu.pucp.aeroluggage.domain.aco;
+package pe.edu.pucp.aeroluggage.algorithms.aco;
 
 import java.util.Date;
 
