@@ -11,18 +11,20 @@ public class MaletaPendienteACO {
     private Date tiempoDisponible;
     private Date plazoMaximoEntrega;
     private int cantidad;
+    private int prioridad;
 
     public MaletaPendienteACO() {
     }
 
     public MaletaPendienteACO(final Maleta maleta, final String idAeropuertoOrigen, final String idAeropuertoDestino,
-        final Date tiempoDisponible, final Date plazoMaximoEntrega, final int cantidad) {
+        final Date tiempoDisponible, final Date plazoMaximoEntrega, final int cantidad, final int prioridad) {
         this.maleta = maleta;
         this.idAeropuertoOrigen = idAeropuertoOrigen;
         this.idAeropuertoDestino = idAeropuertoDestino;
         this.tiempoDisponible = tiempoDisponible;
         this.plazoMaximoEntrega = plazoMaximoEntrega;
         this.cantidad = cantidad;
+        this.prioridad = prioridad;
     }
 
     public Maleta getMaleta() {
@@ -73,6 +75,14 @@ public class MaletaPendienteACO {
         this.cantidad = cantidad;
     }
 
+    public int getPrioridad() {
+        return prioridad;
+    }
+
+    public void setPrioridad(final int prioridad) {
+        this.prioridad = prioridad;
+    }
+
     @Override
     public String toString() {
         return "MaletaPendienteACO{"
@@ -82,6 +92,7 @@ public class MaletaPendienteACO {
             + ", tiempoDisponible=" + tiempoDisponible
             + ", plazoMaximoEntrega=" + plazoMaximoEntrega
             + ", cantidad=" + cantidad
+            + ", prioridad=" + prioridad
             + '}';
     }
 }

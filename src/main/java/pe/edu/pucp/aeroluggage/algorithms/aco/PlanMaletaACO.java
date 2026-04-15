@@ -2,31 +2,25 @@ package pe.edu.pucp.aeroluggage.algorithms.aco;
 
 import pe.edu.pucp.aeroluggage.domain.PlanViaje;
 
-import java.util.ArrayList;
-import java.util.List;
-
 public class PlanMaletaACO {
     private String idMaleta;
+    private String idVueloAsignado;
     private PlanViaje planViaje;
-    private List<VueloOperacionACO> vuelosSeleccionados;
-    private List<ArcoACO> arcosRecorridos;
+    private VueloOperacionACO vueloAsignado;
     private boolean factible;
-    private double penalizacion;
+    private double costoAsignacion;
 
     public PlanMaletaACO() {
-        this.vuelosSeleccionados = new ArrayList<>();
-        this.arcosRecorridos = new ArrayList<>();
     }
 
-    public PlanMaletaACO(final String idMaleta, final PlanViaje planViaje,
-        final List<VueloOperacionACO> vuelosSeleccionados, final List<ArcoACO> arcosRecorridos,
-        final boolean factible, final double penalizacion) {
+    public PlanMaletaACO(final String idMaleta, final String idVueloAsignado, final PlanViaje planViaje,
+        final VueloOperacionACO vueloAsignado, final boolean factible, final double costoAsignacion) {
         this.idMaleta = idMaleta;
+        this.idVueloAsignado = idVueloAsignado;
         this.planViaje = planViaje;
-        this.vuelosSeleccionados = vuelosSeleccionados;
-        this.arcosRecorridos = arcosRecorridos;
+        this.vueloAsignado = vueloAsignado;
         this.factible = factible;
-        this.penalizacion = penalizacion;
+        this.costoAsignacion = costoAsignacion;
     }
 
     public String getIdMaleta() {
@@ -37,6 +31,14 @@ public class PlanMaletaACO {
         this.idMaleta = idMaleta;
     }
 
+    public String getIdVueloAsignado() {
+        return idVueloAsignado;
+    }
+
+    public void setIdVueloAsignado(final String idVueloAsignado) {
+        this.idVueloAsignado = idVueloAsignado;
+    }
+
     public PlanViaje getPlanViaje() {
         return planViaje;
     }
@@ -45,20 +47,12 @@ public class PlanMaletaACO {
         this.planViaje = planViaje;
     }
 
-    public List<VueloOperacionACO> getVuelosSeleccionados() {
-        return vuelosSeleccionados;
+    public VueloOperacionACO getVueloAsignado() {
+        return vueloAsignado;
     }
 
-    public void setVuelosSeleccionados(final List<VueloOperacionACO> vuelosSeleccionados) {
-        this.vuelosSeleccionados = vuelosSeleccionados;
-    }
-
-    public List<ArcoACO> getArcosRecorridos() {
-        return arcosRecorridos;
-    }
-
-    public void setArcosRecorridos(final List<ArcoACO> arcosRecorridos) {
-        this.arcosRecorridos = arcosRecorridos;
+    public void setVueloAsignado(final VueloOperacionACO vueloAsignado) {
+        this.vueloAsignado = vueloAsignado;
     }
 
     public boolean isFactible() {
@@ -69,23 +63,23 @@ public class PlanMaletaACO {
         this.factible = factible;
     }
 
-    public double getPenalizacion() {
-        return penalizacion;
+    public double getCostoAsignacion() {
+        return costoAsignacion;
     }
 
-    public void setPenalizacion(final double penalizacion) {
-        this.penalizacion = penalizacion;
+    public void setCostoAsignacion(final double costoAsignacion) {
+        this.costoAsignacion = costoAsignacion;
     }
 
     @Override
     public String toString() {
         return "PlanMaletaACO{"
             + "idMaleta='" + idMaleta + '\''
+            + ", idVueloAsignado='" + idVueloAsignado + '\''
             + ", planViaje=" + planViaje
-            + ", vuelosSeleccionados=" + vuelosSeleccionados
-            + ", arcosRecorridos=" + arcosRecorridos
+            + ", vueloAsignado=" + vueloAsignado
             + ", factible=" + factible
-            + ", penalizacion=" + penalizacion
+            + ", costoAsignacion=" + costoAsignacion
             + '}';
     }
 }

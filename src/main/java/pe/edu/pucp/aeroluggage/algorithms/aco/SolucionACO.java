@@ -4,36 +4,36 @@ import java.util.ArrayList;
 import java.util.List;
 
 public class SolucionACO {
-    private List<PlanMaletaACO> planesMaleta;
+    private List<PlanMaletaACO> asignaciones;
     private double tiempoTotal;
     private int incumplimientosDePlazo;
     private int sobrecargaDeVuelos;
     private int sobrecargaDeAlmacenes;
-    private int numeroDeReplanificaciones;
+    private int asignacionesNoFactibles;
     private double costoTotal;
 
     public SolucionACO() {
-        this.planesMaleta = new ArrayList<>();
+        this.asignaciones = new ArrayList<>();
     }
 
-    public SolucionACO(final List<PlanMaletaACO> planesMaleta, final double tiempoTotal,
+    public SolucionACO(final List<PlanMaletaACO> asignaciones, final double tiempoTotal,
         final int incumplimientosDePlazo, final int sobrecargaDeVuelos, final int sobrecargaDeAlmacenes,
-        final int numeroDeReplanificaciones, final double costoTotal) {
-        this.planesMaleta = planesMaleta;
+        final int asignacionesNoFactibles, final double costoTotal) {
+        this.asignaciones = asignaciones;
         this.tiempoTotal = tiempoTotal;
         this.incumplimientosDePlazo = incumplimientosDePlazo;
         this.sobrecargaDeVuelos = sobrecargaDeVuelos;
         this.sobrecargaDeAlmacenes = sobrecargaDeAlmacenes;
-        this.numeroDeReplanificaciones = numeroDeReplanificaciones;
+        this.asignacionesNoFactibles = asignacionesNoFactibles;
         this.costoTotal = costoTotal;
     }
 
-    public List<PlanMaletaACO> getPlanesMaleta() {
-        return planesMaleta;
+    public List<PlanMaletaACO> getAsignaciones() {
+        return asignaciones;
     }
 
-    public void setPlanesMaleta(final List<PlanMaletaACO> planesMaleta) {
-        this.planesMaleta = planesMaleta;
+    public void setAsignaciones(final List<PlanMaletaACO> asignaciones) {
+        this.asignaciones = asignaciones;
     }
 
     public double getTiempoTotal() {
@@ -68,12 +68,12 @@ public class SolucionACO {
         this.sobrecargaDeAlmacenes = sobrecargaDeAlmacenes;
     }
 
-    public int getNumeroDeReplanificaciones() {
-        return numeroDeReplanificaciones;
+    public int getAsignacionesNoFactibles() {
+        return asignacionesNoFactibles;
     }
 
-    public void setNumeroDeReplanificaciones(final int numeroDeReplanificaciones) {
-        this.numeroDeReplanificaciones = numeroDeReplanificaciones;
+    public void setAsignacionesNoFactibles(final int asignacionesNoFactibles) {
+        this.asignacionesNoFactibles = asignacionesNoFactibles;
     }
 
     public double getCostoTotal() {
@@ -87,12 +87,12 @@ public class SolucionACO {
     @Override
     public String toString() {
         return "SolucionACO{"
-            + "planesMaleta=" + planesMaleta
+            + "asignaciones=" + asignaciones
             + ", tiempoTotal=" + tiempoTotal
             + ", incumplimientosDePlazo=" + incumplimientosDePlazo
             + ", sobrecargaDeVuelos=" + sobrecargaDeVuelos
             + ", sobrecargaDeAlmacenes=" + sobrecargaDeAlmacenes
-            + ", numeroDeReplanificaciones=" + numeroDeReplanificaciones
+            + ", asignacionesNoFactibles=" + asignacionesNoFactibles
             + ", costoTotal=" + costoTotal
             + '}';
     }

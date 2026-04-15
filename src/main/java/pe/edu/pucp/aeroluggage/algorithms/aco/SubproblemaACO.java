@@ -5,21 +5,18 @@ import java.util.List;
 
 public class SubproblemaACO {
     private List<MaletaPendienteACO> maletasPendientes;
-    private List<VueloOperacionACO> vuelosFactibles;
-    private EstadoRecursosACO estadoRecursosACO;
+    private List<VueloOperacionACO> vuelosDisponibles;
     private int intervaloActual;
 
     public SubproblemaACO() {
         this.maletasPendientes = new ArrayList<>();
-        this.vuelosFactibles = new ArrayList<>();
+        this.vuelosDisponibles = new ArrayList<>();
     }
 
     public SubproblemaACO(final List<MaletaPendienteACO> maletasPendientes,
-        final List<VueloOperacionACO> vuelosFactibles, final EstadoRecursosACO estadoRecursosACO,
-        final int intervaloActual) {
+        final List<VueloOperacionACO> vuelosDisponibles, final int intervaloActual) {
         this.maletasPendientes = maletasPendientes;
-        this.vuelosFactibles = vuelosFactibles;
-        this.estadoRecursosACO = estadoRecursosACO;
+        this.vuelosDisponibles = vuelosDisponibles;
         this.intervaloActual = intervaloActual;
     }
 
@@ -31,20 +28,12 @@ public class SubproblemaACO {
         this.maletasPendientes = maletasPendientes;
     }
 
-    public List<VueloOperacionACO> getVuelosFactibles() {
-        return vuelosFactibles;
+    public List<VueloOperacionACO> getVuelosDisponibles() {
+        return vuelosDisponibles;
     }
 
-    public void setVuelosFactibles(final List<VueloOperacionACO> vuelosFactibles) {
-        this.vuelosFactibles = vuelosFactibles;
-    }
-
-    public EstadoRecursosACO getEstadoRecursosACO() {
-        return estadoRecursosACO;
-    }
-
-    public void setEstadoRecursosACO(final EstadoRecursosACO estadoRecursosACO) {
-        this.estadoRecursosACO = estadoRecursosACO;
+    public void setVuelosDisponibles(final List<VueloOperacionACO> vuelosDisponibles) {
+        this.vuelosDisponibles = vuelosDisponibles;
     }
 
     public int getIntervaloActual() {
@@ -59,8 +48,7 @@ public class SubproblemaACO {
     public String toString() {
         return "SubproblemaACO{"
             + "maletasPendientes=" + maletasPendientes
-            + ", vuelosFactibles=" + vuelosFactibles
-            + ", estadoRecursosACO=" + estadoRecursosACO
+            + ", vuelosDisponibles=" + vuelosDisponibles
             + ", intervaloActual=" + intervaloActual
             + '}';
     }

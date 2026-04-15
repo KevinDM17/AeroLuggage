@@ -23,6 +23,7 @@ public class ContextoACO {
     private double beta;
     private double rho;
     private double gamma;
+    private double depositoFeromona;
 
     public ContextoACO() {
         this.maletasPendientes = new ArrayList<>();
@@ -50,6 +51,7 @@ public class ContextoACO {
         this.beta = beta;
         this.rho = rho;
         this.gamma = gamma;
+        this.depositoFeromona = 1.0D;
     }
 
     public List<Maleta> getMaletasPendientes() {
@@ -156,6 +158,14 @@ public class ContextoACO {
         this.gamma = gamma;
     }
 
+    public double getDepositoFeromona() {
+        return depositoFeromona;
+    }
+
+    public void setDepositoFeromona(final double depositoFeromona) {
+        this.depositoFeromona = depositoFeromona;
+    }
+
     @Override
     public String toString() {
         return "ContextoACO{"
@@ -172,6 +182,7 @@ public class ContextoACO {
             + ", beta=" + beta
             + ", rho=" + rho
             + ", gamma=" + gamma
+            + ", depositoFeromona=" + depositoFeromona
             + '}';
     }
 }

@@ -7,16 +7,18 @@ public class VueloOperacionACO {
     private String idAeropuertoOrigen;
     private String idAeropuertoDestino;
     private boolean disponible;
+    private int capacidadSolicitada;
 
     public VueloOperacionACO() {
     }
 
     public VueloOperacionACO(final Vuelo vuelo, final String idAeropuertoOrigen, final String idAeropuertoDestino,
-        final boolean disponible) {
+        final boolean disponible, final int capacidadSolicitada) {
         this.vuelo = vuelo;
         this.idAeropuertoOrigen = idAeropuertoOrigen;
         this.idAeropuertoDestino = idAeropuertoDestino;
         this.disponible = disponible;
+        this.capacidadSolicitada = capacidadSolicitada;
     }
 
     public Vuelo getVuelo() {
@@ -51,6 +53,14 @@ public class VueloOperacionACO {
         this.disponible = disponible;
     }
 
+    public int getCapacidadSolicitada() {
+        return capacidadSolicitada;
+    }
+
+    public void setCapacidadSolicitada(final int capacidadSolicitada) {
+        this.capacidadSolicitada = capacidadSolicitada;
+    }
+
     @Override
     public String toString() {
         return "VueloOperacionACO{"
@@ -58,6 +68,7 @@ public class VueloOperacionACO {
             + ", idAeropuertoOrigen='" + idAeropuertoOrigen + '\''
             + ", idAeropuertoDestino='" + idAeropuertoDestino + '\''
             + ", disponible=" + disponible
+            + ", capacidadSolicitada=" + capacidadSolicitada
             + '}';
     }
 }
