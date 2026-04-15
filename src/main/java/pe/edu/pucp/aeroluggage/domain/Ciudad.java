@@ -3,12 +3,12 @@ package pe.edu.pucp.aeroluggage.domain;
 public class Ciudad {
     private String idCiudad;
     private String nombre;
-    private String continente;
+    private Continente continente;
 
     public Ciudad() {
     }
 
-    public Ciudad(final String idCiudad, final String nombre, final String continente) {
+    public Ciudad(final String idCiudad, final String nombre, final Continente continente) {
         this.idCiudad = idCiudad;
         this.nombre = nombre;
         this.continente = continente;
@@ -30,11 +30,11 @@ public class Ciudad {
         this.nombre = nombre;
     }
 
-    public String getContinente() {
+    public Continente getContinente() {
         return continente;
     }
 
-    public void setContinente(final String continente) {
+    public void setContinente(final Continente continente) {
         this.continente = continente;
     }
 
@@ -43,7 +43,7 @@ public class Ciudad {
         return "Ciudad{"
             + "idCiudad='" + idCiudad + '\''
             + ", nombre='" + nombre + '\''
-            + ", continente='" + continente + '\''
+            + ", continente=" + continente
             + '}';
     }
 }

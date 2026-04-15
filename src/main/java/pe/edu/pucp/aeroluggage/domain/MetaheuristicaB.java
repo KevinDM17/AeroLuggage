@@ -1,21 +1,17 @@
 package pe.edu.pucp.aeroluggage.domain;
 
-public class MetaheuristicaB extends AlgoritmoMetaheuristico {
+public class MetaheuristicaB {
     public MetaheuristicaB() {
     }
 
-    public MetaheuristicaB(final String nombre) {
-        super(nombre);
+    public void ejecutar() {
     }
 
-    @Override
-    public void ejecutar() {
+    public void evaluar() {
     }
 
     @Override
     public String toString() {
-        return "MetaheuristicaB{"
-            + "nombre='" + getNombre() + '\''
-            + '}';
+        return "MetaheuristicaB{}";
     }
 }
