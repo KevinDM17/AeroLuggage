@@ -31,6 +31,8 @@ Construye las clases base del sistema a partir del diagrama de clases adjunto. D
 
 **Atributos:**
 - `String idEnvio`
+- `String idAeropuertoSalida`
+- `String idAeropuertoLlegada`
 - `Date fechaRegistro`
 - `int cantidadMaletas`
 - `String estado`
@@ -40,96 +42,18 @@ Construye las clases base del sistema a partir del diagrama de clases adjunto. D
 
 ---
 
-### 3. Simulacion
-**Clase:** `Simulacion`
-
-**Atributos:**
-- `String idSimulacion`
-- `String tipoEscenario`
-- `Date fechaInicio`
-- `Date fechaFin`
-
-**Métodos base del diagrama:**
-- `ejecutar()`
-- `generarResultados()`
-
----
-
-### 4. Maleta
+### 5. Maleta
 **Clase:** `Maleta`
 
 **Atributos:**
 - `String idMaleta`
-- `double peso`
-- `double largo`
-- `double ancho`
-- `double alto`
+- `String idEnvio`
 - `String estado`
 
 ---
 
-### 5. Visualizador
-**Clase:** `Visualizador`
 
-**Atributos:**
-- `String idVisualizador`
-
-**Métodos base del diagrama:**
-- `mostrarMapa()`
-- `mostrarMonitoreo()`
-- `mostrarIndicadores()`
-
----
-
-### 6. PlanViaje
-**Clase:** `PlanViaje`
-
-**Atributos:**
-- `String idPlan`
-- `Date fechaCreacion`
-- `String estado`
-
-**Método base del diagrama:**
-- `generarPlan()`
-
----
-
-### 7. ParametroSimulacion
-**Clase:** `ParametroSimulacion`
-
-**Atributos:**
-- `String idParametro`
-- `String nombre`
-- `String valor`
-
----
-
-### 8. IndicadorDesempeno
-**Clase:** `IndicadorDesempeno`
-
-**Atributos:**
-- `String idIndicador`
-- `String nombre`
-- `double valor`
-- `String colorSemaforo`
-
----
-
-### 9. Monitoreo
-**Clase:** `Monitoreo`
-
-**Atributos:**
-- `String idMonitoreo`
-- `Date fechaHoraActualizacion`
-- `String ubicacionActual`
-
-**Métodos base del diagrama:**
-- `actualizarUbicacion()`
-- `generarReporte()`
-
----
-
-### 10. Planificador
+### 7. Planificador
 **Clase:** `Planificador`
 
 **Atributos:**
@@ -142,7 +66,7 @@ Construye las clases base del sistema a partir del diagrama de clases adjunto. D
 
 ---
 
-### 11. Ruta
+### 8. Ruta
 **Clase:** `Ruta`
 
 **Atributos:**
@@ -156,65 +80,33 @@ Construye las clases base del sistema a partir del diagrama de clases adjunto. D
 
 ---
 
-### 12. ReporteMonitoreo
-**Clase:** `ReporteMonitoreo`
 
-**Atributos:**
-- `String idReporte`
-- `Date fechaSolicitud`
-- `String contenido`
 
----
 
-### 13. AlgoritmoMetaheuristico
-**Clase:** `AlgoritmoMetaheuristico`
+### 9. MetaheuristicaA
+**Clase:** `MetaheuristicaA`
 
-**Tipo de clase:**
-- `abstract`
 
-**Atributos:**
-- `String nombre`
-
-**Métodos base del diagrama:**
+**Método base del diagrama:**
 - `ejecutar()`
 - `evaluar()`
 
 ---
 
-### 14. MetaheuristicaA
-**Clase:** `MetaheuristicaA`
-
-**Hereda de:**
-- `AlgoritmoMetaheuristico`
-
-**Método base del diagrama:**
-- `ejecutar()`
-
----
-
-### 15. MetaheuristicaB
+### 10. MetaheuristicaB
 **Clase:** `MetaheuristicaB`
 
-**Hereda de:**
-- `AlgoritmoMetaheuristico`
+
 
 **Método base del diagrama:**
 - `ejecutar()`
+- `evaluar()`
+
 
 ---
 
-### 16. TramoRuta
-**Clase:** `TramoRuta`
 
-**Atributos:**
-- `String idTramo`
-- `int orden`
-- `double tiempoEstimado`
-- `String estado`
-
----
-
-### 17. Vuelo
+### 12. Vuelo
 **Clase:** `Vuelo`
 
 **Atributos:**
@@ -232,21 +124,34 @@ Construye las clases base del sistema a partir del diagrama de clases adjunto. D
 
 ---
 
-### 18. Ciudad
+### 13. Ciudad
 **Clase:** `Ciudad`
 
 **Atributos:**
 - `String idCiudad`
 - `String nombre`
-- `String continente`
+- `Continente continente`
 
 ---
+### 13. Continente
+**Clase:** `Continente`
 
-### 19. Aeropuerto
+**Atributos:**
+- `ASIA`
+- `EUROPA`
+- `AMERICA DEL SUR`
+- `AMERICA DEL NORTE`
+- `CENTROAMERICA`
+- `OCEANIA`
+- `AFRICA`
+
+---
+### 14. Aeropuerto
 **Clase:** `Aeropuerto`
 
 **Atributos:**
 - `String idAeropuerto`
+-`String idCiudad`
 - `String nombre`
 - `int capacidadAlmacen`
 - `int maletasActuales`
@@ -261,25 +166,16 @@ Implementa primero estas clases base, porque son el núcleo del dominio:
 2. `Envio`
 3. `Maleta`
 4. `Ruta`
-5. `TramoRuta`
 6. `Vuelo`
 7. `Aeropuerto`
 8. `Ciudad`
 
 Después implementa las clases de soporte:
-9. `PlanViaje`
-10. `Simulacion`
-11. `ParametroSimulacion`
-12. `IndicadorDesempeno`
-13. `Monitoreo`
-14. `ReporteMonitoreo`
-15. `Visualizador`
-16. `Planificador`
+12. `Planificador`
 
 Finalmente implementa la jerarquía de algoritmos:
-17. `AlgoritmoMetaheuristico`
-18. `MetaheuristicaA`
-19. `MetaheuristicaB`
+13. `MetaheuristicaA`
+14. `MetaheuristicaB`
 
 ---
 

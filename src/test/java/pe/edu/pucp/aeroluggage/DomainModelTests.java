@@ -7,7 +7,10 @@ import java.util.Date;
 import org.junit.jupiter.api.Test;
 import pe.edu.pucp.aeroluggage.domain.Aerolinea;
 import pe.edu.pucp.aeroluggage.domain.Aeropuerto;
+import pe.edu.pucp.aeroluggage.domain.Ciudad;
+import pe.edu.pucp.aeroluggage.domain.Continente;
 import pe.edu.pucp.aeroluggage.domain.Envio;
+import pe.edu.pucp.aeroluggage.domain.Maleta;
 import pe.edu.pucp.aeroluggage.domain.MetaheuristicaA;
 import pe.edu.pucp.aeroluggage.domain.Vuelo;
 
@@ -27,11 +30,15 @@ class DomainModelTests {
         final Envio envio = new Envio();
 
         envio.setIdEnvio("ENV-001");
+        envio.setIdAeropuertoSalida("AEP-001");
+        envio.setIdAeropuertoLlegada("AEP-002");
         envio.setFechaRegistro(fechaRegistro);
         envio.setCantidadMaletas(3);
         envio.setEstado("REGISTRADO");
 
         assertEquals("ENV-001", envio.getIdEnvio());
+        assertEquals("AEP-001", envio.getIdAeropuertoSalida());
+        assertEquals("AEP-002", envio.getIdAeropuertoLlegada());
         assertEquals(fechaRegistro, envio.getFechaRegistro());
         assertEquals(3, envio.getCantidadMaletas());
         assertEquals("REGISTRADO", envio.getEstado());
@@ -54,9 +61,18 @@ class DomainModelTests {
 
     @Test
     void aeropuerto_constructor_completo_ok() {
-        final Aeropuerto aeropuerto = new Aeropuerto("AEP-001", "Jorge Chavez", 500, 120, -77.1143f, -12.0219f);
+        final Aeropuerto aeropuerto = new Aeropuerto(
+            "AEP-001",
+            "CIU-001",
+            "Jorge Chavez",
+            500,
+            120,
+            -77.1143f,
+            -12.0219f
+        );
 
         assertEquals("AEP-001", aeropuerto.getIdAeropuerto());
+        assertEquals("CIU-001", aeropuerto.getIdCiudad());
         assertEquals("Jorge Chavez", aeropuerto.getNombre());
         assertEquals(500, aeropuerto.getCapacidadAlmacen());
         assertEquals(120, aeropuerto.getMaletasActuales());
@@ -65,10 +81,43 @@ class DomainModelTests {
     }
 
     @Test
-    void metaheuristica_a_hereda_nombre_ok() {
-        final MetaheuristicaA metaheuristicaA = new MetaheuristicaA("Metaheuristica A");
+    void maleta_constructor_completo_ok() {
+        final Maleta maleta = new Maleta("MAL-001", "ENV-001", "REGISTRADA");
 
-        assertEquals("Metaheuristica A", metaheuristicaA.getNombre());
+        assertEquals("MAL-001", maleta.getIdMaleta());
+        assertEquals("ENV-001", maleta.getIdEnvio());
+        assertEquals("REGISTRADA", maleta.getEstado());
+        assertNotNull(maleta.toString());
+    }
+
+    @Test
+    void ciudad_usa_continente_ok() {
+        final Ciudad ciudad = new Ciudad("CIU-001", "Lima", Continente.AMERICA_DEL_SUR);
+
+        assertEquals("CIU-001", ciudad.getIdCiudad());
+        assertEquals("Lima", ciudad.getNombre());
+        assertEquals(Continente.AMERICA_DEL_SUR, ciudad.getContinente());
+        assertNotNull(ciudad.toString());
+    }
+
+    @Test
+    void continente_valores_ok() {
+        assertEquals(Continente.ASIA, Continente.valueOf("ASIA"));
+        assertEquals(Continente.EUROPA, Continente.valueOf("EUROPA"));
+        assertEquals(Continente.AMERICA_DEL_SUR, Continente.valueOf("AMERICA_DEL_SUR"));
+        assertEquals(Continente.AMERICA_DEL_NORTE, Continente.valueOf("AMERICA_DEL_NORTE"));
+        assertEquals(Continente.CENTROAMERICA, Continente.valueOf("CENTROAMERICA"));
+        assertEquals(Continente.OCEANIA, Continente.valueOf("OCEANIA"));
+        assertEquals(Continente.AFRICA, Continente.valueOf("AFRICA"));
+    }
+
+    @Test
+    void metaheuristica_a_metodos_base_ok() {
+        final MetaheuristicaA metaheuristicaA = new MetaheuristicaA();
+
+        metaheuristicaA.ejecutar();
+        metaheuristicaA.evaluar();
+
         assertNotNull(metaheuristicaA.toString());
     }
 }

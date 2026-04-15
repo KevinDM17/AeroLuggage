@@ -2,6 +2,7 @@ package pe.edu.pucp.aeroluggage.domain;
 
 public class Aeropuerto {
     private String idAeropuerto;
+    private String idCiudad;
     private String nombre;
     private int capacidadAlmacen;
     private int maletasActuales;
@@ -11,9 +12,10 @@ public class Aeropuerto {
     public Aeropuerto() {
     }
 
-    public Aeropuerto(final String idAeropuerto, final String nombre, final int capacidadAlmacen,
-        final int maletasActuales, final float longitud, final float latitud) {
+    public Aeropuerto(final String idAeropuerto, final String idCiudad, final String nombre,
+        final int capacidadAlmacen, final int maletasActuales, final float longitud, final float latitud) {
         this.idAeropuerto = idAeropuerto;
+        this.idCiudad = idCiudad;
         this.nombre = nombre;
         this.capacidadAlmacen = capacidadAlmacen;
         this.maletasActuales = maletasActuales;
@@ -27,6 +29,14 @@ public class Aeropuerto {
 
     public void setIdAeropuerto(final String idAeropuerto) {
         this.idAeropuerto = idAeropuerto;
+    }
+
+    public String getIdCiudad() {
+        return idCiudad;
+    }
+
+    public void setIdCiudad(final String idCiudad) {
+        this.idCiudad = idCiudad;
     }
 
     public String getNombre() {
@@ -73,6 +83,7 @@ public class Aeropuerto {
     public String toString() {
         return "Aeropuerto{"
             + "idAeropuerto='" + idAeropuerto + '\''
+            + ", idCiudad='" + idCiudad + '\''
             + ", nombre='" + nombre + '\''
             + ", capacidadAlmacen=" + capacidadAlmacen
             + ", maletasActuales=" + maletasActuales
