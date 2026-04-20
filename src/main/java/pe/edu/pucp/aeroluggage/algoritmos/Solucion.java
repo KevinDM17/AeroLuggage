@@ -6,14 +6,18 @@ import java.util.List;
 import pe.edu.pucp.aeroluggage.dominio.entidades.Ruta;
 import pe.edu.pucp.aeroluggage.dominio.entidades.VueloInstancia;
 import pe.edu.pucp.aeroluggage.dominio.enums.EstadoRuta;
+import pe.edu.pucp.aeroluggage.dominio.enums.Semaforo;
 
 public class Solucion {
 
     private ArrayList<Ruta> solucion;
     private double fitness;
+    private double costoTotal;
+    private boolean factible;
     private int maletasEntregadasATiempo;
     private int maletasIncumplidas;
     private double ocupacionPromedioVuelos;
+    private Semaforo semaforo;
 
     public Solucion() {
         this.solucion = new ArrayList<>();
@@ -65,10 +69,27 @@ public class Solucion {
         this.maletasEntregadasATiempo = entregadasATiempo;
         this.maletasIncumplidas = incumplidas;
         this.ocupacionPromedioVuelos = totalVuelos > 0 ? sumaOcupacion / totalVuelos : 0.0;
+        this.factible = incumplidas == 0;
     }
 
     public boolean esFactible() {
-        return maletasIncumplidas == 0;
+        return factible;
+    }
+
+    public boolean isFactible() {
+        return factible;
+    }
+
+    public void setFactible(final boolean factible) {
+        this.factible = factible;
+    }
+
+    public double getCostoTotal() {
+        return costoTotal;
+    }
+
+    public void setCostoTotal(final double costoTotal) {
+        this.costoTotal = costoTotal;
     }
 
     public Solucion clonarProfundo() {
@@ -93,9 +114,12 @@ public class Solucion {
         }
         final Solucion clon = new Solucion(copia);
         clon.fitness = this.fitness;
+        clon.costoTotal = this.costoTotal;
+        clon.factible = this.factible;
         clon.maletasEntregadasATiempo = this.maletasEntregadasATiempo;
         clon.maletasIncumplidas = this.maletasIncumplidas;
         clon.ocupacionPromedioVuelos = this.ocupacionPromedioVuelos;
+        clon.semaforo = this.semaforo;
         return clon;
     }
 
@@ -137,6 +161,14 @@ public class Solucion {
 
     public void setOcupacionPromedioVuelos(final double ocupacionPromedioVuelos) {
         this.ocupacionPromedioVuelos = ocupacionPromedioVuelos;
+    }
+
+    public Semaforo getSemaforo() {
+        return semaforo;
+    }
+
+    public void setSemaforo(final Semaforo semaforo) {
+        this.semaforo = semaforo;
     }
 
     @Override

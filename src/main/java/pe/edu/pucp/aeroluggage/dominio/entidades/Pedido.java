@@ -9,6 +9,7 @@ public class Pedido {
     private Aeropuerto aeropuertoOrigen;
     private Aeropuerto aeropuertoDestino;
     private LocalDateTime fechaRegistro;
+    private LocalDateTime fechaHoraPlazo;
     private int cantidadMaletas;
     private EstadoPedido estado;
 
@@ -16,11 +17,13 @@ public class Pedido {
     }
 
     public Pedido(final String idPedido, final Aeropuerto aeropuertoOrigen, final Aeropuerto aeropuertoDestino,
-                  final LocalDateTime fechaRegistro, final int cantidadMaletas, final EstadoPedido estado) {
+                  final LocalDateTime fechaRegistro, final LocalDateTime fechaHoraPlazo,
+                  final int cantidadMaletas, final EstadoPedido estado) {
         this.idPedido = idPedido;
         this.aeropuertoOrigen = aeropuertoOrigen;
         this.aeropuertoDestino = aeropuertoDestino;
         this.fechaRegistro = fechaRegistro;
+        this.fechaHoraPlazo = fechaHoraPlazo;
         this.cantidadMaletas = cantidadMaletas;
         this.estado = estado;
     }
@@ -55,6 +58,14 @@ public class Pedido {
 
     public void setFechaRegistro(final LocalDateTime fechaRegistro) {
         this.fechaRegistro = fechaRegistro;
+    }
+
+    public LocalDateTime getFechaHoraPlazo() {
+        return fechaHoraPlazo;
+    }
+
+    public void setFechaHoraPlazo(final LocalDateTime fechaHoraPlazo) {
+        this.fechaHoraPlazo = fechaHoraPlazo;
     }
 
     public int getCantidadMaletas() {

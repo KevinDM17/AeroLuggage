@@ -29,7 +29,7 @@ public class Ruta {
         this.estado = estado;
     }
 
-    public double calcularPlazo(final Aeropuerto origen, final Aeropuerto destino) {
+    public static double calcularPlazo(final Aeropuerto origen, final Aeropuerto destino) {
         if (origen == null || destino == null || origen.getCiudad() == null || destino.getCiudad() == null) {
             return PLAZO_DISTINTO_CONTINENTE_DIAS;
         }

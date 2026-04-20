@@ -18,6 +18,7 @@ import java.util.regex.Pattern;
 import pe.edu.pucp.aeroluggage.dominio.entidades.Aeropuerto;
 import pe.edu.pucp.aeroluggage.dominio.entidades.Maleta;
 import pe.edu.pucp.aeroluggage.dominio.entidades.Pedido;
+import pe.edu.pucp.aeroluggage.dominio.entidades.Ruta;
 import pe.edu.pucp.aeroluggage.dominio.enums.EstadoMaleta;
 import pe.edu.pucp.aeroluggage.dominio.enums.EstadoPedido;
 
@@ -107,8 +108,11 @@ public final class CargadorEnvios {
             }
             final LocalDateTime registroLocal = LocalDateTime.of(fecha, LocalTime.of(hora, minuto));
             final LocalDateTime registroUtc = registroLocal.minusHours(origen.getHusoGMT());
+            final double plazoDias = Ruta.calcularPlazo(origen, destino);
+            final LocalDateTime fechaHoraPlazo = registroUtc.plusMinutes((long) Math.round(plazoDias * 24 * 60));
 
-            final Pedido pedido = new Pedido(idEnvio, origen, destino, registroUtc, cantidad, EstadoPedido.REGISTRADO);
+            final Pedido pedido = new Pedido(idEnvio, origen, destino, registroUtc, fechaHoraPlazo,
+                    cantidad, EstadoPedido.REGISTRADO);
             pedidos.add(pedido);
 
             for (int i = 1; i <= cantidad; i++) {
