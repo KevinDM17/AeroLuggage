@@ -1,4 +1,4 @@
-package pe.edu.pucp.aeroluggage.domain;
+package pe.edu.pucp.aeroluggage.domain.entities;
 
 public class Aerolinea {
     private String idAerolinea;
@@ -26,13 +26,5 @@ public class Aerolinea {
 
     public void setNombre(final String nombre) {
         this.nombre = nombre;
-    }
-
-    @Override
-    public String toString() {
-        return "Aerolinea{"
-            + "idAerolinea='" + idAerolinea + '\''
-            + ", nombre='" + nombre + '\''
-            + '}';
     }
 }

@@ -1,14 +1,16 @@
-package pe.edu.pucp.aeroluggage.domain;
+package pe.edu.pucp.aeroluggage.domain.entities;
+
+import pe.edu.pucp.aeroluggage.domain.enums.Continente;
 
 public class Ciudad {
     private String idCiudad;
     private String nombre;
-    private String continente;
+    private Continente continente;
 
     public Ciudad() {
     }
 
-    public Ciudad(final String idCiudad, final String nombre, final String continente) {
+    public Ciudad(final String idCiudad, final String nombre, final Continente continente) {
         this.idCiudad = idCiudad;
         this.nombre = nombre;
         this.continente = continente;
@@ -30,20 +32,11 @@ public class Ciudad {
         this.nombre = nombre;
     }
 
-    public String getContinente() {
+    public Continente getContinente() {
         return continente;
     }
 
-    public void setContinente(final String continente) {
+    public void setContinente(final Continente continente) {
         this.continente = continente;
-    }
-
-    @Override
-    public String toString() {
-        return "Ciudad{"
-            + "idCiudad='" + idCiudad + '\''
-            + ", nombre='" + nombre + '\''
-            + ", continente='" + continente + '\''
-            + '}';
     }
 }

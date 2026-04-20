@@ -1,8 +1,8 @@
-package pe.edu.pucp.aeroluggage.domain;
+package pe.edu.pucp.aeroluggage.domain.entities;
 
 public class Aeropuerto {
     private String idAeropuerto;
-    private String nombre;
+    private Ciudad ciudad;
     private int capacidadAlmacen;
     private int maletasActuales;
     private float longitud;
@@ -11,10 +11,10 @@ public class Aeropuerto {
     public Aeropuerto() {
     }
 
-    public Aeropuerto(final String idAeropuerto, final String nombre, final int capacidadAlmacen,
-        final int maletasActuales, final float longitud, final float latitud) {
+    public Aeropuerto(final String idAeropuerto, final Ciudad ciudad, final int capacidadAlmacen,
+                     final int maletasActuales, final float longitud, final float latitud) {
         this.idAeropuerto = idAeropuerto;
-        this.nombre = nombre;
+        this.ciudad = ciudad;
         this.capacidadAlmacen = capacidadAlmacen;
         this.maletasActuales = maletasActuales;
         this.longitud = longitud;
@@ -29,12 +29,12 @@ public class Aeropuerto {
         this.idAeropuerto = idAeropuerto;
     }
 
-    public String getNombre() {
-        return nombre;
+    public Ciudad getCiudad() {
+        return ciudad;
     }
 
-    public void setNombre(final String nombre) {
-        this.nombre = nombre;
+    public void setCiudad(final Ciudad ciudad) {
+        this.ciudad = ciudad;
     }
 
     public int getCapacidadAlmacen() {
@@ -67,17 +67,5 @@ public class Aeropuerto {
 
     public void setLatitud(final float latitud) {
         this.latitud = latitud;
-    }
-
-    @Override
-    public String toString() {
-        return "Aeropuerto{"
-            + "idAeropuerto='" + idAeropuerto + '\''
-            + ", nombre='" + nombre + '\''
-            + ", capacidadAlmacen=" + capacidadAlmacen
-            + ", maletasActuales=" + maletasActuales
-            + ", longitud=" + longitud
-            + ", latitud=" + latitud
-            + '}';
     }
 }
