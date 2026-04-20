@@ -1,6 +1,6 @@
-package pe.edu.pucp.aeroluggage.domain.entities;
+package pe.edu.pucp.aeroluggage.dominio.entidades;
 
-import pe.edu.pucp.aeroluggage.domain.enums.Continente;
+import pe.edu.pucp.aeroluggage.dominio.enums.Continente;
 
 public class Ciudad {
     private String idCiudad;

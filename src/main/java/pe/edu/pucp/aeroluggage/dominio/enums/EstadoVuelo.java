@@ -1,4 +1,4 @@
-package pe.edu.pucp.aeroluggage.domain.enums;
+package pe.edu.pucp.aeroluggage.dominio.enums;
 
 public enum EstadoVuelo {
     PROGRAMADO,

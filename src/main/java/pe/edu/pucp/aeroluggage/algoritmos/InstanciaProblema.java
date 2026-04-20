@@ -1,9 +1,10 @@
-package pe.edu.pucp.aeroluggage.algorithms;
+package pe.edu.pucp.aeroluggage.algoritmos;
 
 import java.util.ArrayList;
-import pe.edu.pucp.aeroluggage.domain.entities.Aeropuerto;
-import pe.edu.pucp.aeroluggage.domain.entities.Maleta;
-import pe.edu.pucp.aeroluggage.domain.entities.VueloProgramado;
+
+import pe.edu.pucp.aeroluggage.dominio.entidades.Aeropuerto;
+import pe.edu.pucp.aeroluggage.dominio.entidades.Maleta;
+import pe.edu.pucp.aeroluggage.dominio.entidades.VueloProgramado;
 
 public class InstanciaProblema {
     private String idInstanciaProblema;

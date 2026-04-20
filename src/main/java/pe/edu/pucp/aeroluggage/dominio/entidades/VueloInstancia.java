@@ -1,7 +1,8 @@
-package pe.edu.pucp.aeroluggage.domain.entities;
+package pe.edu.pucp.aeroluggage.dominio.entidades;
 
-import pe.edu.pucp.aeroluggage.domain.enums.EstadoVuelo;
 import java.time.LocalDateTime;
+
+import pe.edu.pucp.aeroluggage.dominio.enums.EstadoVuelo;
 
 public class VueloInstancia {
     private String idVueloInstancia;

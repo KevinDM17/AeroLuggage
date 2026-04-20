@@ -1,7 +1,7 @@
-package pe.edu.pucp.aeroluggage.algorithms.ga;
+package pe.edu.pucp.aeroluggage.algoritmos.ga;
 
-import pe.edu.pucp.aeroluggage.algorithms.InstanciaProblema;
-import pe.edu.pucp.aeroluggage.algorithms.Metaheuristico;
+import pe.edu.pucp.aeroluggage.algoritmos.InstanciaProblema;
+import pe.edu.pucp.aeroluggage.algoritmos.Metaheuristico;
 
 public class GA extends Metaheuristico {
     public GA() {

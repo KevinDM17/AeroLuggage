@@ -1,7 +1,7 @@
-package pe.edu.pucp.aeroluggage.algorithms.aco;
+package pe.edu.pucp.aeroluggage.algoritmos.aco;
 
-import pe.edu.pucp.aeroluggage.algorithms.InstanciaProblema;
-import pe.edu.pucp.aeroluggage.algorithms.Metaheuristico;
+import pe.edu.pucp.aeroluggage.algoritmos.InstanciaProblema;
+import pe.edu.pucp.aeroluggage.algoritmos.Metaheuristico;
 
 public class ACO extends Metaheuristico {
     public ACO() {

@@ -1,4 +1,4 @@
-package pe.edu.pucp.aeroluggage.algorithms;
+package pe.edu.pucp.aeroluggage.algoritmos;
 
 public abstract class Metaheuristico {
     public Metaheuristico() {

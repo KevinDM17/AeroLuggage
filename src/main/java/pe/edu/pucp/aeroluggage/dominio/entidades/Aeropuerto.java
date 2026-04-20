@@ -1,4 +1,4 @@
-package pe.edu.pucp.aeroluggage.domain.entities;
+package pe.edu.pucp.aeroluggage.dominio.entidades;
 
 public class Aeropuerto {
     private String idAeropuerto;
