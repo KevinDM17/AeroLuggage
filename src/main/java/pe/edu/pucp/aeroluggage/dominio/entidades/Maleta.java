@@ -2,18 +2,20 @@ package pe.edu.pucp.aeroluggage.dominio.entidades;
 
 import java.time.LocalDateTime;
 
+import pe.edu.pucp.aeroluggage.dominio.enums.EstadoMaleta;
+
 public class Maleta {
     private String idMaleta;
     private Pedido pedido;
     private LocalDateTime fechaRegistro;
     private LocalDateTime fechaLlegada;
-    private String estado;
+    private EstadoMaleta estado;
 
     public Maleta() {
     }
 
     public Maleta(final String idMaleta, final Pedido pedido, final LocalDateTime fechaRegistro,
-                  final LocalDateTime fechaLlegada, final String estado) {
+                  final LocalDateTime fechaLlegada, final EstadoMaleta estado) {
         this.idMaleta = idMaleta;
         this.pedido = pedido;
         this.fechaRegistro = fechaRegistro;
@@ -53,11 +55,11 @@ public class Maleta {
         this.fechaLlegada = fechaLlegada;
     }
 
-    public String getEstado() {
+    public EstadoMaleta getEstado() {
         return estado;
     }
 
-    public void setEstado(final String estado) {
+    public void setEstado(final EstadoMaleta estado) {
         this.estado = estado;
     }
 }

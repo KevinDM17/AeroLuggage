@@ -104,4 +104,24 @@ public class VueloInstancia {
     public void setEstado(final EstadoVuelo estado) {
         this.estado = estado;
     }
+
+    public void cancelar() {
+        this.estado = EstadoVuelo.CANCELADO;
+        this.capacidadDisponible = this.capacidadMaxima;
+    }
+
+    public void actualizarCapacidad(final int delta) {
+        final int nuevaCapacidad = this.capacidadDisponible - delta;
+        if (nuevaCapacidad < 0) {
+            throw new IllegalStateException(
+                    "Capacidad disponible insuficiente en vuelo " + this.idVueloInstancia
+                            + ": disponible=" + this.capacidadDisponible + ", delta=" + delta);
+        }
+        if (nuevaCapacidad > this.capacidadMaxima) {
+            throw new IllegalStateException(
+                    "Capacidad disponible excede maxima en vuelo " + this.idVueloInstancia
+                            + ": max=" + this.capacidadMaxima + ", calculada=" + nuevaCapacidad);
+        }
+        this.capacidadDisponible = nuevaCapacidad;
+    }
 }

@@ -1,12 +1,12 @@
 package pe.edu.pucp.aeroluggage.dominio.entidades;
 
-import java.time.LocalDateTime;
+import java.time.LocalTime;
 
 public class VueloProgramado {
     private String idVueloProgramado;
     private String codigo;
-    private LocalDateTime horaSalida;
-    private LocalDateTime horaLlegada;
+    private LocalTime horaSalida;
+    private LocalTime horaLlegada;
     private int capacidadMaxima;
     private Aeropuerto aeropuertoOrigen;
     private Aeropuerto aeropuertoDestino;
@@ -14,8 +14,8 @@ public class VueloProgramado {
     public VueloProgramado() {
     }
 
-    public VueloProgramado(final String idVueloProgramado, final String codigo, final LocalDateTime horaSalida,
-                           final LocalDateTime horaLlegada, final int capacidadMaxima,
+    public VueloProgramado(final String idVueloProgramado, final String codigo, final LocalTime horaSalida,
+                           final LocalTime horaLlegada, final int capacidadMaxima,
                            final Aeropuerto aeropuertoOrigen, final Aeropuerto aeropuertoDestino) {
         this.idVueloProgramado = idVueloProgramado;
         this.codigo = codigo;
@@ -42,19 +42,19 @@ public class VueloProgramado {
         this.codigo = codigo;
     }
 
-    public LocalDateTime getHoraSalida() {
+    public LocalTime getHoraSalida() {
         return horaSalida;
     }
 
-    public void setHoraSalida(final LocalDateTime horaSalida) {
+    public void setHoraSalida(final LocalTime horaSalida) {
         this.horaSalida = horaSalida;
     }
 
-    public LocalDateTime getHoraLlegada() {
+    public LocalTime getHoraLlegada() {
         return horaLlegada;
     }
 
-    public void setHoraLlegada(final LocalDateTime horaLlegada) {
+    public void setHoraLlegada(final LocalTime horaLlegada) {
         this.horaLlegada = horaLlegada;
     }
 
