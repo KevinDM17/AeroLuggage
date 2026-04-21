@@ -104,4 +104,26 @@ public class VueloInstancia {
     public void setEstado(final EstadoVuelo estado) {
         this.estado = estado;
     }
+
+    public void cancelar() {
+        estado = EstadoVuelo.CANCELADO;
+        capacidadDisponible = 0;
+    }
+
+    public void actualizarCapacidad() {
+        if (capacidadMaxima < 0) {
+            capacidadMaxima = 0;
+        }
+        if (estado == EstadoVuelo.CANCELADO) {
+            capacidadDisponible = 0;
+            return;
+        }
+        if (capacidadDisponible < 0) {
+            capacidadDisponible = 0;
+            return;
+        }
+        if (capacidadDisponible > capacidadMaxima) {
+            capacidadDisponible = capacidadMaxima;
+        }
+    }
 }
