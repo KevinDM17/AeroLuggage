@@ -1,7 +1,7 @@
 package pe.edu.pucp.aeroluggage.dominio.entidades;
 
-import java.time.LocalDateTime;
 import java.time.LocalDate;
+import java.time.LocalDateTime;
 
 import pe.edu.pucp.aeroluggage.dominio.enums.EstadoVuelo;
 
@@ -22,11 +22,22 @@ public class VueloInstancia {
     }
 
     public VueloInstancia(final String idVueloInstancia, final String codigo, final LocalDateTime fechaSalida,
-                            final LocalDateTime fechaLlegada, final int capacidadMaxima,
-                            final int capacidadDisponible, final Aeropuerto aeropuertoOrigen,
-                            final Aeropuerto aeropuertoDestino, final EstadoVuelo estado) {
-        this(idVueloInstancia, codigo, null, fechaSalida == null ? null : fechaSalida.toLocalDate(), fechaSalida,
-                fechaLlegada, capacidadMaxima, capacidadDisponible, aeropuertoOrigen, aeropuertoDestino, estado);
+                          final LocalDateTime fechaLlegada, final int capacidadMaxima,
+                          final int capacidadDisponible, final Aeropuerto aeropuertoOrigen,
+                          final Aeropuerto aeropuertoDestino, final EstadoVuelo estado) {
+        this(
+                idVueloInstancia,
+                codigo,
+                null,
+                fechaSalida == null ? null : fechaSalida.toLocalDate(),
+                fechaSalida,
+                fechaLlegada,
+                capacidadMaxima,
+                capacidadDisponible,
+                aeropuertoOrigen,
+                aeropuertoDestino,
+                estado
+        );
     }
 
     public VueloInstancia(final String idVueloInstancia, final VueloProgramado vueloProgramado,
@@ -174,5 +185,22 @@ public class VueloInstancia {
         if (capacidadDisponible > capacidadMaxima) {
             capacidadDisponible = capacidadMaxima;
         }
+    }
+
+    public void actualizarCapacidad(final int delta) {
+        final int nuevaCapacidad = capacidadDisponible - delta;
+        if (nuevaCapacidad < 0) {
+            throw new IllegalStateException(
+                    "Capacidad disponible insuficiente en vuelo " + idVueloInstancia
+                            + ": disponible=" + capacidadDisponible + ", delta=" + delta
+            );
+        }
+        if (nuevaCapacidad > capacidadMaxima) {
+            throw new IllegalStateException(
+                    "Capacidad disponible excede maxima en vuelo " + idVueloInstancia
+                            + ": max=" + capacidadMaxima + ", calculada=" + nuevaCapacidad
+            );
+        }
+        capacidadDisponible = nuevaCapacidad;
     }
 }

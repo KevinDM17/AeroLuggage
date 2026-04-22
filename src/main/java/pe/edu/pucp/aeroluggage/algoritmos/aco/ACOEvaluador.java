@@ -8,10 +8,11 @@ import java.util.Map;
 import pe.edu.pucp.aeroluggage.algoritmos.Solucion;
 import pe.edu.pucp.aeroluggage.dominio.entidades.Ruta;
 import pe.edu.pucp.aeroluggage.dominio.entidades.VueloInstancia;
+import pe.edu.pucp.aeroluggage.dominio.enums.EstadoRuta;
 
 final class ACOEvaluador {
-    private static final String ESTADO_NO_FACTIBLE = "NO_FACTIBLE";
-    private static final String ESTADO_REPLANIFICADA = "REPLANIFICADA";
+    private static final EstadoRuta ESTADO_NO_FACTIBLE = EstadoRuta.FALLIDA;
+    private static final EstadoRuta ESTADO_REPLANIFICADA = EstadoRuta.REPLANIFICADA;
     private static final int UNIDAD_MALETA = 1;
     private static final double COSTO_MINIMO = 0.000001D;
 

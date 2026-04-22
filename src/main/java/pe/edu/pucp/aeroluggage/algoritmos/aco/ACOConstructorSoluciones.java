@@ -16,11 +16,12 @@ import pe.edu.pucp.aeroluggage.dominio.entidades.Maleta;
 import pe.edu.pucp.aeroluggage.dominio.entidades.Pedido;
 import pe.edu.pucp.aeroluggage.dominio.entidades.Ruta;
 import pe.edu.pucp.aeroluggage.dominio.entidades.VueloInstancia;
+import pe.edu.pucp.aeroluggage.dominio.enums.EstadoRuta;
 
 final class ACOConstructorSoluciones {
-    private static final String ESTADO_PLANIFICADA = "PLANIFICADA";
-    private static final String ESTADO_NO_FACTIBLE = "NO_FACTIBLE";
-    private static final String ESTADO_REPLANIFICADA = "REPLANIFICADA";
+    private static final EstadoRuta ESTADO_PLANIFICADA = EstadoRuta.PLANIFICADA;
+    private static final EstadoRuta ESTADO_NO_FACTIBLE = EstadoRuta.FALLIDA;
+    private static final EstadoRuta ESTADO_REPLANIFICADA = EstadoRuta.REPLANIFICADA;
     private static final int UNIDAD_MALETA = 1;
 
     private final ACOConfiguracion configuracion;
@@ -484,7 +485,7 @@ final class ACOConstructorSoluciones {
             final Maleta maleta,
             final ArrayList<VueloInstancia> plan,
             final SubproblemaACO subproblema,
-            final String estado
+            final EstadoRuta estado
     ) {
         final Ruta ruta = new Ruta(
                 "RUTA-" + maleta.getIdMaleta(),

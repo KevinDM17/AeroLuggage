@@ -3,11 +3,11 @@ package pe.edu.pucp.aeroluggage.dominio.entidades;
 import java.time.LocalDateTime;
 
 import pe.edu.pucp.aeroluggage.dominio.enums.Continente;
+import pe.edu.pucp.aeroluggage.dominio.enums.EstadoPedido;
 
 public class Pedido {
     private static final long PLAZO_MISMO_CONTINENTE_DIAS = 1L;
     private static final long PLAZO_INTERCONTINENTAL_DIAS = 2L;
-    private static final String ESTADO_REGISTRADO = "REGISTRADO";
 
     private String idPedido;
     private Aeropuerto aeropuertoOrigen;
@@ -15,19 +15,39 @@ public class Pedido {
     private LocalDateTime fechaHoraPlazo;
     private LocalDateTime fechaRegistro;
     private int cantidadMaletas;
-    private String estado;
+    private EstadoPedido estado;
 
     public Pedido() {
     }
 
     public Pedido(final String idPedido, final Aeropuerto aeropuertoOrigen, final Aeropuerto aeropuertoDestino,
                   final LocalDateTime fechaRegistro, final int cantidadMaletas, final String estado) {
-        this(idPedido, aeropuertoOrigen, aeropuertoDestino, null, fechaRegistro, cantidadMaletas, estado);
+        this(
+                idPedido,
+                aeropuertoOrigen,
+                aeropuertoDestino,
+                null,
+                fechaRegistro,
+                cantidadMaletas,
+                convertirEstado(estado)
+        );
     }
 
     public Pedido(final String idPedido, final Aeropuerto aeropuertoOrigen, final Aeropuerto aeropuertoDestino,
                   final LocalDateTime fechaHoraPlazo, final LocalDateTime fechaRegistro,
                   final int cantidadMaletas, final String estado) {
+        this.idPedido = idPedido;
+        this.aeropuertoOrigen = aeropuertoOrigen;
+        this.aeropuertoDestino = aeropuertoDestino;
+        this.fechaHoraPlazo = fechaHoraPlazo;
+        this.fechaRegistro = fechaRegistro;
+        this.cantidadMaletas = cantidadMaletas;
+        this.estado = convertirEstado(estado);
+    }
+
+    public Pedido(final String idPedido, final Aeropuerto aeropuertoOrigen, final Aeropuerto aeropuertoDestino,
+                  final LocalDateTime fechaRegistro, final LocalDateTime fechaHoraPlazo,
+                  final int cantidadMaletas, final EstadoPedido estado) {
         this.idPedido = idPedido;
         this.aeropuertoOrigen = aeropuertoOrigen;
         this.aeropuertoDestino = aeropuertoDestino;
@@ -85,20 +105,24 @@ public class Pedido {
         this.cantidadMaletas = cantidadMaletas;
     }
 
-    public String getEstado() {
+    public EstadoPedido getEstado() {
         return estado;
     }
 
-    public void setEstado(final String estado) {
+    public void setEstado(final EstadoPedido estado) {
         this.estado = estado;
+    }
+
+    public void setEstado(final String estado) {
+        this.estado = convertirEstado(estado);
     }
 
     public void registrarPedido() {
         if (fechaRegistro == null) {
             fechaRegistro = LocalDateTime.now();
         }
-        if (estado == null || estado.isBlank()) {
-            estado = ESTADO_REGISTRADO;
+        if (estado == null) {
+            estado = EstadoPedido.REGISTRADO;
         }
         fechaHoraPlazo = calcularFechaHoraPlazo();
     }
@@ -120,13 +144,20 @@ public class Pedido {
     }
 
     private Continente obtenerContinente(final Aeropuerto aeropuerto) {
-        if (aeropuerto == null) {
+        if (aeropuerto == null || aeropuerto.getCiudad() == null) {
             return null;
         }
-        final Ciudad ciudad = aeropuerto.getCiudad();
-        if (ciudad == null) {
+        return aeropuerto.getCiudad().getContinente();
+    }
+
+    private static EstadoPedido convertirEstado(final String estado) {
+        if (estado == null || estado.isBlank()) {
             return null;
         }
-        return ciudad.getContinente();
+        try {
+            return EstadoPedido.valueOf(estado.trim());
+        } catch (final IllegalArgumentException exception) {
+            return EstadoPedido.REGISTRADO;
+        }
     }
 }

@@ -10,6 +10,7 @@ import pe.edu.pucp.aeroluggage.algoritmos.Metaheuristico;
 import pe.edu.pucp.aeroluggage.algoritmos.Solucion;
 import pe.edu.pucp.aeroluggage.dominio.entidades.Ruta;
 import pe.edu.pucp.aeroluggage.dominio.entidades.VueloInstancia;
+import pe.edu.pucp.aeroluggage.dominio.enums.EstadoRuta;
 
 public class ACO extends Metaheuristico {
     private final ACOConfiguracion configuracion;
@@ -261,7 +262,7 @@ public class ACO extends Metaheuristico {
 
             final Ruta rutaConfirmada = constructorSoluciones.clonarRuta(rutaOriginal);
             if (constructorSoluciones.esRutaFactible(rutaConfirmada)) {
-                rutaConfirmada.setEstado("CONFIRMADA");
+                rutaConfirmada.setEstado(EstadoRuta.CONFIRMADA);
             }
             planesConfirmados.add(rutaConfirmada);
             yaConfirmadas.add(rutaConfirmada.getIdMaleta());
@@ -323,7 +324,7 @@ public class ACO extends Metaheuristico {
                     Double.MAX_VALUE,
                     0D,
                     new ArrayList<>(),
-                    "NO_FACTIBLE"
+                    EstadoRuta.FALLIDA
             );
             rutasCompletas.add(rutaSinPlan);
             maletasConRuta.add(maleta.getIdMaleta());
