@@ -13,6 +13,7 @@ public class GA extends Metaheuristico {
     private ParametrosGA parametros;
     private Individuo mejorGlobal;
     private Solucion mejorSolucion;
+    private InstanciaProblema ultimaInstancia;
     private int generacionesEjecutadas;
     private int generacionesSinMejora;
     private long tiempoEjecucionMs;
@@ -54,6 +55,7 @@ public class GA extends Metaheuristico {
         if (instancia == null) {
             return;
         }
+        ultimaInstancia = instancia;
         if (instancia.getGrafo() == null) {
             instancia.construirGrafo();
         }
@@ -114,9 +116,14 @@ public class GA extends Metaheuristico {
 
     @Override
     public void evaluar() {
-        if (mejorGlobal != null && mejorGlobal.getSolucion() != null) {
-            mejorGlobal.getSolucion().calcularMetricas();
+        if (mejorGlobal == null || mejorGlobal.getSolucion() == null || ultimaInstancia == null) {
+            return;
         }
+        final double costo = FuncionCosto.calcularCostoSolucion(mejorGlobal.getSolucion(), ultimaInstancia, parametros);
+        final double fitness = FuncionCosto.costoAFitness(costo);
+        mejorGlobal.getSolucion().setFitness(fitness);
+        mejorGlobal.setFitness(fitness);
+        mejorSolucion = mejorGlobal.getSolucion();
     }
 
     private Poblacion inicializarPoblacion(final InstanciaProblema instancia, final Random random) {

@@ -11,6 +11,7 @@ import pe.edu.pucp.aeroluggage.algoritmos.Solucion;
 import pe.edu.pucp.aeroluggage.algoritmos.aco.ACO;
 import pe.edu.pucp.aeroluggage.algoritmos.aco.ACOReporte;
 import pe.edu.pucp.aeroluggage.algoritmos.ga.GA;
+import pe.edu.pucp.aeroluggage.algoritmos.ga.ParametrosGA;
 import pe.edu.pucp.aeroluggage.dominio.entidades.Aeropuerto;
 import pe.edu.pucp.aeroluggage.dominio.entidades.Ruta;
 import pe.edu.pucp.aeroluggage.dominio.entidades.VueloInstancia;
@@ -37,6 +38,9 @@ public class AeroLuggageApplication {
         final int maxLotes = obtenerEntero(args, 2, MAX_LOTES_POR_DEFECTO);
         final ArrayList<Aeropuerto> aeropuertos = CargadorDatosPrueba.cargarAeropuertos(ARCHIVO_AEROPUERTOS);
         final Map<String, Aeropuerto> aeropuertosPorCodigo = CargadorDatosPrueba.indexarAeropuertos(aeropuertos);
+        System.out.println("Tamano de lote de pedidos: " + tamanoLotePedidos);
+        System.out.println("Modo de lectura: todos los archivos de envios hasta agotarlos");
+        System.out.println("Limite de lotes: " + (maxLotes <= 0 ? "sin limite" : maxLotes));
         System.out.println("Aeropuertos cargados: " + aeropuertos.size());
 
         try (CargadorDatosPrueba.LectorLotesEnvios lector =
@@ -131,12 +135,39 @@ public class AeroLuggageApplication {
     }
 
     private static void ejecutarGA(final InstanciaProblema instancia) {
-        final GA ga = new GA();
+        final GA ga = new GA(crearParametrosGAConsola());
         System.out.println();
         System.out.println("=== RESULTADO GA ===");
         ga.ejecutar(instancia);
         ga.evaluar();
-        System.out.println("GA ejecutado. En esta rama la clase GA todavia no expone una solucion para imprimir.");
+        imprimirResultadoGA(ga);
+    }
+
+    private static ParametrosGA crearParametrosGAConsola() {
+        final ParametrosGA parametros = ParametrosGA.pordefecto();
+        parametros.setTamanioPoblacion(30);
+        parametros.setMaxGeneraciones(40);
+        parametros.setMaxSinMejora(10);
+        parametros.setTiempoMaximoMs(15_000L);
+        return parametros;
+    }
+
+    private static void imprimirResultadoGA(final GA ga) {
+        final Solucion solucion = ga.getMejorSolucion();
+        if (solucion == null) {
+            System.out.println("GA no genero solucion para este lote.");
+            return;
+        }
+        System.out.println("Generaciones ejecutadas: " + ga.getGeneracionesEjecutadas());
+        System.out.println("Tiempo GA: " + ga.getTiempoEjecucionMs() + " ms");
+        System.out.println("Rutas generadas: " + solucion.getSubrutas().size());
+        System.out.println("Fitness: " + solucion.getFitness());
+        System.out.println("Costo total: " + solucion.getCostoTotal());
+        System.out.println("Factible: " + solucion.isFactible());
+        System.out.println("Maletas a tiempo: " + solucion.getMaletasEntregadasATiempo());
+        System.out.println("Maletas incumplidas: " + solucion.getMaletasIncumplidas());
+        System.out.println("Ocupacion promedio vuelos: " + solucion.getOcupacionPromedioVuelos());
+        imprimirDetalleRutas("Detalle de rutas GA", solucion);
     }
 
     private static void imprimirInstancia(final InstanciaProblema instancia, final int indicePrimerPedido,
@@ -166,13 +197,17 @@ public class AeroLuggageApplication {
     }
 
     private static void imprimirDetalleRutas(final Solucion solucion) {
+        imprimirDetalleRutas("Detalle de rutas", solucion);
+    }
+
+    private static void imprimirDetalleRutas(final String titulo, final Solucion solucion) {
         if (solucion == null || solucion.getSubrutas().isEmpty()) {
             System.out.println("No hay rutas para mostrar.");
             return;
         }
         final List<Ruta> rutas = solucion.getSubrutas();
         System.out.println();
-        System.out.println("Detalle de rutas: " + rutas.size());
+        System.out.println(titulo + ": " + rutas.size());
         for (int i = 0; i < rutas.size(); i++) {
             final Ruta ruta = rutas.get(i);
             if (ruta == null) {
