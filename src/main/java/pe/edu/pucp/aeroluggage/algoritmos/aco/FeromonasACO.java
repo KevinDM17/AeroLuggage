@@ -5,7 +5,6 @@ import java.util.Map;
 
 import pe.edu.pucp.aeroluggage.dominio.entidades.Maleta;
 import pe.edu.pucp.aeroluggage.dominio.entidades.VueloInstancia;
-import pe.edu.pucp.aeroluggage.dominio.entidades.VueloProgramado;
 
 final class FeromonasACO {
     private static final String SEPARADOR_CLAVE = "::";
@@ -22,7 +21,7 @@ final class FeromonasACO {
         return valores.isEmpty();
     }
 
-    double obtener(final Maleta maleta, final VueloProgramado vuelo) {
+    double obtener(final Maleta maleta, final VueloInstancia vuelo) {
         final String clave = construirClave(maleta, vuelo);
         if (clave == null) {
             return configuracion.getTau0();
@@ -30,7 +29,7 @@ final class FeromonasACO {
         return valores.getOrDefault(clave, configuracion.getTau0());
     }
 
-    void actualizarLocal(final Maleta maleta, final VueloProgramado vuelo) {
+    void actualizarLocal(final Maleta maleta, final VueloInstancia vuelo) {
         final String clave = construirClave(maleta, vuelo);
         if (clave == null) {
             return;
@@ -65,11 +64,11 @@ final class FeromonasACO {
         return copia;
     }
 
-    private String construirClave(final Maleta maleta, final VueloProgramado vuelo) {
-        if (maleta == null || maleta.getIdMaleta() == null || vuelo == null || vuelo.getIdVueloProgramado() == null) {
+    private String construirClave(final Maleta maleta, final VueloInstancia vuelo) {
+        if (maleta == null || maleta.getIdMaleta() == null || vuelo == null || vuelo.getIdVueloInstancia() == null) {
             return null;
         }
-        return construirClave(maleta.getIdMaleta(), vuelo.getIdVueloProgramado());
+        return construirClave(maleta.getIdMaleta(), vuelo.getIdVueloInstancia());
     }
 
     private String construirClave(final String idMaleta, final String idVuelo) {

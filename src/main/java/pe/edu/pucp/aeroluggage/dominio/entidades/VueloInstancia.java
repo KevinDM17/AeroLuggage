@@ -1,12 +1,15 @@
 package pe.edu.pucp.aeroluggage.dominio.entidades;
 
 import java.time.LocalDateTime;
+import java.time.LocalDate;
 
 import pe.edu.pucp.aeroluggage.dominio.enums.EstadoVuelo;
 
 public class VueloInstancia {
     private String idVueloInstancia;
     private String codigo;
+    private VueloProgramado vueloProgramado;
+    private LocalDate fechaOperacion;
     private LocalDateTime fechaSalida;
     private LocalDateTime fechaLlegada;
     private int capacidadMaxima;
@@ -22,8 +25,38 @@ public class VueloInstancia {
                             final LocalDateTime fechaLlegada, final int capacidadMaxima,
                             final int capacidadDisponible, final Aeropuerto aeropuertoOrigen,
                             final Aeropuerto aeropuertoDestino, final EstadoVuelo estado) {
+        this(idVueloInstancia, codigo, null, fechaSalida == null ? null : fechaSalida.toLocalDate(), fechaSalida,
+                fechaLlegada, capacidadMaxima, capacidadDisponible, aeropuertoOrigen, aeropuertoDestino, estado);
+    }
+
+    public VueloInstancia(final String idVueloInstancia, final VueloProgramado vueloProgramado,
+                          final LocalDate fechaOperacion, final LocalDateTime fechaSalida,
+                          final LocalDateTime fechaLlegada, final int capacidadTotal,
+                          final int capacidadDisponible, final EstadoVuelo estado) {
+        this(
+                idVueloInstancia,
+                vueloProgramado == null ? null : vueloProgramado.getCodigo(),
+                vueloProgramado,
+                fechaOperacion,
+                fechaSalida,
+                fechaLlegada,
+                capacidadTotal,
+                capacidadDisponible,
+                vueloProgramado == null ? null : vueloProgramado.getAeropuertoOrigen(),
+                vueloProgramado == null ? null : vueloProgramado.getAeropuertoDestino(),
+                estado
+        );
+    }
+
+    public VueloInstancia(final String idVueloInstancia, final String codigo, final VueloProgramado vueloProgramado,
+                          final LocalDate fechaOperacion, final LocalDateTime fechaSalida,
+                          final LocalDateTime fechaLlegada, final int capacidadMaxima,
+                          final int capacidadDisponible, final Aeropuerto aeropuertoOrigen,
+                          final Aeropuerto aeropuertoDestino, final EstadoVuelo estado) {
         this.idVueloInstancia = idVueloInstancia;
         this.codigo = codigo;
+        this.vueloProgramado = vueloProgramado;
+        this.fechaOperacion = fechaOperacion;
         this.fechaSalida = fechaSalida;
         this.fechaLlegada = fechaLlegada;
         this.capacidadMaxima = capacidadMaxima;
@@ -47,6 +80,22 @@ public class VueloInstancia {
 
     public void setCodigo(final String codigo) {
         this.codigo = codigo;
+    }
+
+    public VueloProgramado getVueloProgramado() {
+        return vueloProgramado;
+    }
+
+    public void setVueloProgramado(final VueloProgramado vueloProgramado) {
+        this.vueloProgramado = vueloProgramado;
+    }
+
+    public LocalDate getFechaOperacion() {
+        return fechaOperacion;
+    }
+
+    public void setFechaOperacion(final LocalDate fechaOperacion) {
+        this.fechaOperacion = fechaOperacion;
     }
 
     public LocalDateTime getFechaSalida() {

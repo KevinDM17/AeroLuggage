@@ -24,8 +24,10 @@ import pe.edu.pucp.aeroluggage.dominio.entidades.Aeropuerto;
 import pe.edu.pucp.aeroluggage.dominio.entidades.Ciudad;
 import pe.edu.pucp.aeroluggage.dominio.entidades.Maleta;
 import pe.edu.pucp.aeroluggage.dominio.entidades.Pedido;
+import pe.edu.pucp.aeroluggage.dominio.entidades.VueloInstancia;
 import pe.edu.pucp.aeroluggage.dominio.entidades.VueloProgramado;
 import pe.edu.pucp.aeroluggage.dominio.enums.Continente;
+import pe.edu.pucp.aeroluggage.servicios.GeneradorVuelosInstancia;
 
 public final class CargadorDatosPrueba {
     public static final int DIAS_VUELOS_REPETIDOS = 7;
@@ -53,14 +55,20 @@ public final class CargadorDatosPrueba {
         final Map<String, Aeropuerto> aeropuertosPorCodigo = indexarAeropuertos(aeropuertos);
         final DatosEntrada datosEntrada = cargarEnvios(carpetaEnvios, aeropuertosPorCodigo);
         final LocalDate fechaInicioVuelos = obtenerFechaInicio(datosEntrada.getMaletas());
-        final ArrayList<VueloProgramado> vuelos = cargarVuelosProgramados(
+        final ArrayList<VueloProgramado> vuelosProgramados = cargarVuelosProgramados(
                 archivoVuelos,
                 aeropuertosPorCodigo,
                 fechaInicioVuelos,
                 DIAS_VUELOS_REPETIDOS
         );
+        final ArrayList<VueloInstancia> vuelosInstancia = GeneradorVuelosInstancia.generar(
+                vuelosProgramados,
+                fechaInicioVuelos,
+                DIAS_VUELOS_REPETIDOS
+        );
 
-        return new InstanciaProblema("PRUEBA-TXT", datosEntrada.getMaletas(), vuelos, aeropuertos);
+        return new InstanciaProblema("PRUEBA-TXT", datosEntrada.getMaletas(), vuelosProgramados, vuelosInstancia,
+                aeropuertos);
     }
 
     public static ArrayList<Aeropuerto> cargarAeropuertos(final Path archivoAeropuertos) {
@@ -114,19 +122,31 @@ public final class CargadorDatosPrueba {
         final ArrayList<VueloProgramado> vuelos = new ArrayList<>();
         int secuencia = 1;
         final List<String> lineas = leerLineas(archivoVuelos);
-        for (int diaOffset = 0; diaOffset < dias; diaOffset++) {
-            final LocalDate fechaVuelo = fechaInicio.plusDays(diaOffset);
-            for (final String linea : lineas) {
-                final VueloProgramado vuelo = crearVueloProgramado(linea, aeropuertos, fechaVuelo, secuencia);
-                if (vuelo == null) {
-                    continue;
-                }
-                vuelos.add(vuelo);
-                secuencia++;
+        for (final String linea : lineas) {
+            final VueloProgramado vuelo = crearVueloProgramado(linea, aeropuertos, secuencia);
+            if (vuelo == null) {
+                continue;
             }
+            vuelos.add(vuelo);
+            secuencia++;
         }
         vuelos.sort(Comparator.comparing(VueloProgramado::getHoraSalida));
         return vuelos;
+    }
+
+    public static ArrayList<VueloInstancia> cargarVuelosInstancia(
+            final Path archivoVuelos,
+            final Map<String, Aeropuerto> aeropuertos,
+            final LocalDate fechaInicio,
+            final int dias
+    ) {
+        final ArrayList<VueloProgramado> vuelosProgramados = cargarVuelosProgramados(
+                archivoVuelos,
+                aeropuertos,
+                fechaInicio,
+                dias
+        );
+        return GeneradorVuelosInstancia.generar(vuelosProgramados, fechaInicio, dias);
     }
 
     public static Map<String, Aeropuerto> indexarAeropuertos(final ArrayList<Aeropuerto> aeropuertos) {
@@ -141,31 +161,37 @@ public final class CargadorDatosPrueba {
     }
 
     private static VueloProgramado crearVueloProgramado(final String linea, final Map<String, Aeropuerto> aeropuertos,
-                                                        final LocalDate fechaVuelo, final int secuencia) {
-        final String[] partes = linea.trim().split("-");
-        if (partes.length < 5) {
+                                                        final int secuencia) {
+        try {
+            final String[] partes = linea.trim().split("-");
+            if (partes.length != 5) {
+                registrarLineaInvalida("vuelo", linea, "formato esperado ORIGEN-DESTINO-HH:mm-HH:mm-CAPACIDAD");
+                return null;
+            }
+            final Aeropuerto origen = aeropuertos.get(partes[0].trim());
+            final Aeropuerto destino = aeropuertos.get(partes[1].trim());
+            if (origen == null || destino == null) {
+                registrarLineaInvalida("vuelo", linea, "aeropuerto origen o destino no existe");
+                return null;
+            }
+            final LocalTime horaSalida = LocalTime.parse(partes[2].trim());
+            final LocalTime horaLlegada = LocalTime.parse(partes[3].trim());
+            final int capacidad = Integer.parseInt(partes[4].trim());
+            if (capacidad <= 0) {
+                registrarLineaInvalida("vuelo", linea, "capacidad debe ser mayor que cero");
+                return null;
+            }
+            final String idVuelo = String.format(
+                    "%s-%s-%06d",
+                    origen.getIdAeropuerto(),
+                    destino.getIdAeropuerto(),
+                    secuencia
+            );
+            return new VueloProgramado(idVuelo, idVuelo, horaSalida, horaLlegada, capacidad, origen, destino);
+        } catch (final RuntimeException exception) {
+            registrarLineaInvalida("vuelo", linea, exception.getMessage());
             return null;
         }
-        final Aeropuerto origen = aeropuertos.get(partes[0].trim());
-        final Aeropuerto destino = aeropuertos.get(partes[1].trim());
-        if (origen == null || destino == null) {
-            return null;
-        }
-        final LocalTime horaSalida = LocalTime.parse(partes[2].trim());
-        final LocalTime horaLlegada = LocalTime.parse(partes[3].trim());
-        final int capacidad = Integer.parseInt(partes[4].trim());
-        final LocalDateTime salida = LocalDateTime.of(fechaVuelo, horaSalida);
-        LocalDateTime llegada = LocalDateTime.of(fechaVuelo, horaLlegada);
-        if (!llegada.isAfter(salida)) {
-            llegada = llegada.plusDays(1);
-        }
-        final String idVuelo = String.format(
-                "%s-%s-%06d",
-                origen.getIdAeropuerto(),
-                destino.getIdAeropuerto(),
-                secuencia
-        );
-        return new VueloProgramado(idVuelo, idVuelo, salida, llegada, capacidad, origen, destino);
     }
 
     private static void agregarMaletas(final Pedido pedido, final int cantidadMaletas,
@@ -177,43 +203,55 @@ public final class CargadorDatosPrueba {
     }
 
     private static Aeropuerto crearAeropuertoDesdeLinea(final String linea, final Continente continenteActual) {
-        final String limpia = limpiarLinea(linea);
-        if (!limpia.contains("Latitude:")) {
+        try {
+            final String limpia = limpiarLinea(linea);
+            if (!limpia.contains("Latitude:")) {
+                return null;
+            }
+            final Continente continente = continenteActual == null ? Continente.AMERICA_DEL_SUR : continenteActual;
+            final String[] secciones = limpia.split("Latitude:", 2);
+            if (secciones.length < 2) {
+                registrarLineaInvalida("aeropuerto", linea, "no contiene coordenadas completas");
+                return null;
+            }
+            final String[] tokens = secciones[0].trim().split("\\s+");
+            if (tokens.length < 7) {
+                registrarLineaInvalida("aeropuerto", linea, "faltan columnas obligatorias");
+                return null;
+            }
+            final String codigo = tokens[1];
+            final String idCiudad = tokens[tokens.length - 3];
+            final int husoHorario = Integer.parseInt(tokens[tokens.length - 2]);
+            final int capacidad = Integer.parseInt(tokens[tokens.length - 1]);
+            if (capacidad <= 0) {
+                registrarLineaInvalida("aeropuerto", linea, "capacidad debe ser mayor que cero");
+                return null;
+            }
+            final String nombreCiudad = unirTokens(tokens, 2, tokens.length - 3);
+            float latitud = 0F;
+            float longitud = 0F;
+            final Matcher matcherCoordenadas = COORDENADAS.matcher(limpia);
+            if (matcherCoordenadas.matches()) {
+                latitud = convertirCoordenada(
+                        matcherCoordenadas.group(1),
+                        matcherCoordenadas.group(2),
+                        matcherCoordenadas.group(3),
+                        matcherCoordenadas.group(4)
+                );
+                longitud = convertirCoordenada(
+                        matcherCoordenadas.group(5),
+                        matcherCoordenadas.group(6),
+                        matcherCoordenadas.group(7),
+                        matcherCoordenadas.group(8)
+                );
+            }
+            final Ciudad ciudad = new Ciudad(idCiudad, nombreCiudad, continente);
+            return new Aeropuerto(codigo, ciudad, capacidad, MALETAS_ACTUALES_INICIALES, longitud, latitud,
+                    husoHorario);
+        } catch (final RuntimeException exception) {
+            registrarLineaInvalida("aeropuerto", linea, exception.getMessage());
             return null;
         }
-        final Continente continente = continenteActual == null ? Continente.AMERICA_DEL_SUR : continenteActual;
-        final String[] secciones = limpia.split("Latitude:", 2);
-        if (secciones.length < 2) {
-            return null;
-        }
-        final String[] tokens = secciones[0].trim().split("\\s+");
-        if (tokens.length < 7) {
-            return null;
-        }
-        final String codigo = tokens[1];
-        final String idCiudad = tokens[tokens.length - 3];
-        final int husoHorario = Integer.parseInt(tokens[tokens.length - 2]);
-        final int capacidad = Integer.parseInt(tokens[tokens.length - 1]);
-        final String nombreCiudad = unirTokens(tokens, 2, tokens.length - 3);
-        float latitud = 0F;
-        float longitud = 0F;
-        final Matcher matcherCoordenadas = COORDENADAS.matcher(limpia);
-        if (matcherCoordenadas.matches()) {
-            latitud = convertirCoordenada(
-                    matcherCoordenadas.group(1),
-                    matcherCoordenadas.group(2),
-                    matcherCoordenadas.group(3),
-                    matcherCoordenadas.group(4)
-            );
-            longitud = convertirCoordenada(
-                    matcherCoordenadas.group(5),
-                    matcherCoordenadas.group(6),
-                    matcherCoordenadas.group(7),
-                    matcherCoordenadas.group(8)
-            );
-        }
-        final Ciudad ciudad = new Ciudad(idCiudad, nombreCiudad, continente);
-        return new Aeropuerto(codigo, ciudad, capacidad, MALETAS_ACTUALES_INICIALES, longitud, latitud, husoHorario);
     }
 
     private static String unirTokens(final String[] tokens, final int inicio, final int finExclusivo) {
@@ -249,9 +287,18 @@ public final class CargadorDatosPrueba {
 
     private static List<String> leerLineasIso(final Path archivo, final IOException excepcionUtf8) {
         try {
+            return Files.readAllLines(archivo, StandardCharsets.UTF_16);
+        } catch (final IOException exceptionUtf16) {
+            exceptionUtf16.addSuppressed(excepcionUtf8);
+            return leerLineasIsoFinal(archivo, exceptionUtf16);
+        }
+    }
+
+    private static List<String> leerLineasIsoFinal(final Path archivo, final IOException excepcionPrevia) {
+        try {
             return Files.readAllLines(archivo, StandardCharsets.ISO_8859_1);
         } catch (final IOException exception) {
-            exception.addSuppressed(excepcionUtf8);
+            exception.addSuppressed(excepcionPrevia);
             throw new IllegalStateException("No se pudo leer el archivo: " + archivo, exception);
         }
     }
@@ -334,6 +381,10 @@ public final class CargadorDatosPrueba {
             return -valor;
         }
         return valor;
+    }
+
+    private static void registrarLineaInvalida(final String tipo, final String linea, final String motivo) {
+        System.err.println("[CargaDatos] Linea de " + tipo + " ignorada: " + motivo + " | " + linea);
     }
 
     public static final class LectorLotesEnvios implements AutoCloseable {
@@ -453,27 +504,40 @@ public final class CargadorDatosPrueba {
 
         static RegistroEnvio desdeLinea(final String linea, final String codigoOrigen,
                                         final Map<String, Aeropuerto> aeropuertos, final FuenteEnvio fuente) {
-            final String[] partes = linea.trim().split("-");
-            if (partes.length < 7) {
+            try {
+                final String[] partes = linea.trim().split("-");
+                if (partes.length != 7) {
+                    registrarLineaInvalida("envio", linea, "formato esperado ID-AAAAMMDD-HH-MM-DEST-CANT-CLIENTE");
+                    return null;
+                }
+                final Aeropuerto origen = aeropuertos.get(codigoOrigen);
+                final Aeropuerto destino = aeropuertos.get(partes[4].trim());
+                if (origen == null || destino == null) {
+                    registrarLineaInvalida("envio", linea, "aeropuerto origen o destino no existe");
+                    return null;
+                }
+                final LocalDate fecha = LocalDate.parse(partes[1].trim(), FORMATO_FECHA_ENVIO);
+                final int hora = Integer.parseInt(partes[2].trim());
+                final int minuto = Integer.parseInt(partes[3].trim());
+                final int cantidadMaletas = Integer.parseInt(partes[5].trim());
+                if (cantidadMaletas <= 0) {
+                    registrarLineaInvalida("envio", linea, "cantidad de maletas debe ser mayor que cero");
+                    return null;
+                }
+                final LocalDateTime fechaRegistro = LocalDateTime.of(fecha, LocalTime.of(hora, minuto));
+                final String idPedido = codigoOrigen + "-" + partes[0].trim();
+                return new RegistroEnvio(
+                        idPedido,
+                        origen,
+                        destino,
+                        fechaRegistro,
+                        cantidadMaletas,
+                        fuente
+                );
+            } catch (final RuntimeException exception) {
+                registrarLineaInvalida("envio", linea, exception.getMessage());
                 return null;
             }
-            final Aeropuerto origen = aeropuertos.get(codigoOrigen);
-            final Aeropuerto destino = aeropuertos.get(partes[4].trim());
-            if (origen == null || destino == null) {
-                return null;
-            }
-            final LocalDate fecha = LocalDate.parse(partes[1].trim(), FORMATO_FECHA_ENVIO);
-            final int hora = Integer.parseInt(partes[2].trim());
-            final int minuto = Integer.parseInt(partes[3].trim());
-            final LocalDateTime fechaRegistro = LocalDateTime.of(fecha, LocalTime.of(hora, minuto));
-            return new RegistroEnvio(
-                    partes[0].trim(),
-                    origen,
-                    destino,
-                    fechaRegistro,
-                    Integer.parseInt(partes[5].trim()),
-                    fuente
-            );
         }
 
         Pedido crearPedido() {

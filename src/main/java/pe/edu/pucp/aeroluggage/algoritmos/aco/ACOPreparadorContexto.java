@@ -13,7 +13,7 @@ import pe.edu.pucp.aeroluggage.dominio.entidades.Aeropuerto;
 import pe.edu.pucp.aeroluggage.dominio.entidades.Maleta;
 import pe.edu.pucp.aeroluggage.dominio.entidades.Pedido;
 import pe.edu.pucp.aeroluggage.dominio.entidades.Ruta;
-import pe.edu.pucp.aeroluggage.dominio.entidades.VueloProgramado;
+import pe.edu.pucp.aeroluggage.dominio.entidades.VueloInstancia;
 
 final class ACOPreparadorContexto {
     private final ACOConfiguracion configuracion;
@@ -59,19 +59,19 @@ final class ACOPreparadorContexto {
         return maletasPendientes;
     }
 
-    ArrayList<VueloProgramado> actualizarVuelosDisponibles(
-            final ArrayList<VueloProgramado> vuelos,
+    ArrayList<VueloInstancia> actualizarVuelosDisponibles(
+            final ArrayList<VueloInstancia> vuelos,
             final ArrayList<String> eventos
     ) {
-        final ArrayList<VueloProgramado> vuelosDisponibles = new ArrayList<>();
+        final ArrayList<VueloInstancia> vuelosDisponibles = new ArrayList<>();
         if (vuelos == null || vuelos.isEmpty()) {
             return vuelosDisponibles;
         }
-        for (final VueloProgramado vuelo : vuelos) {
+        for (final VueloInstancia vuelo : vuelos) {
             final boolean vueloInvalido = vuelo == null
-                    || vuelo.getIdVueloProgramado() == null
-                    || vuelo.getHoraSalida() == null
-                    || vuelo.getHoraLlegada() == null
+                    || vuelo.getIdVueloInstancia() == null
+                    || vuelo.getFechaSalida() == null
+                    || vuelo.getFechaLlegada() == null
                     || vuelo.getAeropuertoOrigen() == null
                     || vuelo.getAeropuertoDestino() == null;
             if (vueloInvalido) {
@@ -79,21 +79,21 @@ final class ACOPreparadorContexto {
             }
             vuelosDisponibles.add(vuelo);
         }
-        vuelosDisponibles.sort(Comparator.comparing(VueloProgramado::getHoraSalida));
+        vuelosDisponibles.sort(Comparator.comparing(VueloInstancia::getFechaSalida));
         return vuelosDisponibles;
     }
 
     CapacidadesACO recalcularCapacidades(
-            final ArrayList<VueloProgramado> vuelos,
+            final ArrayList<VueloInstancia> vuelos,
             final ArrayList<Aeropuerto> aeropuertos
     ) {
         final Map<String, Integer> capacidadRestanteVuelo = new HashMap<>();
         if (vuelos != null) {
-            for (final VueloProgramado vuelo : vuelos) {
-                if (vuelo == null || vuelo.getIdVueloProgramado() == null) {
+            for (final VueloInstancia vuelo : vuelos) {
+                if (vuelo == null || vuelo.getIdVueloInstancia() == null) {
                     continue;
                 }
-                capacidadRestanteVuelo.put(vuelo.getIdVueloProgramado(), Math.max(0, vuelo.getCapacidadMaxima()));
+                capacidadRestanteVuelo.put(vuelo.getIdVueloInstancia(), Math.max(0, vuelo.getCapacidadDisponible()));
             }
         }
 
@@ -116,7 +116,7 @@ final class ACOPreparadorContexto {
 
     SubproblemaACO construirSubproblema(
             final ArrayList<Maleta> maletas,
-            final ArrayList<VueloProgramado> vuelos,
+            final ArrayList<VueloInstancia> vuelos,
             final CapacidadesACO capacidades,
             final int intervaloActual,
             final LocalDateTime tiempoBase
@@ -175,11 +175,11 @@ final class ACOPreparadorContexto {
             tiempoBase = minimoTiempo(tiempoBase, pedido.getFechaRegistro());
         }
 
-        for (final VueloProgramado vuelo : instancia.getVuelos()) {
+        for (final VueloInstancia vuelo : instancia.getVuelosInstancia()) {
             if (vuelo == null) {
                 continue;
             }
-            tiempoBase = minimoTiempo(tiempoBase, vuelo.getHoraSalida());
+            tiempoBase = minimoTiempo(tiempoBase, vuelo.getFechaSalida());
         }
 
         return tiempoBase;

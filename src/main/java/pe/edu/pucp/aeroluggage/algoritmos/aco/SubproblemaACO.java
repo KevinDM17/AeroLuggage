@@ -6,11 +6,11 @@ import java.util.HashMap;
 import java.util.Map;
 
 import pe.edu.pucp.aeroluggage.dominio.entidades.Maleta;
-import pe.edu.pucp.aeroluggage.dominio.entidades.VueloProgramado;
+import pe.edu.pucp.aeroluggage.dominio.entidades.VueloInstancia;
 
 final class SubproblemaACO {
     private final ArrayList<Maleta> maletasPendientes;
-    private final ArrayList<VueloProgramado> vuelosDisponibles;
+    private final ArrayList<VueloInstancia> vuelosDisponibles;
     private final Map<String, Integer> capacidadRestanteVueloBase;
     private final Map<String, Integer> capacidadRestanteAlmacenBase;
     private final Map<String, LocalDateTime> plazoPorMaleta;
@@ -20,7 +20,7 @@ final class SubproblemaACO {
 
     SubproblemaACO(
             final ArrayList<Maleta> maletasPendientes,
-            final ArrayList<VueloProgramado> vuelosDisponibles,
+            final ArrayList<VueloInstancia> vuelosDisponibles,
             final Map<String, Integer> capacidadRestanteVueloBase,
             final Map<String, Integer> capacidadRestanteAlmacenBase,
             final Map<String, LocalDateTime> plazoPorMaleta,
@@ -42,7 +42,7 @@ final class SubproblemaACO {
         return maletasPendientes;
     }
 
-    ArrayList<VueloProgramado> getVuelosDisponibles() {
+    ArrayList<VueloInstancia> getVuelosDisponibles() {
         return vuelosDisponibles;
     }
 

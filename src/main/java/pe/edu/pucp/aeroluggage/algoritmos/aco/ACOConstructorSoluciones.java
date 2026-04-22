@@ -16,8 +16,6 @@ import pe.edu.pucp.aeroluggage.dominio.entidades.Maleta;
 import pe.edu.pucp.aeroluggage.dominio.entidades.Pedido;
 import pe.edu.pucp.aeroluggage.dominio.entidades.Ruta;
 import pe.edu.pucp.aeroluggage.dominio.entidades.VueloInstancia;
-import pe.edu.pucp.aeroluggage.dominio.entidades.VueloProgramado;
-import pe.edu.pucp.aeroluggage.dominio.enums.EstadoVuelo;
 
 final class ACOConstructorSoluciones {
     private static final String ESTADO_PLANIFICADA = "PLANIFICADA";
@@ -149,22 +147,22 @@ final class ACOConstructorSoluciones {
             }
 
             final Maleta maleta = subproblema.obtenerMaleta(ruta.getIdMaleta());
-            final VueloProgramado vueloDirecto = buscarMejorVueloDirecto(maleta, subproblema);
+            final VueloInstancia vueloDirecto = buscarMejorVueloDirecto(maleta, subproblema);
             if (vueloDirecto == null) {
                 rutasMejoradas.add(ruta);
                 continue;
             }
 
             final LocalDateTime llegadaActual = ruta.getSubrutas().get(ruta.getSubrutas().size() - 1).getFechaLlegada();
-            if (llegadaActual != null && !vueloDirecto.getHoraLlegada().isBefore(llegadaActual)) {
+            if (llegadaActual != null && !vueloDirecto.getFechaLlegada().isBefore(llegadaActual)) {
                 rutasMejoradas.add(ruta);
                 continue;
             }
 
             final ArrayList<VueloInstancia> nuevaSubruta = new ArrayList<>();
-            nuevaSubruta.add(convertirVueloProgramado(
+            nuevaSubruta.add(clonarVueloInstanciaConCapacidad(
                     vueloDirecto,
-                    Math.max(0, vueloDirecto.getCapacidadMaxima() - UNIDAD_MALETA)
+                    Math.max(0, vueloDirecto.getCapacidadDisponible() - UNIDAD_MALETA)
             ));
             ruta.setSubrutas(nuevaSubruta);
             ruta.calcularPlazo();
@@ -220,7 +218,7 @@ final class ACOConstructorSoluciones {
     void aplicarActualizacionLocalFeromona(
             final FeromonasACO feromonas,
             final Maleta maleta,
-            final VueloProgramado vuelo
+            final VueloInstancia vuelo
     ) {
         if (feromonas == null) {
             return;
@@ -257,7 +255,7 @@ final class ACOConstructorSoluciones {
         }
 
         while (!esMismoAeropuerto(actual, destino)) {
-            final ArrayList<VueloProgramado> candidatos = vuelosFactibles(
+            final ArrayList<VueloInstancia> candidatos = vuelosFactibles(
                     actual,
                     destino,
                     tiempoActual,
@@ -271,7 +269,7 @@ final class ACOConstructorSoluciones {
                 return crearRutaNoFactible(maleta, plan, subproblema);
             }
 
-            final VueloProgramado siguienteVuelo = modoCodicioso
+            final VueloInstancia siguienteVuelo = modoCodicioso
                     ? seleccionarCodiciosamente(candidatos, destino, tiempoActual, plazo)
                     : seleccionarProbabilisticamente(candidatos, feromonas, maleta, destino, tiempoActual, plazo);
             if (siguienteVuelo == null) {
@@ -284,10 +282,10 @@ final class ACOConstructorSoluciones {
                     capacidadRestanteAlmacen,
                     destino
             );
-            plan.add(convertirVueloProgramado(siguienteVuelo, nuevaCapacidad));
+            plan.add(clonarVueloInstanciaConCapacidad(siguienteVuelo, nuevaCapacidad));
             aplicarActualizacionLocalFeromona(feromonas, maleta, siguienteVuelo);
             actual = siguienteVuelo.getAeropuertoDestino();
-            tiempoActual = siguienteVuelo.getHoraLlegada();
+            tiempoActual = siguienteVuelo.getFechaLlegada();
             if (actual != null && actual.getIdAeropuerto() != null) {
                 visitados.add(actual.getIdAeropuerto());
             }
@@ -299,33 +297,33 @@ final class ACOConstructorSoluciones {
         return crearRutaFactible(maleta, plan, subproblema, ESTADO_PLANIFICADA);
     }
 
-    private ArrayList<VueloProgramado> vuelosFactibles(
+    private ArrayList<VueloInstancia> vuelosFactibles(
             final Aeropuerto actual,
             final Aeropuerto destinoFinal,
             final LocalDateTime tiempoActual,
-            final ArrayList<VueloProgramado> vuelos,
+            final ArrayList<VueloInstancia> vuelos,
             final Map<String, Integer> capacidadRestanteVuelo,
             final Map<String, Integer> capacidadRestanteAlmacen,
             final LocalDateTime plazo,
             final Set<String> visitados
     ) {
-        final ArrayList<VueloProgramado> candidatos = new ArrayList<>();
+        final ArrayList<VueloInstancia> candidatos = new ArrayList<>();
         if (vuelos == null || vuelos.isEmpty() || actual == null || actual.getIdAeropuerto() == null) {
             return candidatos;
         }
 
-        for (final VueloProgramado vuelo : vuelos) {
+        for (final VueloInstancia vuelo : vuelos) {
             if (!actual.getIdAeropuerto().equals(obtenerIdAeropuerto(vuelo.getAeropuertoOrigen()))) {
                 continue;
             }
-            if (vuelo.getHoraSalida().isBefore(tiempoActual)) {
+            if (vuelo.getFechaSalida().isBefore(tiempoActual)) {
                 continue;
             }
-            if (plazo != null && vuelo.getHoraLlegada().isAfter(plazo)) {
+            if (plazo != null && vuelo.getFechaLlegada().isAfter(plazo)) {
                 continue;
             }
 
-            final int capacidadVuelo = capacidadRestanteVuelo.getOrDefault(vuelo.getIdVueloProgramado(), 0);
+            final int capacidadVuelo = capacidadRestanteVuelo.getOrDefault(vuelo.getIdVueloInstancia(), 0);
             if (capacidadVuelo < UNIDAD_MALETA) {
                 continue;
             }
@@ -347,16 +345,16 @@ final class ACOConstructorSoluciones {
         return candidatos;
     }
 
-    private VueloProgramado seleccionarCodiciosamente(
-            final ArrayList<VueloProgramado> candidatos,
+    private VueloInstancia seleccionarCodiciosamente(
+            final ArrayList<VueloInstancia> candidatos,
             final Aeropuerto destinoFinal,
             final LocalDateTime tiempoActual,
             final LocalDateTime plazo
     ) {
-        VueloProgramado mejorVuelo = null;
+        VueloInstancia mejorVuelo = null;
         double mejorHeuristica = Double.NEGATIVE_INFINITY;
 
-        for (final VueloProgramado candidato : candidatos) {
+        for (final VueloInstancia candidato : candidatos) {
             final double heuristica = calcularHeuristica(candidato, destinoFinal, tiempoActual, plazo);
             if (heuristica <= mejorHeuristica) {
                 continue;
@@ -367,8 +365,8 @@ final class ACOConstructorSoluciones {
         return mejorVuelo;
     }
 
-    private VueloProgramado seleccionarProbabilisticamente(
-            final ArrayList<VueloProgramado> candidatos,
+    private VueloInstancia seleccionarProbabilisticamente(
+            final ArrayList<VueloInstancia> candidatos,
             final FeromonasACO feromonas,
             final Maleta maleta,
             final Aeropuerto destinoFinal,
@@ -378,12 +376,12 @@ final class ACOConstructorSoluciones {
         double sumaPesos = 0D;
         final Map<String, Double> pesos = new HashMap<>();
 
-        for (final VueloProgramado candidato : candidatos) {
+        for (final VueloInstancia candidato : candidatos) {
             final double feromona = obtenerFeromona(feromonas, maleta, candidato);
             final double heuristica = calcularHeuristica(candidato, destinoFinal, tiempoActual, plazo);
             final double peso = Math.pow(feromona, configuracion.getAlpha())
                     * Math.pow(heuristica, configuracion.getBeta());
-            pesos.put(candidato.getIdVueloProgramado(), peso);
+            pesos.put(candidato.getIdVueloInstancia(), peso);
             sumaPesos += peso;
         }
 
@@ -392,8 +390,8 @@ final class ACOConstructorSoluciones {
         }
 
         double umbral = random.nextDouble() * sumaPesos;
-        for (final VueloProgramado candidato : candidatos) {
-            umbral -= pesos.getOrDefault(candidato.getIdVueloProgramado(), 0D);
+        for (final VueloInstancia candidato : candidatos) {
+            umbral -= pesos.getOrDefault(candidato.getIdVueloInstancia(), 0D);
             if (umbral > 0D) {
                 continue;
             }
@@ -403,22 +401,22 @@ final class ACOConstructorSoluciones {
     }
 
     private double calcularHeuristica(
-            final VueloProgramado vuelo,
+            final VueloInstancia vuelo,
             final Aeropuerto destinoFinal,
             final LocalDateTime tiempoActual,
             final LocalDateTime plazo
     ) {
-        final long esperaMinutos = Math.max(0L, Duration.between(tiempoActual, vuelo.getHoraSalida()).toMinutes());
+        final long esperaMinutos = Math.max(0L, Duration.between(tiempoActual, vuelo.getFechaSalida()).toMinutes());
         final long duracionMinutos = Math.max(
                 1L,
-                Duration.between(vuelo.getHoraSalida(), vuelo.getHoraLlegada()).toMinutes()
+                Duration.between(vuelo.getFechaSalida(), vuelo.getFechaLlegada()).toMinutes()
         );
         final boolean vueloDirecto = esMismoAeropuerto(vuelo.getAeropuertoDestino(), destinoFinal);
         final double bonificacionDestino = vueloDirecto ? 3D : 1D;
         double holgura = 1D;
 
-        if (plazo != null && !vuelo.getHoraLlegada().isAfter(plazo)) {
-            final long minutosHolgura = Math.max(0L, Duration.between(vuelo.getHoraLlegada(), plazo).toMinutes());
+        if (plazo != null && !vuelo.getFechaLlegada().isAfter(plazo)) {
+            final long minutosHolgura = Math.max(0L, Duration.between(vuelo.getFechaLlegada(), plazo).toMinutes());
             holgura += Math.min(1440D, minutosHolgura) / 1440D;
         }
 
@@ -426,12 +424,12 @@ final class ACOConstructorSoluciones {
     }
 
     private int actualizarEstadoTemporal(
-            final VueloProgramado vuelo,
+            final VueloInstancia vuelo,
             final Map<String, Integer> capacidadRestanteVuelo,
             final Map<String, Integer> capacidadRestanteAlmacen,
             final Aeropuerto destinoFinal
     ) {
-        final String idVuelo = vuelo.getIdVueloProgramado();
+        final String idVuelo = vuelo.getIdVueloInstancia();
         final int capacidadActualVuelo = capacidadRestanteVuelo.getOrDefault(idVuelo, 0);
         final int nuevaCapacidadVuelo = Math.max(0, capacidadActualVuelo - UNIDAD_MALETA);
         capacidadRestanteVuelo.put(idVuelo, nuevaCapacidadVuelo);
@@ -446,7 +444,7 @@ final class ACOConstructorSoluciones {
         return nuevaCapacidadVuelo;
     }
 
-    private VueloProgramado buscarMejorVueloDirecto(final Maleta maleta, final SubproblemaACO subproblema) {
+    private VueloInstancia buscarMejorVueloDirecto(final Maleta maleta, final SubproblemaACO subproblema) {
         if (maleta == null || maleta.getPedido() == null) {
             return null;
         }
@@ -460,21 +458,21 @@ final class ACOConstructorSoluciones {
 
         final LocalDateTime tiempoDisponible = obtenerTiempoDisponible(maleta, subproblema.getInicioIntervalo());
         final LocalDateTime plazo = subproblema.getPlazoPorMaleta().get(maleta.getIdMaleta());
-        VueloProgramado mejorVuelo = null;
+        VueloInstancia mejorVuelo = null;
 
-        for (final VueloProgramado vuelo : subproblema.getVuelosDisponibles()) {
+        for (final VueloInstancia vuelo : subproblema.getVuelosDisponibles()) {
             final boolean esDirecto = esMismoAeropuerto(vuelo.getAeropuertoOrigen(), origen)
                     && esMismoAeropuerto(vuelo.getAeropuertoDestino(), destino);
             if (!esDirecto) {
                 continue;
             }
-            if (vuelo.getHoraSalida().isBefore(tiempoDisponible)) {
+            if (vuelo.getFechaSalida().isBefore(tiempoDisponible)) {
                 continue;
             }
-            if (plazo != null && vuelo.getHoraLlegada().isAfter(plazo)) {
+            if (plazo != null && vuelo.getFechaLlegada().isAfter(plazo)) {
                 continue;
             }
-            if (mejorVuelo != null && !vuelo.getHoraLlegada().isBefore(mejorVuelo.getHoraLlegada())) {
+            if (mejorVuelo != null && !vuelo.getFechaLlegada().isBefore(mejorVuelo.getFechaLlegada())) {
                 continue;
             }
             mejorVuelo = vuelo;
@@ -521,17 +519,19 @@ final class ACOConstructorSoluciones {
         return Duration.between(tiempoDisponible, plazo).toMinutes() / (24D * 60D);
     }
 
-    private VueloInstancia convertirVueloProgramado(final VueloProgramado vuelo, final int capacidadDisponible) {
+    private VueloInstancia clonarVueloInstanciaConCapacidad(final VueloInstancia vuelo, final int capacidadDisponible) {
         return new VueloInstancia(
-                vuelo.getIdVueloProgramado(),
+                vuelo.getIdVueloInstancia(),
                 vuelo.getCodigo(),
-                vuelo.getHoraSalida(),
-                vuelo.getHoraLlegada(),
+                vuelo.getVueloProgramado(),
+                vuelo.getFechaOperacion(),
+                vuelo.getFechaSalida(),
+                vuelo.getFechaLlegada(),
                 vuelo.getCapacidadMaxima(),
                 capacidadDisponible,
                 vuelo.getAeropuertoOrigen(),
                 vuelo.getAeropuertoDestino(),
-                EstadoVuelo.PROGRAMADO
+                vuelo.getEstado()
         );
     }
 
@@ -543,7 +543,7 @@ final class ACOConstructorSoluciones {
         return maximoTiempo(base, inicioIntervalo);
     }
 
-    private double obtenerFeromona(final FeromonasACO feromonas, final Maleta maleta, final VueloProgramado vuelo) {
+    private double obtenerFeromona(final FeromonasACO feromonas, final Maleta maleta, final VueloInstancia vuelo) {
         if (feromonas == null) {
             return configuracion.getTau0();
         }
@@ -563,6 +563,8 @@ final class ACOConstructorSoluciones {
         return new VueloInstancia(
                 vueloInstancia.getIdVueloInstancia(),
                 vueloInstancia.getCodigo(),
+                vueloInstancia.getVueloProgramado(),
+                vueloInstancia.getFechaOperacion(),
                 vueloInstancia.getFechaSalida(),
                 vueloInstancia.getFechaLlegada(),
                 vueloInstancia.getCapacidadMaxima(),
@@ -596,3 +598,4 @@ final class ACOConstructorSoluciones {
         return primero.isAfter(segundo) ? primero : segundo;
     }
 }
+
