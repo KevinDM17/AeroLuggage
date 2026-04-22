@@ -7,18 +7,25 @@ public class Aeropuerto {
     private int maletasActuales;
     private float longitud;
     private float latitud;
+    private int husoHorario;
 
     public Aeropuerto() {
     }
 
     public Aeropuerto(final String idAeropuerto, final Ciudad ciudad, final int capacidadAlmacen,
                      final int maletasActuales, final float longitud, final float latitud) {
+        this(idAeropuerto, ciudad, capacidadAlmacen, maletasActuales, longitud, latitud, 0);
+    }
+
+    public Aeropuerto(final String idAeropuerto, final Ciudad ciudad, final int capacidadAlmacen,
+                      final int maletasActuales, final float longitud, final float latitud, final int husoHorario) {
         this.idAeropuerto = idAeropuerto;
         this.ciudad = ciudad;
         this.capacidadAlmacen = capacidadAlmacen;
         this.maletasActuales = maletasActuales;
         this.longitud = longitud;
         this.latitud = latitud;
+        this.husoHorario = husoHorario;
     }
 
     public String getIdAeropuerto() {
@@ -67,5 +74,13 @@ public class Aeropuerto {
 
     public void setLatitud(final float latitud) {
         this.latitud = latitud;
+    }
+
+    public int getHusoHorario() {
+        return husoHorario;
+    }
+
+    public void setHusoHorario(final int husoHorario) {
+        this.husoHorario = husoHorario;
     }
 }

@@ -22,20 +22,6 @@ final class ACOPreparadorContexto {
         this.configuracion = configuracion;
     }
 
-    Map<String, Double> inicializarFeromonas(final ArrayList<VueloProgramado> vuelos) {
-        final Map<String, Double> feromonasIniciales = new HashMap<>();
-        if (vuelos == null || vuelos.isEmpty()) {
-            return feromonasIniciales;
-        }
-        for (final VueloProgramado vuelo : vuelos) {
-            if (vuelo == null || vuelo.getIdVueloProgramado() == null) {
-                continue;
-            }
-            feromonasIniciales.put(vuelo.getIdVueloProgramado(), configuracion.getTau0());
-        }
-        return feromonasIniciales;
-    }
-
     boolean noTerminaHorizonteOperacion(final int intervaloActual) {
         return intervaloActual < Math.max(1, configuracion.getNts());
     }

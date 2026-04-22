@@ -111,29 +111,21 @@ final class ACOEvaluador {
     }
 
     void aplicarActualizacionGlobalFeromona(
-            final Map<String, Double> feromonas,
+            final FeromonasACO feromonas,
             final Solucion mejorSolucionIntervalo,
             final EvaluacionACO mejorEvaluacionIntervalo
     ) {
-        if (feromonas.isEmpty()) {
-            return;
+        if (feromonas != null && !feromonas.isEmpty()) {
+            feromonas.evaporarGlobal();
         }
-
-        for (final Map.Entry<String, Double> entry : feromonas.entrySet()) {
-            final double valorEvaporado = (1D - configuracion.getRho()) * entry.getValue();
-            entry.setValue(limitarFeromona(valorEvaporado));
-        }
-
-        if (mejorSolucionIntervalo == null || mejorEvaluacionIntervalo == null) {
+        if (feromonas == null || mejorSolucionIntervalo == null || mejorEvaluacionIntervalo == null) {
             return;
         }
 
         final double delta = 1D / Math.max(COSTO_MINIMO, mejorEvaluacionIntervalo.getCosto());
         for (final Ruta ruta : mejorSolucionIntervalo.getSubrutas()) {
             for (final VueloInstancia subruta : ruta.getSubrutas()) {
-                final String idVuelo = subruta.getIdVueloInstancia();
-                final double valorActual = feromonas.getOrDefault(idVuelo, configuracion.getTau0());
-                feromonas.put(idVuelo, limitarFeromona(valorActual + delta));
+                feromonas.reforzar(ruta.getIdMaleta(), subruta, delta);
             }
         }
     }
@@ -159,17 +151,15 @@ final class ACOEvaluador {
         reporte.setMejorCosto(evaluacion.getCosto());
     }
 
-    Map<String, Double> conservarYAdaptarFeromonas(
-            final Map<String, Double> feromonas,
+    FeromonasACO conservarYAdaptarFeromonas(
+            final FeromonasACO feromonas,
             final Solucion mejorSolucionIntervalo,
             final EvaluacionACO mejorEvaluacionIntervalo,
             final ArrayList<String> eventos
     ) {
-        final Map<String, Double> feromonasAdaptadas = new HashMap<>();
-        for (final Map.Entry<String, Double> entry : feromonas.entrySet()) {
-            final double valorAdaptado = entry.getValue() * (1D - configuracion.getGamma());
-            feromonasAdaptadas.put(entry.getKey(), limitarFeromona(valorAdaptado));
-        }
+        final FeromonasACO feromonasAdaptadas = feromonas == null
+                ? new FeromonasACO(configuracion)
+                : feromonas.copiarConAdaptacion(1D - configuracion.getGamma());
 
         if (mejorSolucionIntervalo == null || mejorEvaluacionIntervalo == null) {
             return feromonasAdaptadas;
@@ -180,9 +170,7 @@ final class ACOEvaluador {
                 / Math.max(COSTO_MINIMO, mejorEvaluacionIntervalo.getCosto());
         for (final Ruta ruta : mejorSolucionIntervalo.getSubrutas()) {
             for (final VueloInstancia subruta : ruta.getSubrutas()) {
-                final String idVuelo = subruta.getIdVueloInstancia();
-                final double valorActual = feromonasAdaptadas.getOrDefault(idVuelo, configuracion.getTau0());
-                feromonasAdaptadas.put(idVuelo, limitarFeromona(valorActual + delta));
+                feromonasAdaptadas.reforzar(ruta.getIdMaleta(), subruta, delta);
             }
         }
         return feromonasAdaptadas;

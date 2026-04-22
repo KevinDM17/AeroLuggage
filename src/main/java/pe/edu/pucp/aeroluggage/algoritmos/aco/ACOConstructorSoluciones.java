@@ -35,7 +35,7 @@ final class ACOConstructorSoluciones {
 
     ArrayList<Solucion> generarPoblacionInicial(
             final SubproblemaACO subproblema,
-            final Map<String, Double> feromonas
+            final FeromonasACO feromonas
     ) {
         final ArrayList<Solucion> poblacionInicial = new ArrayList<>();
         final Map<String, Integer> capacidadRestanteVuelo = new HashMap<>(subproblema.getCapacidadRestanteVueloBase());
@@ -61,7 +61,7 @@ final class ACOConstructorSoluciones {
 
     Solucion construirSolucionHormiga(
             final SubproblemaACO subproblema,
-            final Map<String, Double> feromonas
+            final FeromonasACO feromonas
     ) {
         final Map<String, Integer> capacidadRestanteVuelo = new HashMap<>(subproblema.getCapacidadRestanteVueloBase());
         final Map<String, Integer> capacidadRestanteAlmacen = new HashMap<>(
@@ -218,22 +218,20 @@ final class ACOConstructorSoluciones {
     }
 
     void aplicarActualizacionLocalFeromona(
-            final Map<String, Double> feromonas,
+            final FeromonasACO feromonas,
+            final Maleta maleta,
             final VueloProgramado vuelo
     ) {
-        if (vuelo == null || vuelo.getIdVueloProgramado() == null) {
+        if (feromonas == null) {
             return;
         }
-        final double valorActual = obtenerFeromona(feromonas, vuelo);
-        final double nuevoValor = (1D - configuracion.getRho()) * valorActual
-                + configuracion.getRho() * configuracion.getTau0();
-        feromonas.put(vuelo.getIdVueloProgramado(), limitarFeromona(nuevoValor));
+        feromonas.actualizarLocal(maleta, vuelo);
     }
 
     private Ruta construirRutaParaMaleta(
             final Maleta maleta,
             final SubproblemaACO subproblema,
-            final Map<String, Double> feromonas,
+            final FeromonasACO feromonas,
             final Map<String, Integer> capacidadRestanteVuelo,
             final Map<String, Integer> capacidadRestanteAlmacen,
             final boolean modoCodicioso
@@ -258,11 +256,7 @@ final class ACOConstructorSoluciones {
             visitados.add(actual.getIdAeropuerto());
         }
 
-        for (int salto = 0; salto < configuracion.getLimiteSaltos(); salto++) {
-            if (esMismoAeropuerto(actual, destino)) {
-                break;
-            }
-
+        while (!esMismoAeropuerto(actual, destino)) {
             final ArrayList<VueloProgramado> candidatos = vuelosFactibles(
                     actual,
                     destino,
@@ -279,7 +273,7 @@ final class ACOConstructorSoluciones {
 
             final VueloProgramado siguienteVuelo = modoCodicioso
                     ? seleccionarCodiciosamente(candidatos, destino, tiempoActual, plazo)
-                    : seleccionarProbabilisticamente(candidatos, feromonas, destino, tiempoActual, plazo);
+                    : seleccionarProbabilisticamente(candidatos, feromonas, maleta, destino, tiempoActual, plazo);
             if (siguienteVuelo == null) {
                 return crearRutaNoFactible(maleta, plan, subproblema);
             }
@@ -291,7 +285,7 @@ final class ACOConstructorSoluciones {
                     destino
             );
             plan.add(convertirVueloProgramado(siguienteVuelo, nuevaCapacidad));
-            aplicarActualizacionLocalFeromona(feromonas, siguienteVuelo);
+            aplicarActualizacionLocalFeromona(feromonas, maleta, siguienteVuelo);
             actual = siguienteVuelo.getAeropuertoDestino();
             tiempoActual = siguienteVuelo.getHoraLlegada();
             if (actual != null && actual.getIdAeropuerto() != null) {
@@ -375,7 +369,8 @@ final class ACOConstructorSoluciones {
 
     private VueloProgramado seleccionarProbabilisticamente(
             final ArrayList<VueloProgramado> candidatos,
-            final Map<String, Double> feromonas,
+            final FeromonasACO feromonas,
+            final Maleta maleta,
             final Aeropuerto destinoFinal,
             final LocalDateTime tiempoActual,
             final LocalDateTime plazo
@@ -384,7 +379,7 @@ final class ACOConstructorSoluciones {
         final Map<String, Double> pesos = new HashMap<>();
 
         for (final VueloProgramado candidato : candidatos) {
-            final double feromona = obtenerFeromona(feromonas, candidato);
+            final double feromona = obtenerFeromona(feromonas, maleta, candidato);
             final double heuristica = calcularHeuristica(candidato, destinoFinal, tiempoActual, plazo);
             final double peso = Math.pow(feromona, configuracion.getAlpha())
                     * Math.pow(heuristica, configuracion.getBeta());
@@ -548,8 +543,11 @@ final class ACOConstructorSoluciones {
         return maximoTiempo(base, inicioIntervalo);
     }
 
-    private double obtenerFeromona(final Map<String, Double> feromonas, final VueloProgramado vuelo) {
-        return feromonas.getOrDefault(vuelo.getIdVueloProgramado(), configuracion.getTau0());
+    private double obtenerFeromona(final FeromonasACO feromonas, final Maleta maleta, final VueloProgramado vuelo) {
+        if (feromonas == null) {
+            return configuracion.getTau0();
+        }
+        return feromonas.obtener(maleta, vuelo);
     }
 
     private double limitarFeromona(final double valor) {

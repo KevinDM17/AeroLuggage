@@ -17,7 +17,6 @@ public class ACOConfiguracion {
     private static final double PENALIZACION_SOBRECARGA_ALMACEN_POR_DEFECTO = 120D;
     private static final double PENALIZACION_REPLANIFICACION_POR_DEFECTO = 25D;
     private static final int HORAS_POR_INTERVALO_POR_DEFECTO = 24;
-    private static final int LIMITE_SALTOS_POR_DEFECTO = 4;
     private static final long SEMILLA_POR_DEFECTO = 42L;
 
     private int nts;
@@ -36,7 +35,6 @@ public class ACOConfiguracion {
     private double penalizacionSobrecargaAlmacen;
     private double penalizacionReplanificacion;
     private int horasPorIntervalo;
-    private int limiteSaltos;
     private long semilla;
 
     public ACOConfiguracion() {
@@ -56,7 +54,6 @@ public class ACOConfiguracion {
         penalizacionSobrecargaAlmacen = PENALIZACION_SOBRECARGA_ALMACEN_POR_DEFECTO;
         penalizacionReplanificacion = PENALIZACION_REPLANIFICACION_POR_DEFECTO;
         horasPorIntervalo = HORAS_POR_INTERVALO_POR_DEFECTO;
-        limiteSaltos = LIMITE_SALTOS_POR_DEFECTO;
         semilla = SEMILLA_POR_DEFECTO;
     }
 
@@ -186,14 +183,6 @@ public class ACOConfiguracion {
 
     public void setHorasPorIntervalo(final int horasPorIntervalo) {
         this.horasPorIntervalo = horasPorIntervalo;
-    }
-
-    public int getLimiteSaltos() {
-        return limiteSaltos;
-    }
-
-    public void setLimiteSaltos(final int limiteSaltos) {
-        this.limiteSaltos = limiteSaltos;
     }
 
     public long getSemilla() {

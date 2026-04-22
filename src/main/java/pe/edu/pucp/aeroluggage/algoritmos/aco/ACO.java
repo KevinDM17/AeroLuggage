@@ -2,9 +2,7 @@ package pe.edu.pucp.aeroluggage.algoritmos.aco;
 
 import java.time.LocalDateTime;
 import java.util.ArrayList;
-import java.util.HashMap;
 import java.util.HashSet;
-import java.util.Map;
 import java.util.Set;
 
 import pe.edu.pucp.aeroluggage.algoritmos.InstanciaProblema;
@@ -22,7 +20,7 @@ public class ACO extends Metaheuristico {
     private Solucion ultimaSolucion;
     private ACOReporte ultimoReporte;
     private double ultimoCosto;
-    private Map<String, Double> feromonas;
+    private FeromonasACO feromonas;
 
     public ACO() {
         this(new ACOConfiguracion());
@@ -36,7 +34,7 @@ public class ACO extends Metaheuristico {
         this.ultimaSolucion = new Solucion();
         this.ultimoReporte = new ACOReporte();
         this.ultimoCosto = Double.POSITIVE_INFINITY;
-        this.feromonas = new HashMap<>();
+        this.feromonas = new FeromonasACO(this.configuracion);
     }
 
     @Override
@@ -45,9 +43,7 @@ public class ACO extends Metaheuristico {
         ultimaSolucion = new Solucion();
         ultimoReporte = new ACOReporte();
         ultimoCosto = Double.POSITIVE_INFINITY;
-        feromonas = preparadorContexto.inicializarFeromonas(
-                instancia == null ? new ArrayList<>() : instancia.getVuelos()
-        );
+        feromonas = new FeromonasACO(configuracion);
         if (instancia == null || instancia.getMaletas().isEmpty()) {
             return;
         }
