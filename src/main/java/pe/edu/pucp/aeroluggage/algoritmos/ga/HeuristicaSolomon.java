@@ -14,6 +14,7 @@ import pe.edu.pucp.aeroluggage.algoritmos.InstanciaProblema;
 import pe.edu.pucp.aeroluggage.algoritmos.Solucion;
 import pe.edu.pucp.aeroluggage.algoritmos.common.DijkstraRuteador;
 import pe.edu.pucp.aeroluggage.algoritmos.common.GrafoTiempoExpandido;
+import pe.edu.pucp.aeroluggage.dominio.entidades.Aeropuerto;
 import pe.edu.pucp.aeroluggage.dominio.entidades.Maleta;
 import pe.edu.pucp.aeroluggage.dominio.entidades.Pedido;
 import pe.edu.pucp.aeroluggage.dominio.entidades.Ruta;
@@ -51,6 +52,8 @@ public final class HeuristicaSolomon {
         pendientes.sort(Comparator.comparing(HeuristicaSolomon::clavePorUrgencia));
 
         final Map<String, Integer> consumoVuelo = new HashMap<>();
+        final Map<String, Integer> consumoAeropuerto = new HashMap<>();
+        final Map<String, Aeropuerto> aeropuertos = instancia.indexarAeropuertosPorIcao();
         final ArrayList<Ruta> rutas = new ArrayList<>(pendientes.size());
         int secuenciaRuta = 1;
 
@@ -64,7 +67,8 @@ public final class HeuristicaSolomon {
             final Set<String> bloqueados = new HashSet<>();
 
             final List<VueloInstancia> camino = rutearConCapacidad(
-                    pedido, tListo, tLimite, grafo, params, bloqueados, consumoVuelo);
+                    pedido, tListo, tLimite, grafo, params, bloqueados, consumoVuelo,
+                    consumoAeropuerto, aeropuertos);
 
             final Ruta ruta = new Ruta();
             ruta.setIdRuta(String.format("R%08d", secuenciaRuta++));
@@ -81,6 +85,12 @@ public final class HeuristicaSolomon {
                 ruta.setDuracion(duracionHoras(camino));
                 for (final VueloInstancia v : camino) {
                     consumoVuelo.merge(v.getIdVueloInstancia(), 1, Integer::sum);
+                    if (v.getAeropuertoOrigen() != null && v.getAeropuertoOrigen().getIdAeropuerto() != null) {
+                        consumoAeropuerto.merge(v.getAeropuertoOrigen().getIdAeropuerto(), 1, Integer::sum);
+                    }
+                    if (v.getAeropuertoDestino() != null && v.getAeropuertoDestino().getIdAeropuerto() != null) {
+                        consumoAeropuerto.merge(v.getAeropuertoDestino().getIdAeropuerto(), 1, Integer::sum);
+                    }
                 }
             }
             rutas.add(ruta);
@@ -96,7 +106,9 @@ public final class HeuristicaSolomon {
                                                            final GrafoTiempoExpandido grafo,
                                                            final ParametrosGA params,
                                                            final Set<String> bloqueados,
-                                                           final Map<String, Integer> consumo) {
+                                                           final Map<String, Integer> consumo,
+                                                           final Map<String, Integer> consumoAeropuerto,
+                                                           final Map<String, Aeropuerto> aeropuertos) {
         for (int intento = 0; intento < 4; intento++) {
             final List<VueloInstancia> camino = DijkstraRuteador.rutear(
                     pedido.getAeropuertoOrigen(), pedido.getAeropuertoDestino(),
@@ -113,13 +125,42 @@ public final class HeuristicaSolomon {
                 }
             }
             if (vueloSaturado == null) {
-                return camino;
+                final String idAeropuertoSaturado = aeropuertoSaturado(camino, consumoAeropuerto, aeropuertos);
+                if (idAeropuertoSaturado == null) {
+                    return camino;
+                }
+                bloqueados.add(idAeropuertoSaturado);
+                continue;
             }
             bloqueados.add(vueloSaturado);
         }
         return DijkstraRuteador.rutear(
                 pedido.getAeropuertoOrigen(), pedido.getAeropuertoDestino(),
                 tListo, tLimite, grafo, params.getMinutosConexion(), bloqueados);
+    }
+
+    private static String aeropuertoSaturado(final List<VueloInstancia> camino,
+                                              final Map<String, Integer> consumoAeropuerto,
+                                              final Map<String, Aeropuerto> aeropuertos) {
+        for (final VueloInstancia v : camino) {
+            final String idOrigen = v.getAeropuertoOrigen() != null
+                    ? v.getAeropuertoOrigen().getIdAeropuerto() : null;
+            final String idDestino = v.getAeropuertoDestino() != null
+                    ? v.getAeropuertoDestino().getIdAeropuerto() : null;
+            for (final String id : new String[]{idOrigen, idDestino}) {
+                if (id == null) {
+                    continue;
+                }
+                final Aeropuerto ap = aeropuertos.get(id);
+                if (ap == null || ap.getCapacidadAlmacen() <= 0) {
+                    continue;
+                }
+                if (consumoAeropuerto.getOrDefault(id, 0) >= ap.getCapacidadAlmacen()) {
+                    return id;
+                }
+            }
+        }
+        return null;
     }
 
     private static int seleccionarIndice(final List<Maleta> pendientes, final double nivelAleatoriedad,

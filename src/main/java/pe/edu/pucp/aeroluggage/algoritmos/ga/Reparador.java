@@ -37,6 +37,7 @@ public final class Reparador {
         eliminarRutasDuplicadas(solucion);
         eliminarRutasInvalidas(solucion, instancia);
         repararCapacidad(solucion, instancia, params, random);
+        repararCapacidadAlmacenes(solucion, instancia, params, random);
         insertarMaletasFaltantes(solucion, instancia, params, random);
         recalcularCamposRuta(solucion);
         solucion.calcularMetricas();
@@ -305,6 +306,109 @@ public final class Reparador {
             return 0.0;
         }
         return Duration.between(inicio, fin).toMinutes() / 60.0;
+    }
+
+    public static void repararCapacidadAlmacenes(final Solucion solucion, final InstanciaProblema instancia,
+                                             final ParametrosGA params, final Random random) {
+        if (solucion == null || solucion.getSolucion() == null || instancia.getGrafo() == null) {
+            return;
+        }
+        final Map<String, Integer> cargaPorAeropuerto = new HashMap<>();
+        final Map<String, Aeropuerto> indiceAeropuertos = new HashMap<>();
+        final Map<String, Aeropuerto> aeropuertos = instancia.indexarAeropuertosPorIcao();
+
+        for (final Ruta ruta : solucion.getSolucion()) {
+            if (ruta == null || ruta.getSubrutas() == null) {
+                continue;
+            }
+            for (final VueloInstancia v : ruta.getSubrutas()) {
+                if (v == null) {
+                    continue;
+                }
+                if (v.getAeropuertoOrigen() != null && v.getAeropuertoOrigen().getIdAeropuerto() != null) {
+                    cargaPorAeropuerto.merge(v.getAeropuertoOrigen().getIdAeropuerto(), 1, Integer::sum);
+                }
+                if (v.getAeropuertoDestino() != null && v.getAeropuertoDestino().getIdAeropuerto() != null) {
+                    cargaPorAeropuerto.merge(v.getAeropuertoDestino().getIdAeropuerto(), 1, Integer::sum);
+                }
+            }
+        }
+
+        final Map<String, List<Ruta>> rutasPorAeropuerto = new HashMap<>();
+        for (final Ruta ruta : solucion.getSolucion()) {
+            if (ruta == null || ruta.getSubrutas() == null) {
+                continue;
+            }
+            for (final VueloInstancia v : ruta.getSubrutas()) {
+                if (v == null) {
+                    continue;
+                }
+                final String idOrigen = v.getAeropuertoOrigen() != null
+                        ? v.getAeropuertoOrigen().getIdAeropuerto() : null;
+                final String idDestino = v.getAeropuertoDestino() != null
+                        ? v.getAeropuertoDestino().getIdAeropuerto() : null;
+                if (idOrigen != null) {
+                    rutasPorAeropuerto.computeIfAbsent(idOrigen, k -> new ArrayList<>()).add(ruta);
+                }
+                if (idDestino != null && !idDestino.equals(idOrigen)) {
+                    rutasPorAeropuerto.computeIfAbsent(idDestino, k -> new ArrayList<>()).add(ruta);
+                }
+            }
+        }
+
+        final Map<String, Maleta> maletas = indexarMaletas(instancia);
+        for (final Map.Entry<String, Integer> entry : cargaPorAeropuerto.entrySet()) {
+            final String idAeropuerto = entry.getKey();
+            final Aeropuerto aeropuerto = aeropuertos.get(idAeropuerto);
+            if (aeropuerto == null) {
+                continue;
+            }
+            final int capacidad = aeropuerto.getCapacidadAlmacen();
+            if (capacidad <= 0) {
+                continue;
+            }
+            final int carga = entry.getValue();
+            final int exceso = carga - capacidad;
+            if (exceso <= 0) {
+                continue;
+            }
+            final List<Ruta> rutasEnAeropuerto = rutasPorAeropuerto.get(idAeropuerto);
+            if (rutasEnAeropuerto == null || rutasEnAeropuerto.isEmpty()) {
+                continue;
+            }
+            rutasEnAeropuerto.sort(Comparator.comparingDouble(Reparador::holguraNegativa));
+            for (int i = 0; i < exceso && !rutasEnAeropuerto.isEmpty(); i++) {
+                final Ruta victima = rutasEnAeropuerto.get(rutasEnAeropuerto.size() - 1 - i);
+                rerutearBloqueandoAeropuerto(victima, maletas.get(victima.getIdMaleta()),
+                        idAeropuerto, instancia.getGrafo(), params);
+            }
+        }
+    }
+
+    private static void rerutearBloqueandoAeropuerto(final Ruta ruta, final Maleta maleta, final String idAeropuertoBloqueado,
+                                                final GrafoTiempoExpandido grafo, final ParametrosGA params) {
+        if (maleta == null || maleta.getPedido() == null) {
+            ruta.setSubrutas(new ArrayList<>());
+            ruta.setEstado(EstadoRuta.FALLIDA);
+            ruta.setDuracion(0.0);
+            return;
+        }
+        final Pedido pedido = maleta.getPedido();
+        final Set<String> bloqueados = new HashSet<>();
+        bloqueados.add(idAeropuertoBloqueado);
+        final List<VueloInstancia> nuevo = DijkstraRuteador.rutear(
+                pedido.getAeropuertoOrigen(), pedido.getAeropuertoDestino(),
+                pedido.getFechaRegistro(), pedido.getFechaHoraPlazo(),
+                grafo, params.getMinutosConexion(), bloqueados);
+        if (nuevo == null) {
+            ruta.setSubrutas(new ArrayList<>());
+            ruta.setEstado(EstadoRuta.FALLIDA);
+            ruta.setDuracion(0.0);
+            return;
+        }
+        ruta.setSubrutas(new ArrayList<>(nuevo));
+        ruta.setEstado(nuevo.isEmpty() ? EstadoRuta.FALLIDA : EstadoRuta.PLANIFICADA);
+        ruta.setDuracion(duracionHoras(nuevo));
     }
 
     private static Map<String, Maleta> indexarMaletas(final InstanciaProblema instancia) {

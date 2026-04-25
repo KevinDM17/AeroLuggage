@@ -16,6 +16,8 @@ public class Solucion {
     private int maletasEntregadasATiempo;
     private int maletasIncumplidas;
     private double ocupacionPromedioVuelos;
+    private double ocupacionPromedioAlmacenes;
+    private int overflowAlmacenes;
     private Semaforo semaforo;
 
     public Solucion() {
@@ -111,6 +113,8 @@ public class Solucion {
         clon.maletasEntregadasATiempo = maletasEntregadasATiempo;
         clon.maletasIncumplidas = maletasIncumplidas;
         clon.ocupacionPromedioVuelos = ocupacionPromedioVuelos;
+        clon.ocupacionPromedioAlmacenes = ocupacionPromedioAlmacenes;
+        clon.overflowAlmacenes = overflowAlmacenes;
         clon.semaforo = semaforo;
         return clon;
     }
@@ -169,6 +173,22 @@ public class Solucion {
 
     public void setOcupacionPromedioVuelos(final double ocupacionPromedioVuelos) {
         this.ocupacionPromedioVuelos = ocupacionPromedioVuelos;
+    }
+
+    public double getOcupacionPromedioAlmacenes() {
+        return ocupacionPromedioAlmacenes;
+    }
+
+    public void setOcupacionPromedioAlmacenes(final double ocupacionPromedioAlmacenes) {
+        this.ocupacionPromedioAlmacenes = ocupacionPromedioAlmacenes;
+    }
+
+    public int getOverflowAlmacenes() {
+        return overflowAlmacenes;
+    }
+
+    public void setOverflowAlmacenes(final int overflowAlmacenes) {
+        this.overflowAlmacenes = overflowAlmacenes;
     }
 
     public Semaforo getSemaforo() {

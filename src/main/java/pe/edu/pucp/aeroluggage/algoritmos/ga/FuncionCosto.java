@@ -71,6 +71,7 @@ public final class FuncionCosto {
         }
 
         final double overflowVuelos = calcularOverflowVuelos(cargaPorVuelo, instancia);
+        final double overflowAlmacenes = calcularOverflowAlmacenes(solucion, instancia);
         final double transitoPromedio = rutasContadas > 0 ? sumaTransito / rutasContadas : 0.0;
         final double ocupacionPromedio = calcularOcupacionPromedio(cargaPorVuelo, instancia);
 
@@ -78,13 +79,16 @@ public final class FuncionCosto {
                 costoRutas
                 + params.getW1MaletasIncumplidas() * incumplidas
                 + params.getW3OverflowVuelo() * overflowVuelos
+                + params.getW4OverflowAlmacen() * overflowAlmacenes
                 + params.getW5TransitoPromedio() * transitoPromedio;
 
         solucion.setCostoTotal(costoTotal);
         solucion.setMaletasEntregadasATiempo(aTiempo);
         solucion.setMaletasIncumplidas(incumplidas);
         solucion.setOcupacionPromedioVuelos(ocupacionPromedio);
-        solucion.setFactible(incumplidas == 0 && overflowVuelos == 0.0);
+        solucion.setOcupacionPromedioAlmacenes(calcularOcupacionPromedioAlmacenes(solucion, instancia));
+        solucion.setOverflowAlmacenes((int) overflowAlmacenes);
+        solucion.setFactible(incumplidas == 0 && overflowVuelos == 0.0 && overflowAlmacenes == 0.0);
         solucion.setSemaforo(CalculadorSemaforo.clasificarGlobal(solucion, instancia, params));
         return costoTotal;
     }
@@ -259,6 +263,93 @@ public final class FuncionCosto {
             }
         }
         return indice;
+    }
+
+    private static double calcularOverflowAlmacenes(final Solucion solucion, final InstanciaProblema instancia) {
+        if (solucion == null || solucion.getSolucion() == null || solucion.getSolucion().isEmpty()
+                || instancia == null || instancia.getAeropuertos() == null) {
+            return 0.0;
+        }
+        final Map<String, Integer> cargaPorAeropuerto = new HashMap<>();
+        final Map<String, Aeropuerto> aeropuertos = instancia.indexarAeropuertosPorIcao();
+
+        for (final Ruta ruta : solucion.getSolucion()) {
+            if (ruta == null || ruta.getSubrutas() == null || ruta.getSubrutas().isEmpty()) {
+                continue;
+            }
+            final List<VueloInstancia> subrutas = ruta.getSubrutas();
+            for (final VueloInstancia vuelo : subrutas) {
+                if (vuelo == null) {
+                    continue;
+                }
+                if (vuelo.getAeropuertoOrigen() != null && vuelo.getAeropuertoOrigen().getIdAeropuerto() != null) {
+                    cargaPorAeropuerto.merge(vuelo.getAeropuertoOrigen().getIdAeropuerto(), 1, Integer::sum);
+                }
+                if (vuelo.getAeropuertoDestino() != null && vuelo.getAeropuertoDestino().getIdAeropuerto() != null) {
+                    cargaPorAeropuerto.merge(vuelo.getAeropuertoDestino().getIdAeropuerto(), 1, Integer::sum);
+                }
+            }
+        }
+
+        double overflow = 0.0;
+        for (final Map.Entry<String, Integer> entry : cargaPorAeropuerto.entrySet()) {
+            final Aeropuerto aeropuerto = aeropuertos.get(entry.getKey());
+            if (aeropuerto == null) {
+                continue;
+            }
+            final int capacidad = aeropuerto.getCapacidadAlmacen();
+            if (capacidad <= 0) {
+                continue;
+            }
+            final int carga = entry.getValue();
+            if (carga > capacidad) {
+                overflow += carga - capacidad;
+            }
+        }
+        return overflow;
+    }
+
+    private static double calcularOcupacionPromedioAlmacenes(final Solucion solucion, final InstanciaProblema instancia) {
+        if (solucion == null || solucion.getSolucion() == null || solucion.getSolucion().isEmpty()
+                || instancia == null || instancia.getAeropuertos() == null) {
+            return 0.0;
+        }
+        final Map<String, Integer> cargaPorAeropuerto = new HashMap<>();
+        final Map<String, Aeropuerto> aeropuertos = instancia.indexarAeropuertosPorIcao();
+
+        for (final Ruta ruta : solucion.getSolucion()) {
+            if (ruta == null || ruta.getSubrutas() == null || ruta.getSubrutas().isEmpty()) {
+                continue;
+            }
+            final List<VueloInstancia> subrutas = ruta.getSubrutas();
+            for (final VueloInstancia vuelo : subrutas) {
+                if (vuelo == null) {
+                    continue;
+                }
+                if (vuelo.getAeropuertoOrigen() != null && vuelo.getAeropuertoOrigen().getIdAeropuerto() != null) {
+                    cargaPorAeropuerto.merge(vuelo.getAeropuertoOrigen().getIdAeropuerto(), 1, Integer::sum);
+                }
+                if (vuelo.getAeropuertoDestino() != null && vuelo.getAeropuertoDestino().getIdAeropuerto() != null) {
+                    cargaPorAeropuerto.merge(vuelo.getAeropuertoDestino().getIdAeropuerto(), 1, Integer::sum);
+                }
+            }
+        }
+
+        double suma = 0.0;
+        int cuenta = 0;
+        for (final Map.Entry<String, Integer> entry : cargaPorAeropuerto.entrySet()) {
+            final Aeropuerto aeropuerto = aeropuertos.get(entry.getKey());
+            if (aeropuerto == null) {
+                continue;
+            }
+            final int capacidad = aeropuerto.getCapacidadAlmacen();
+            if (capacidad <= 0) {
+                continue;
+            }
+            suma += Math.min(1.0, entry.getValue() / (double) capacidad);
+            cuenta++;
+        }
+        return cuenta > 0 ? suma / cuenta : 0.0;
     }
 
     public static double costoAFitness(final double costoTotal) {

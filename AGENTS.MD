@@ -133,17 +133,17 @@
 - Logging info code could follow this template: log.info("[MicroserviceName/ModuleName] - API-CALL/METHOD/ACTION: response: {}, userId: {}", body, userId);
 - Logging error code could follow this template: log.error("[MicroserviceName/ModuleName] - API-CALL/METHOD/ACTION: errorMessage: {}, userId: {}", errorMessage, userId);
 
-
 ## Project Context
+
 - For the context of the project read the `Documentos/situacion.txt`
 
 ## Class Generation Instructions
 
-All specifications for creating the initial base classes are defined in the file `CRECLASES.md`.
+All specifications for creating the initial base classes are defined in the file `CLASES.md`.
 
 Agents must strictly follow the guidelines, structure, and entity definitions described in that document when generating the classes. This includes respecting class names, attributes, data types, and any additional construction rules provided.
 
-Do not infer or modify the model unless explicitly instructed. The `CRECLASES.md` file is the single source of truth for the initial class design.
+Do not infer or modify the model unless explicitly instructed. The `CLASES.md` file is the single source of truth for the initial class design.
 
 ## Project routes
 

@@ -8,6 +8,7 @@ import java.time.LocalDateTime;
 import org.junit.jupiter.api.Test;
 
 import pe.edu.pucp.aeroluggage.dominio.enums.Continente;
+import pe.edu.pucp.aeroluggage.dominio.enums.EstadoPedido;
 
 class PedidoTest {
 
@@ -36,7 +37,6 @@ class PedidoTest {
                 "PED-2",
                 crearAeropuerto("LIM", Continente.AMERICA_DEL_SUR),
                 crearAeropuerto("MAD", Continente.EUROPA),
-                null,
                 fechaRegistro,
                 2,
                 null
@@ -44,7 +44,7 @@ class PedidoTest {
 
         pedido.registrarPedido();
 
-        assertEquals("REGISTRADO", pedido.getEstado());
+        assertEquals(EstadoPedido.REGISTRADO, pedido.getEstado());
         assertEquals(fechaRegistro.plusDays(2), pedido.getFechaHoraPlazo());
     }
 
@@ -58,7 +58,7 @@ class PedidoTest {
 
         assertNotNull(pedido.getFechaRegistro());
         assertNotNull(pedido.getFechaHoraPlazo());
-        assertEquals("REGISTRADO", pedido.getEstado());
+        assertEquals(EstadoPedido.REGISTRADO, pedido.getEstado());
     }
 
     private Aeropuerto crearAeropuerto(final String idAeropuerto, final Continente continente) {
