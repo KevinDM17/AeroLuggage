@@ -1,0 +1,48 @@
+# Algoritmos a ejecutar (true/false)
+ejecutar.ga=true
+ejecutar.aco=true
+
+# Rango de fechas de simulacion (yyyy-MM-dd)
+simulacion.fecha.inicio=2026-01-02
+simulacion.fecha.fin=2026-01-03
+simulacion.ventana.dias=3
+
+# ---------- Parametros GA ----------
+ga.tamanioPoblacion=20
+ga.maxGeneraciones=30
+ga.maxSinMejora=10
+ga.tiempoMaximoMs=60000
+ga.probCruce=0.85
+ga.probMutacion=0.15
+ga.torneoK=3
+ga.elites=2
+ga.semilla=42
+ga.minutosConexion=60
+ga.w1MaletasIncumplidas=10000
+ga.w2ExcesoHorasPlazo=100
+ga.w3OverflowVuelo=500
+ga.w4OverflowAlmacen=500
+ga.w5TransitoPromedio=1
+ga.penalizacionRutaVacia=5000
+ga.penalizacionSinDestino=8000
+ga.penalizacionRutaInvalida=3000
+ga.pesoGreedySolomon=0.6
+
+# ---------- Parametros ACO ----------
+aco.nts=1
+aco.maxIter=10
+aco.nAnts=8
+aco.alpha=1.0
+aco.beta=2.0
+aco.rho=0.15
+aco.gamma=0.05
+aco.tau0=1.0
+aco.tauMin=0.01
+aco.tauMax=25.0
+aco.semilla=42
+aco.horasPorIntervalo=24
+aco.penalizacionNoFactible=1000
+aco.penalizacionIncumplimiento=300
+aco.penalizacionSobrecargaVuelo=200
+aco.penalizacionSobrecargaAlmacen=120
+aco.penalizacionReplanificacion=25
