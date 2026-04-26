@@ -11,6 +11,7 @@ import pe.edu.pucp.aeroluggage.dominio.entidades.VueloInstancia;
 final class SubproblemaACO {
     private final ArrayList<Maleta> maletasPendientes;
     private final ArrayList<VueloInstancia> vuelosDisponibles;
+    private final Map<String, ArrayList<VueloInstancia>> vuelosPorOrigen;
     private final Map<String, Integer> capacidadRestanteVueloBase;
     private final Map<String, Integer> capacidadRestanteAlmacenBase;
     private final Map<String, LocalDateTime> plazoPorMaleta;
@@ -30,6 +31,7 @@ final class SubproblemaACO {
     ) {
         this.maletasPendientes = maletasPendientes == null ? new ArrayList<>() : new ArrayList<>(maletasPendientes);
         this.vuelosDisponibles = vuelosDisponibles == null ? new ArrayList<>() : new ArrayList<>(vuelosDisponibles);
+        this.vuelosPorOrigen = indexarVuelosPorOrigen(this.vuelosDisponibles);
         this.capacidadRestanteVueloBase = new HashMap<>(capacidadRestanteVueloBase);
         this.capacidadRestanteAlmacenBase = new HashMap<>(capacidadRestanteAlmacenBase);
         this.plazoPorMaleta = new HashMap<>(plazoPorMaleta);
@@ -44,6 +46,13 @@ final class SubproblemaACO {
 
     ArrayList<VueloInstancia> getVuelosDisponibles() {
         return vuelosDisponibles;
+    }
+
+    ArrayList<VueloInstancia> getVuelosDesde(final String idAeropuertoOrigen) {
+        if (idAeropuertoOrigen == null) {
+            return new ArrayList<>();
+        }
+        return vuelosPorOrigen.getOrDefault(idAeropuertoOrigen, new ArrayList<>());
     }
 
     Map<String, Integer> getCapacidadRestanteVueloBase() {
@@ -68,5 +77,22 @@ final class SubproblemaACO {
 
     Maleta obtenerMaleta(final String idMaleta) {
         return maletasPorId.get(idMaleta);
+    }
+
+    private Map<String, ArrayList<VueloInstancia>> indexarVuelosPorOrigen(
+            final ArrayList<VueloInstancia> vuelosDisponibles
+    ) {
+        final Map<String, ArrayList<VueloInstancia>> indice = new HashMap<>();
+        for (final VueloInstancia vueloInstancia : vuelosDisponibles) {
+            if (vueloInstancia == null || vueloInstancia.getAeropuertoOrigen() == null
+                    || vueloInstancia.getAeropuertoOrigen().getIdAeropuerto() == null) {
+                continue;
+            }
+            indice.computeIfAbsent(
+                    vueloInstancia.getAeropuertoOrigen().getIdAeropuerto(),
+                    key -> new ArrayList<>()
+            ).add(vueloInstancia);
+        }
+        return indice;
     }
 }

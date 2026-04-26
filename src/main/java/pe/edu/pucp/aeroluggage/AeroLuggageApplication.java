@@ -16,6 +16,7 @@ import pe.edu.pucp.aeroluggage.dominio.entidades.Aeropuerto;
 import pe.edu.pucp.aeroluggage.dominio.entidades.Ruta;
 import pe.edu.pucp.aeroluggage.dominio.entidades.VueloInstancia;
 import pe.edu.pucp.aeroluggage.dominio.entidades.VueloProgramado;
+import pe.edu.pucp.aeroluggage.dominio.enums.EstadoRuta;
 import pe.edu.pucp.aeroluggage.io.CargadorDatosPrueba;
 import pe.edu.pucp.aeroluggage.io.DatosEntrada;
 
@@ -101,7 +102,6 @@ public class AeroLuggageApplication {
                                               final ArrayList<VueloProgramado> vuelosProgramados,
                                               final ArrayList<VueloInstancia> vuelosInstancia,
                                               final ArrayList<Aeropuerto> aeropuertos) {
-        final long inicio = System.nanoTime();
         final InstanciaProblema instancia = new InstanciaProblema(
                 "LOTE-" + numeroLote,
                 datosEntrada.getMaletas(),
@@ -112,35 +112,40 @@ public class AeroLuggageApplication {
         System.out.println();
         System.out.println("=== LOTE " + numeroLote + " ===");
         imprimirInstancia(instancia, indicePrimerPedido, datosEntrada.getPedidos().size());
-        final ACO aco = ejecutarACO(instancia);
+        final int maletasConRutaACO = ejecutarACO(instancia);
         ejecutarGA(instancia);
-        final ACOReporte reporte = aco.getUltimoReporte();
-        final long duracionMs = (System.nanoTime() - inicio) / 1_000_000L;
-        imprimirResumenLote(instancia.getMaletas().size(), reporte, duracionMs);
         return new ResultadoLote(
                 datosEntrada.getPedidos().size(),
                 instancia.getMaletas().size(),
-                reporte.getRutasFactibles(),
-                Math.max(0, instancia.getMaletas().size() - reporte.getRutasFactibles())
+                maletasConRutaACO,
+                Math.max(0, instancia.getMaletas().size() - maletasConRutaACO)
         );
     }
 
-    private static ACO ejecutarACO(final InstanciaProblema instancia) {
+    private static int ejecutarACO(final InstanciaProblema instancia) {
         final ACO aco = new ACO();
         System.out.println();
         System.out.println("=== RESULTADO ACO ===");
+        final long inicio = System.nanoTime();
         aco.ejecutar(instancia);
-        imprimirResultadoACO(aco);
-        return aco;
+        final long duracionMs = (System.nanoTime() - inicio) / 1_000_000L;
+        imprimirResultadoACO(aco, duracionMs);
+        final int maletasConRuta = aco.getUltimoReporte().getRutasFactibles();
+        imprimirResumenLoteAlgoritmo("ACO", instancia.getMaletas().size(), maletasConRuta, duracionMs);
+        return maletasConRuta;
     }
 
     private static void ejecutarGA(final InstanciaProblema instancia) {
         final GA ga = new GA(crearParametrosGAConsola());
         System.out.println();
         System.out.println("=== RESULTADO GA ===");
+        final long inicio = System.nanoTime();
         ga.ejecutar(instancia);
         ga.evaluar();
+        final long duracionMs = (System.nanoTime() - inicio) / 1_000_000L;
         imprimirResultadoGA(ga);
+        final int maletasConRuta = contarRutasExitosas(ga.getMejorSolucion());
+        imprimirResumenLoteAlgoritmo("GA", instancia.getMaletas().size(), maletasConRuta, duracionMs);
     }
 
     private static ParametrosGA crearParametrosGAConsola() {
@@ -182,9 +187,10 @@ public class AeroLuggageApplication {
         System.out.println("Total de maletas a enrutar: " + instancia.getMaletas().size());
     }
 
-    private static void imprimirResultadoACO(final ACO aco) {
+    private static void imprimirResultadoACO(final ACO aco, final long duracionMs) {
         final ACOReporte reporte = aco.getUltimoReporte();
         System.out.println("Costo: " + aco.getUltimoCosto());
+        System.out.println("Tiempo ACO: " + duracionMs + " ms");
         System.out.println("Intervalos procesados: " + reporte.getIntervalosProcesados());
         System.out.println("Planes confirmados: " + reporte.getPlanesConfirmados());
         System.out.println("Rutas factibles: " + reporte.getRutasFactibles());
@@ -248,17 +254,34 @@ public class AeroLuggageApplication {
         System.out.println("  Ruta completa: " + rutaCompleta);
     }
 
-    private static void imprimirResumenLote(final int maletasProcesadas, final ACOReporte reporte,
-                                            final long duracionMs) {
-        final int maletasConRuta = reporte.getRutasFactibles();
+    private static void imprimirResumenLoteAlgoritmo(final String algoritmo, final int maletasProcesadas,
+                                                     final int maletasConRuta, final long duracionMs) {
         final int maletasSinRuta = Math.max(0, maletasProcesadas - maletasConRuta);
         System.out.println();
-        System.out.println("=== RESUMEN LOTE ===");
+        System.out.println("=== RESUMEN LOTE " + algoritmo + " ===");
         System.out.println("Total de maletas procesadas: " + maletasProcesadas);
         System.out.println("Maletas con ruta encontrada: " + maletasConRuta);
         System.out.println("Maletas sin ruta encontrada: " + maletasSinRuta);
         System.out.println("Porcentaje de exito del lote: " + formatearPorcentaje(maletasConRuta, maletasProcesadas));
-        System.out.println("Tiempo de ejecucion del lote: " + duracionMs + " ms");
+        System.out.println("Tiempo de ejecucion " + algoritmo + " en el lote: " + duracionMs + " ms");
+    }
+
+    private static int contarRutasExitosas(final Solucion solucion) {
+        if (solucion == null || solucion.getSubrutas().isEmpty()) {
+            return 0;
+        }
+
+        int rutasExitosas = 0;
+        for (final Ruta ruta : solucion.getSubrutas()) {
+            final boolean rutaExitosa = ruta != null
+                    && ruta.getEstado() != EstadoRuta.FALLIDA
+                    && ruta.getSubrutas() != null
+                    && !ruta.getSubrutas().isEmpty();
+            if (rutaExitosa) {
+                rutasExitosas++;
+            }
+        }
+        return rutasExitosas;
     }
 
     private static void imprimirResumenGlobal(final int pedidosLeidos, final int maletasGeneradas,
@@ -343,4 +366,5 @@ public class AeroLuggageApplication {
             return maletasSinRuta;
         }
     }
+
 }

@@ -26,8 +26,8 @@ public class Pedido {
                 idPedido,
                 aeropuertoOrigen,
                 aeropuertoDestino,
-                null,
                 fechaRegistro,
+                null,
                 cantidadMaletas,
                 convertirEstado(estado)
         );

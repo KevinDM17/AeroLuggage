@@ -1,0 +1,11 @@
+fitnessExperimental =
+    penalizacionNoRuteadas
+  + costoUsoCapacidadVuelos
+  + costoUsoCapacidadAeropuertos
+  + costoDuracionRutas
+
+
+penalizacionNoRuteadas       = maletasNoRuteadas * 1_000_000
+costoUsoCapacidadVuelos      = sumatoria(usoVuelo / capacidadMaximaVuelo) * 1000
+costoUsoCapacidadAeropuertos = sumatoria(usoAeropuerto / capacidadAlmacenAeropuerto) * 1000
+costoDuracionRutas           = sumatoria(duracionHorasRuta) * 10

@@ -6,7 +6,9 @@ import java.util.ArrayList;
 import java.util.Comparator;
 import java.util.HashMap;
 import java.util.HashSet;
+import java.util.List;
 import java.util.Map;
+import java.util.PriorityQueue;
 import java.util.Random;
 import java.util.Set;
 
@@ -23,6 +25,14 @@ final class ACOConstructorSoluciones {
     private static final EstadoRuta ESTADO_NO_FACTIBLE = EstadoRuta.FALLIDA;
     private static final EstadoRuta ESTADO_REPLANIFICADA = EstadoRuta.REPLANIFICADA;
     private static final int UNIDAD_MALETA = 1;
+    private static final int MAX_ESCALAS_RUTA = 8;
+    private static final int MAX_CANDIDATOS_CODICIOSOS = 2;
+    private static final int MAX_CANDIDATOS_PROBABILISTICOS = 4;
+    private static final int MAX_CONECTIVIDAD_CONSIDERADA = 6;
+    private static final int MAX_ESTADOS_BUSQUEDA_TEMPORAL = 120;
+    private static final int MAX_VUELOS_POR_EXPANSION = 90;
+    private static final double FACTOR_ALEATORIO_MINIMO = 0.85D;
+    private static final double RANGO_FACTOR_ALEATORIO = 0.30D;
 
     private final ACOConfiguracion configuracion;
     private final Random random;
@@ -91,7 +101,9 @@ final class ACOConstructorSoluciones {
         for (final Ruta rutaOriginal : solucion.getSubrutas()) {
             final Ruta ruta = clonarRuta(rutaOriginal);
             final ArrayList<VueloInstancia> vuelos = new ArrayList<>(ruta.getSubrutas());
-            vuelos.sort(Comparator.comparing(VueloInstancia::getFechaSalida));
+            if (!estaOrdenadoPorSalida(vuelos)) {
+                vuelos.sort(Comparator.comparing(VueloInstancia::getFechaSalida));
+            }
             ruta.setSubrutas(vuelos);
 
             if (ESTADO_NO_FACTIBLE.equals(ruta.getEstado()) || vuelos.isEmpty()) {
@@ -154,7 +166,8 @@ final class ACOConstructorSoluciones {
                 continue;
             }
 
-            final LocalDateTime llegadaActual = ruta.getSubrutas().get(ruta.getSubrutas().size() - 1).getFechaLlegada();
+            final int ultimoIndice = ruta.getSubrutas().size() - 1;
+            final LocalDateTime llegadaActual = ruta.getSubrutas().get(ultimoIndice).getFechaLlegada();
             if (llegadaActual != null && !vueloDirecto.getFechaLlegada().isBefore(llegadaActual)) {
                 rutasMejoradas.add(ruta);
                 continue;
@@ -246,77 +259,332 @@ final class ACOConstructorSoluciones {
             return crearRutaNoFactible(maleta, new ArrayList<>(), subproblema);
         }
 
-        Aeropuerto actual = origen;
-        LocalDateTime tiempoActual = obtenerTiempoDisponible(maleta, subproblema.getInicioIntervalo());
+        final Aeropuerto actual = origen;
+        final LocalDateTime tiempoActual = obtenerTiempoDisponible(maleta, subproblema.getInicioIntervalo());
         final LocalDateTime plazo = subproblema.getPlazoPorMaleta().get(maleta.getIdMaleta());
-        final ArrayList<VueloInstancia> plan = new ArrayList<>();
+        final Map<String, Integer> capacidadRestanteVueloTemporal = new HashMap<>(capacidadRestanteVuelo);
+        final Map<String, Integer> capacidadRestanteAlmacenTemporal = new HashMap<>(capacidadRestanteAlmacen);
+        final ArrayList<VueloInstancia> plan = construirPlanTemporal(
+                maleta,
+                subproblema,
+                feromonas,
+                actual,
+                destino,
+                tiempoActual,
+                plazo,
+                capacidadRestanteVueloTemporal,
+                capacidadRestanteAlmacenTemporal,
+                modoCodicioso
+        );
+        if (plan == null || plan.isEmpty()) {
+            return crearRutaNoFactible(maleta, new ArrayList<>(), subproblema);
+        }
+        capacidadRestanteVuelo.putAll(capacidadRestanteVueloTemporal);
+        capacidadRestanteAlmacen.putAll(capacidadRestanteAlmacenTemporal);
+        return crearRutaFactible(maleta, plan, subproblema, ESTADO_PLANIFICADA);
+    }
+
+    private ArrayList<VueloInstancia> construirPlanPorRetroceso(
+            final Maleta maleta,
+            final SubproblemaACO subproblema,
+            final FeromonasACO feromonas,
+            final Aeropuerto actual,
+            final Aeropuerto destino,
+            final LocalDateTime tiempoActual,
+            final LocalDateTime plazo,
+            final Map<String, Integer> capacidadRestanteVuelo,
+            final Map<String, Integer> capacidadRestanteAlmacen,
+            final boolean modoCodicioso
+    ) {
         final Set<String> visitados = new HashSet<>();
         if (actual.getIdAeropuerto() != null) {
             visitados.add(actual.getIdAeropuerto());
         }
+        return construirPlanRecursivo(
+                maleta,
+                subproblema,
+                feromonas,
+                actual,
+                destino,
+                tiempoActual,
+                plazo,
+                capacidadRestanteVuelo,
+                capacidadRestanteAlmacen,
+                visitados,
+                modoCodicioso,
+                0
+        );
+    }
 
-        while (!esMismoAeropuerto(actual, destino)) {
-            final ArrayList<VueloInstancia> candidatos = vuelosFactibles(
-                    actual,
-                    destino,
-                    tiempoActual,
-                    subproblema.getVuelosDisponibles(),
-                    capacidadRestanteVuelo,
-                    capacidadRestanteAlmacen,
-                    plazo,
-                    visitados
-            );
-            if (candidatos.isEmpty()) {
-                return crearRutaNoFactible(maleta, plan, subproblema);
+    private ArrayList<VueloInstancia> construirPlanTemporal(
+            final Maleta maleta,
+            final SubproblemaACO subproblema,
+            final FeromonasACO feromonas,
+            final Aeropuerto origen,
+            final Aeropuerto destino,
+            final LocalDateTime tiempoActual,
+            final LocalDateTime plazo,
+            final Map<String, Integer> capacidadRestanteVuelo,
+            final Map<String, Integer> capacidadRestanteAlmacen,
+            final boolean modoCodicioso
+    ) {
+        final String idOrigen = obtenerIdAeropuerto(origen);
+        final String idDestino = obtenerIdAeropuerto(destino);
+        if (idOrigen == null || idDestino == null || tiempoActual == null || plazo == null) {
+            return null;
+        }
+
+        final PriorityQueue<EstadoPlanTemporal> frontera = new PriorityQueue<>(
+                Comparator.comparingDouble(EstadoPlanTemporal::getCosto)
+                        .thenComparing(EstadoPlanTemporal::getTiempoActual)
+        );
+        final Map<String, LocalDateTime> mejorLlegadaPorAeropuerto = new HashMap<>();
+        final Set<String> visitadosIniciales = new HashSet<>();
+        visitadosIniciales.add(idOrigen);
+        frontera.add(new EstadoPlanTemporal(idOrigen, tiempoActual, 0D, new ArrayList<>(), visitadosIniciales));
+        mejorLlegadaPorAeropuerto.put(idOrigen, tiempoActual);
+
+        int estadosEvaluados = 0;
+        while (!frontera.isEmpty() && estadosEvaluados < MAX_ESTADOS_BUSQUEDA_TEMPORAL) {
+            estadosEvaluados++;
+            final EstadoPlanTemporal estado = frontera.poll();
+            if (estado.getIdAeropuerto().equals(idDestino)) {
+                final ArrayList<VueloInstancia> plan = estado.clonarCamino();
+                aplicarConsumoPlan(plan, destino, capacidadRestanteVuelo, capacidadRestanteAlmacen);
+                reforzarFeromonaLocal(plan, maleta, feromonas);
+                return plan;
+            }
+            if (estado.getCamino().size() >= MAX_ESCALAS_RUTA) {
+                continue;
             }
 
-            final VueloInstancia siguienteVuelo = modoCodicioso
-                    ? seleccionarCodiciosamente(candidatos, destino, tiempoActual, plazo)
-                    : seleccionarProbabilisticamente(candidatos, feromonas, maleta, destino, tiempoActual, plazo);
-            if (siguienteVuelo == null) {
-                return crearRutaNoFactible(maleta, plan, subproblema);
-            }
+            final ArrayList<VueloInstancia> vuelos = subproblema.getVuelosDesde(estado.getIdAeropuerto());
+            int vuelosEvaluados = 0;
+            for (int i = primerIndiceConSalidaNoAnterior(vuelos, estado.getTiempoActual()); i < vuelos.size(); i++) {
+                if (vuelosEvaluados >= MAX_VUELOS_POR_EXPANSION) {
+                    break;
+                }
+                vuelosEvaluados++;
+                final VueloInstancia vuelo = vuelos.get(i);
+                if (!esVueloFactibleParaBusqueda(
+                        vuelo,
+                        destino,
+                        estado,
+                        plazo,
+                        capacidadRestanteVuelo,
+                        capacidadRestanteAlmacen
+                )) {
+                    continue;
+                }
 
+                final String idSiguiente = obtenerIdAeropuerto(vuelo.getAeropuertoDestino());
+                final LocalDateTime mejorLlegada = mejorLlegadaPorAeropuerto.get(idSiguiente);
+                if (mejorLlegada != null && !vuelo.getFechaLlegada().isBefore(mejorLlegada)) {
+                    continue;
+                }
+
+                mejorLlegadaPorAeropuerto.put(idSiguiente, vuelo.getFechaLlegada());
+                frontera.add(estado.avanzar(
+                        idSiguiente,
+                        vuelo,
+                        calcularCostoBusqueda(vuelo, maleta, feromonas, destino, estado.getTiempoActual(),
+                                plazo, subproblema, modoCodicioso)
+                ));
+            }
+        }
+
+        return null;
+    }
+
+    private boolean esVueloFactibleParaBusqueda(
+            final VueloInstancia vuelo,
+            final Aeropuerto destinoFinal,
+            final EstadoPlanTemporal estado,
+            final LocalDateTime plazo,
+            final Map<String, Integer> capacidadRestanteVuelo,
+            final Map<String, Integer> capacidadRestanteAlmacen
+    ) {
+        if (vuelo == null || vuelo.getFechaSalida() == null || vuelo.getFechaLlegada() == null) {
+            return false;
+        }
+        if (vuelo.getFechaSalida().isBefore(estado.getTiempoActual()) || vuelo.getFechaLlegada().isAfter(plazo)) {
+            return false;
+        }
+        if (capacidadRestanteVuelo.getOrDefault(vuelo.getIdVueloInstancia(), 0) < UNIDAD_MALETA) {
+            return false;
+        }
+
+        final String idDestino = obtenerIdAeropuerto(vuelo.getAeropuertoDestino());
+        if (idDestino == null || estado.getVisitados().contains(idDestino)) {
+            return false;
+        }
+
+        final boolean esDestinoFinal = esMismoAeropuerto(vuelo.getAeropuertoDestino(), destinoFinal);
+        return esDestinoFinal || capacidadRestanteAlmacen.getOrDefault(idDestino, 0) >= UNIDAD_MALETA;
+    }
+
+    private double calcularCostoBusqueda(
+            final VueloInstancia vuelo,
+            final Maleta maleta,
+            final FeromonasACO feromonas,
+            final Aeropuerto destinoFinal,
+            final LocalDateTime tiempoActual,
+            final LocalDateTime plazo,
+            final SubproblemaACO subproblema,
+            final boolean modoCodicioso
+    ) {
+        final long esperaMinutos = Math.max(0L, Duration.between(tiempoActual, vuelo.getFechaSalida()).toMinutes());
+        final long duracionMinutos = Math.max(
+                1L,
+                Duration.between(vuelo.getFechaSalida(), vuelo.getFechaLlegada()).toMinutes()
+        );
+        if (modoCodicioso) {
+            return esperaMinutos + duracionMinutos;
+        }
+
+        final double puntaje = puntajeCandidato(
+                vuelo,
+                feromonas,
+                maleta,
+                destinoFinal,
+                tiempoActual,
+                plazo,
+                subproblema
+        );
+        final double factorAleatorio = FACTOR_ALEATORIO_MINIMO + random.nextDouble() * RANGO_FACTOR_ALEATORIO;
+        return (esperaMinutos + duracionMinutos) * factorAleatorio + 1D / Math.max(0.000001D, puntaje);
+    }
+
+    private void aplicarConsumoPlan(final List<VueloInstancia> plan,
+                                    final Aeropuerto destinoFinal,
+                                    final Map<String, Integer> capacidadRestanteVuelo,
+                                    final Map<String, Integer> capacidadRestanteAlmacen) {
+        for (int i = 0; i < plan.size(); i++) {
+            final VueloInstancia vuelo = plan.get(i);
+            final int nuevaCapacidad = actualizarEstadoTemporal(vuelo, capacidadRestanteVuelo,
+                    capacidadRestanteAlmacen, destinoFinal);
+            plan.set(i, clonarVueloInstanciaConCapacidad(vuelo, nuevaCapacidad));
+        }
+    }
+
+    private void reforzarFeromonaLocal(final List<VueloInstancia> plan,
+                                       final Maleta maleta,
+                                       final FeromonasACO feromonas) {
+        for (final VueloInstancia vuelo : plan) {
+            aplicarActualizacionLocalFeromona(feromonas, maleta, vuelo);
+        }
+    }
+
+    private ArrayList<VueloInstancia> construirPlanRecursivo(
+            final Maleta maleta,
+            final SubproblemaACO subproblema,
+            final FeromonasACO feromonas,
+            final Aeropuerto actual,
+            final Aeropuerto destino,
+            final LocalDateTime tiempoActual,
+            final LocalDateTime plazo,
+            final Map<String, Integer> capacidadRestanteVuelo,
+            final Map<String, Integer> capacidadRestanteAlmacen,
+            final Set<String> visitados,
+            final boolean modoCodicioso,
+            final int profundidad
+    ) {
+        if (esMismoAeropuerto(actual, destino)) {
+            return new ArrayList<>();
+        }
+        if (profundidad >= MAX_ESCALAS_RUTA) {
+            return null;
+        }
+
+        final ArrayList<VueloInstancia> candidatos = vuelosFactibles(
+                actual,
+                destino,
+                tiempoActual,
+                subproblema,
+                capacidadRestanteVuelo,
+                capacidadRestanteAlmacen,
+                plazo,
+                visitados
+        );
+        if (candidatos.isEmpty()) {
+            return null;
+        }
+
+        ordenarCandidatos(candidatos, feromonas, maleta, destino, tiempoActual, plazo, subproblema);
+        final int maxCandidatos = modoCodicioso ? MAX_CANDIDATOS_CODICIOSOS : MAX_CANDIDATOS_PROBABILISTICOS;
+        final int limite = Math.min(maxCandidatos, candidatos.size());
+
+        for (int i = 0; i < limite; i++) {
+            final VueloInstancia siguienteVuelo = candidatos.get(i);
+            final Map<String, Integer> capacidadVueloCopia = new HashMap<>(capacidadRestanteVuelo);
+            final Map<String, Integer> capacidadAlmacenCopia = new HashMap<>(capacidadRestanteAlmacen);
+            final Set<String> visitadosCopia = new HashSet<>(visitados);
             final int nuevaCapacidad = actualizarEstadoTemporal(
                     siguienteVuelo,
-                    capacidadRestanteVuelo,
-                    capacidadRestanteAlmacen,
+                    capacidadVueloCopia,
+                    capacidadAlmacenCopia,
                     destino
             );
-            plan.add(clonarVueloInstanciaConCapacidad(siguienteVuelo, nuevaCapacidad));
-            aplicarActualizacionLocalFeromona(feromonas, maleta, siguienteVuelo);
-            actual = siguienteVuelo.getAeropuertoDestino();
-            tiempoActual = siguienteVuelo.getFechaLlegada();
-            if (actual != null && actual.getIdAeropuerto() != null) {
-                visitados.add(actual.getIdAeropuerto());
+            if (siguienteVuelo.getAeropuertoDestino() != null
+                    && siguienteVuelo.getAeropuertoDestino().getIdAeropuerto() != null) {
+                visitadosCopia.add(siguienteVuelo.getAeropuertoDestino().getIdAeropuerto());
             }
+
+            final ArrayList<VueloInstancia> sufijo = construirPlanRecursivo(
+                    maleta,
+                    subproblema,
+                    feromonas,
+                    siguienteVuelo.getAeropuertoDestino(),
+                    destino,
+                    siguienteVuelo.getFechaLlegada(),
+                    plazo,
+                    capacidadVueloCopia,
+                    capacidadAlmacenCopia,
+                    visitadosCopia,
+                    modoCodicioso,
+                    profundidad + 1
+            );
+            if (sufijo == null) {
+                continue;
+            }
+
+            capacidadRestanteVuelo.clear();
+            capacidadRestanteVuelo.putAll(capacidadVueloCopia);
+            capacidadRestanteAlmacen.clear();
+            capacidadRestanteAlmacen.putAll(capacidadAlmacenCopia);
+
+            final ArrayList<VueloInstancia> plan = new ArrayList<>(sufijo.size() + 1);
+            plan.add(clonarVueloInstanciaConCapacidad(siguienteVuelo, nuevaCapacidad));
+            plan.addAll(sufijo);
+            aplicarActualizacionLocalFeromona(feromonas, maleta, siguienteVuelo);
+            return plan;
         }
 
-        if (!esMismoAeropuerto(actual, destino)) {
-            return crearRutaNoFactible(maleta, plan, subproblema);
-        }
-        return crearRutaFactible(maleta, plan, subproblema, ESTADO_PLANIFICADA);
+        return null;
     }
 
     private ArrayList<VueloInstancia> vuelosFactibles(
             final Aeropuerto actual,
             final Aeropuerto destinoFinal,
             final LocalDateTime tiempoActual,
-            final ArrayList<VueloInstancia> vuelos,
+            final SubproblemaACO subproblema,
             final Map<String, Integer> capacidadRestanteVuelo,
             final Map<String, Integer> capacidadRestanteAlmacen,
             final LocalDateTime plazo,
             final Set<String> visitados
     ) {
         final ArrayList<VueloInstancia> candidatos = new ArrayList<>();
-        if (vuelos == null || vuelos.isEmpty() || actual == null || actual.getIdAeropuerto() == null) {
+        if (actual == null || actual.getIdAeropuerto() == null) {
             return candidatos;
         }
 
-        for (final VueloInstancia vuelo : vuelos) {
-            if (!actual.getIdAeropuerto().equals(obtenerIdAeropuerto(vuelo.getAeropuertoOrigen()))) {
-                continue;
-            }
+        final ArrayList<VueloInstancia> vuelos = subproblema.getVuelosDesde(actual.getIdAeropuerto());
+        if (vuelos.isEmpty()) {
+            return candidatos;
+        }
+
+        for (int i = primerIndiceConSalidaNoAnterior(vuelos, tiempoActual); i < vuelos.size(); i++) {
+            final VueloInstancia vuelo = vuelos.get(i);
             if (vuelo.getFechaSalida().isBefore(tiempoActual)) {
                 continue;
             }
@@ -350,13 +618,14 @@ final class ACOConstructorSoluciones {
             final ArrayList<VueloInstancia> candidatos,
             final Aeropuerto destinoFinal,
             final LocalDateTime tiempoActual,
-            final LocalDateTime plazo
+            final LocalDateTime plazo,
+            final SubproblemaACO subproblema
     ) {
         VueloInstancia mejorVuelo = null;
         double mejorHeuristica = Double.NEGATIVE_INFINITY;
 
         for (final VueloInstancia candidato : candidatos) {
-            final double heuristica = calcularHeuristica(candidato, destinoFinal, tiempoActual, plazo);
+            final double heuristica = calcularHeuristica(candidato, destinoFinal, tiempoActual, plazo, subproblema);
             if (heuristica <= mejorHeuristica) {
                 continue;
             }
@@ -372,14 +641,15 @@ final class ACOConstructorSoluciones {
             final Maleta maleta,
             final Aeropuerto destinoFinal,
             final LocalDateTime tiempoActual,
-            final LocalDateTime plazo
+            final LocalDateTime plazo,
+            final SubproblemaACO subproblema
     ) {
         double sumaPesos = 0D;
         final Map<String, Double> pesos = new HashMap<>();
 
         for (final VueloInstancia candidato : candidatos) {
             final double feromona = obtenerFeromona(feromonas, maleta, candidato);
-            final double heuristica = calcularHeuristica(candidato, destinoFinal, tiempoActual, plazo);
+            final double heuristica = calcularHeuristica(candidato, destinoFinal, tiempoActual, plazo, subproblema);
             final double peso = Math.pow(feromona, configuracion.getAlpha())
                     * Math.pow(heuristica, configuracion.getBeta());
             pesos.put(candidato.getIdVueloInstancia(), peso);
@@ -387,7 +657,7 @@ final class ACOConstructorSoluciones {
         }
 
         if (sumaPesos <= 0D) {
-            return seleccionarCodiciosamente(candidatos, destinoFinal, tiempoActual, plazo);
+            return seleccionarCodiciosamente(candidatos, destinoFinal, tiempoActual, plazo, subproblema);
         }
 
         double umbral = random.nextDouble() * sumaPesos;
@@ -405,7 +675,8 @@ final class ACOConstructorSoluciones {
             final VueloInstancia vuelo,
             final Aeropuerto destinoFinal,
             final LocalDateTime tiempoActual,
-            final LocalDateTime plazo
+            final LocalDateTime plazo,
+            final SubproblemaACO subproblema
     ) {
         final long esperaMinutos = Math.max(0L, Duration.between(tiempoActual, vuelo.getFechaSalida()).toMinutes());
         final long duracionMinutos = Math.max(
@@ -413,7 +684,13 @@ final class ACOConstructorSoluciones {
                 Duration.between(vuelo.getFechaSalida(), vuelo.getFechaLlegada()).toMinutes()
         );
         final boolean vueloDirecto = esMismoAeropuerto(vuelo.getAeropuertoDestino(), destinoFinal);
-        final double bonificacionDestino = vueloDirecto ? 3D : 1D;
+        final double bonificacionDestino = vueloDirecto ? 6D : 1D;
+        final double conectividad = 1D + contarSalidasFuturas(
+                vuelo.getAeropuertoDestino(),
+                vuelo.getFechaLlegada(),
+                subproblema
+        )
+                / (double) MAX_CONECTIVIDAD_CONSIDERADA;
         double holgura = 1D;
 
         if (plazo != null && !vuelo.getFechaLlegada().isAfter(plazo)) {
@@ -421,7 +698,7 @@ final class ACOConstructorSoluciones {
             holgura += Math.min(1440D, minutosHolgura) / 1440D;
         }
 
-        return bonificacionDestino * holgura / (1D + esperaMinutos + duracionMinutos);
+        return bonificacionDestino * conectividad * holgura / (1D + esperaMinutos / 60D + duracionMinutos / 60D);
     }
 
     private int actualizarEstadoTemporal(
@@ -460,8 +737,10 @@ final class ACOConstructorSoluciones {
         final LocalDateTime tiempoDisponible = obtenerTiempoDisponible(maleta, subproblema.getInicioIntervalo());
         final LocalDateTime plazo = subproblema.getPlazoPorMaleta().get(maleta.getIdMaleta());
         VueloInstancia mejorVuelo = null;
+        final ArrayList<VueloInstancia> vuelosOrigen = subproblema.getVuelosDesde(obtenerIdAeropuerto(origen));
 
-        for (final VueloInstancia vuelo : subproblema.getVuelosDisponibles()) {
+        for (int i = primerIndiceConSalidaNoAnterior(vuelosOrigen, tiempoDisponible); i < vuelosOrigen.size(); i++) {
+            final VueloInstancia vuelo = vuelosOrigen.get(i);
             final boolean esDirecto = esMismoAeropuerto(vuelo.getAeropuertoOrigen(), origen)
                     && esMismoAeropuerto(vuelo.getAeropuertoDestino(), destino);
             if (!esDirecto) {
@@ -479,6 +758,76 @@ final class ACOConstructorSoluciones {
             mejorVuelo = vuelo;
         }
         return mejorVuelo;
+    }
+
+    private void ordenarCandidatos(final ArrayList<VueloInstancia> candidatos, final FeromonasACO feromonas,
+                                   final Maleta maleta, final Aeropuerto destinoFinal,
+                                   final LocalDateTime tiempoActual, final LocalDateTime plazo,
+                                   final SubproblemaACO subproblema) {
+        candidatos.sort((primero, segundo) -> Double.compare(
+                puntajeCandidato(segundo, feromonas, maleta, destinoFinal, tiempoActual, plazo, subproblema),
+                puntajeCandidato(primero, feromonas, maleta, destinoFinal, tiempoActual, plazo, subproblema)
+        ));
+    }
+
+    private double puntajeCandidato(final VueloInstancia candidato, final FeromonasACO feromonas, final Maleta maleta,
+                                    final Aeropuerto destinoFinal, final LocalDateTime tiempoActual,
+                                    final LocalDateTime plazo, final SubproblemaACO subproblema) {
+        final double feromona = obtenerFeromona(feromonas, maleta, candidato);
+        final double heuristica = calcularHeuristica(candidato, destinoFinal, tiempoActual, plazo, subproblema);
+        return Math.pow(feromona, configuracion.getAlpha()) * Math.pow(heuristica, configuracion.getBeta());
+    }
+
+    private int contarSalidasFuturas(final Aeropuerto aeropuerto, final LocalDateTime tiempoReferencia,
+                                     final SubproblemaACO subproblema) {
+        final String idAeropuerto = obtenerIdAeropuerto(aeropuerto);
+        if (idAeropuerto == null) {
+            return 0;
+        }
+        final ArrayList<VueloInstancia> vuelos = subproblema.getVuelosDesde(idAeropuerto);
+        if (vuelos.isEmpty()) {
+            return 0;
+        }
+
+        final int inicio = primerIndiceConSalidaNoAnterior(vuelos, tiempoReferencia);
+        return Math.min(MAX_CONECTIVIDAD_CONSIDERADA, vuelos.size() - inicio);
+    }
+
+    private boolean estaOrdenadoPorSalida(final ArrayList<VueloInstancia> vuelos) {
+        for (int i = 1; i < vuelos.size(); i++) {
+            final VueloInstancia anterior = vuelos.get(i - 1);
+            final VueloInstancia actual = vuelos.get(i);
+            final boolean fechasInvalidas = anterior == null
+                    || actual == null
+                    || anterior.getFechaSalida() == null
+                    || actual.getFechaSalida() == null;
+            if (fechasInvalidas) {
+                continue;
+            }
+            if (actual.getFechaSalida().isBefore(anterior.getFechaSalida())) {
+                return false;
+            }
+        }
+        return true;
+    }
+
+    private int primerIndiceConSalidaNoAnterior(final ArrayList<VueloInstancia> vuelos,
+                                                final LocalDateTime tiempoActual) {
+        int izquierda = 0;
+        int derecha = vuelos.size();
+        while (izquierda < derecha) {
+            final int mitad = (izquierda + derecha) >>> 1;
+            final VueloInstancia vuelo = vuelos.get(mitad);
+            final boolean salidaAnterior = vuelo != null
+                    && vuelo.getFechaSalida() != null
+                    && vuelo.getFechaSalida().isBefore(tiempoActual);
+            if (salidaAnterior) {
+                izquierda = mitad + 1;
+                continue;
+            }
+            derecha = mitad;
+        }
+        return izquierda;
     }
 
     private Ruta crearRutaFactible(
@@ -597,6 +946,68 @@ final class ACOConstructorSoluciones {
             return primero;
         }
         return primero.isAfter(segundo) ? primero : segundo;
+    }
+
+    private static final class EstadoPlanTemporal {
+        private final String idAeropuerto;
+        private final LocalDateTime tiempoActual;
+        private final double costo;
+        private final ArrayList<VueloInstancia> camino;
+        private final Set<String> visitados;
+
+        private EstadoPlanTemporal(final String idAeropuerto,
+                                   final LocalDateTime tiempoActual,
+                                   final double costo,
+                                   final ArrayList<VueloInstancia> camino,
+                                   final Set<String> visitados) {
+            this.idAeropuerto = idAeropuerto;
+            this.tiempoActual = tiempoActual;
+            this.costo = costo;
+            this.camino = camino;
+            this.visitados = visitados;
+        }
+
+        private EstadoPlanTemporal avanzar(final String idSiguiente,
+                                           final VueloInstancia vuelo,
+                                           final double costoTramo) {
+            final ArrayList<VueloInstancia> nuevoCamino = new ArrayList<>(camino.size() + 1);
+            nuevoCamino.addAll(camino);
+            nuevoCamino.add(vuelo);
+
+            final Set<String> nuevosVisitados = new HashSet<>(visitados);
+            nuevosVisitados.add(idSiguiente);
+            return new EstadoPlanTemporal(
+                    idSiguiente,
+                    vuelo.getFechaLlegada(),
+                    costo + costoTramo,
+                    nuevoCamino,
+                    nuevosVisitados
+            );
+        }
+
+        private String getIdAeropuerto() {
+            return idAeropuerto;
+        }
+
+        private LocalDateTime getTiempoActual() {
+            return tiempoActual;
+        }
+
+        private double getCosto() {
+            return costo;
+        }
+
+        private ArrayList<VueloInstancia> getCamino() {
+            return camino;
+        }
+
+        private Set<String> getVisitados() {
+            return visitados;
+        }
+
+        private ArrayList<VueloInstancia> clonarCamino() {
+            return new ArrayList<>(camino);
+        }
     }
 }
 

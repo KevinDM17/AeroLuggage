@@ -7,9 +7,7 @@ import pe.edu.pucp.aeroluggage.dominio.entidades.Maleta;
 import pe.edu.pucp.aeroluggage.dominio.entidades.VueloInstancia;
 
 final class FeromonasACO {
-    private static final String SEPARADOR_CLAVE = "::";
-
-    private final Map<String, Double> valores;
+    private final Map<String, Map<String, Double>> valores;
     private final ACOConfiguracion configuracion;
 
     FeromonasACO(final ACOConfiguracion configuracion) {
@@ -22,28 +20,37 @@ final class FeromonasACO {
     }
 
     double obtener(final Maleta maleta, final VueloInstancia vuelo) {
-        final String clave = construirClave(maleta, vuelo);
-        if (clave == null) {
+        final String idMaleta = maleta == null ? null : maleta.getIdMaleta();
+        final String idVuelo = vuelo == null ? null : vuelo.getIdVueloInstancia();
+        if (idMaleta == null || idVuelo == null) {
             return configuracion.getTau0();
         }
-        return valores.getOrDefault(clave, configuracion.getTau0());
+        final Map<String, Double> porMaleta = valores.get(idMaleta);
+        if (porMaleta == null) {
+            return configuracion.getTau0();
+        }
+        return porMaleta.getOrDefault(idVuelo, configuracion.getTau0());
     }
 
     void actualizarLocal(final Maleta maleta, final VueloInstancia vuelo) {
-        final String clave = construirClave(maleta, vuelo);
-        if (clave == null) {
+        final String idMaleta = maleta == null ? null : maleta.getIdMaleta();
+        final String idVuelo = vuelo == null ? null : vuelo.getIdVueloInstancia();
+        if (idMaleta == null || idVuelo == null) {
             return;
         }
-        final double valorActual = valores.getOrDefault(clave, configuracion.getTau0());
+        final Map<String, Double> porMaleta = valores.computeIfAbsent(idMaleta, key -> new HashMap<>());
+        final double valorActual = porMaleta.getOrDefault(idVuelo, configuracion.getTau0());
         final double nuevoValor = (1D - configuracion.getRho()) * valorActual
                 + configuracion.getRho() * configuracion.getTau0();
-        valores.put(clave, limitar(nuevoValor));
+        porMaleta.put(idVuelo, limitar(nuevoValor));
     }
 
     void evaporarGlobal() {
-        for (final Map.Entry<String, Double> entry : valores.entrySet()) {
-            final double valorEvaporado = (1D - configuracion.getRho()) * entry.getValue();
-            entry.setValue(limitar(valorEvaporado));
+        for (final Map<String, Double> porMaleta : valores.values()) {
+            for (final Map.Entry<String, Double> entry : porMaleta.entrySet()) {
+                final double valorEvaporado = (1D - configuracion.getRho()) * entry.getValue();
+                entry.setValue(limitar(valorEvaporado));
+            }
         }
     }
 
@@ -51,28 +58,22 @@ final class FeromonasACO {
         if (idMaleta == null || idMaleta.isBlank() || vuelo == null || vuelo.getIdVueloInstancia() == null) {
             return;
         }
-        final String clave = construirClave(idMaleta, vuelo.getIdVueloInstancia());
-        final double valorActual = valores.getOrDefault(clave, configuracion.getTau0());
-        valores.put(clave, limitar(valorActual + delta));
+        final Map<String, Double> porMaleta = valores.computeIfAbsent(idMaleta, key -> new HashMap<>());
+        final String idVuelo = vuelo.getIdVueloInstancia();
+        final double valorActual = porMaleta.getOrDefault(idVuelo, configuracion.getTau0());
+        porMaleta.put(idVuelo, limitar(valorActual + delta));
     }
 
     FeromonasACO copiarConAdaptacion(final double factorConservacion) {
         final FeromonasACO copia = new FeromonasACO(configuracion);
-        for (final Map.Entry<String, Double> entry : valores.entrySet()) {
-            copia.valores.put(entry.getKey(), limitar(entry.getValue() * factorConservacion));
+        for (final Map.Entry<String, Map<String, Double>> entry : valores.entrySet()) {
+            final Map<String, Double> porMaleta = new HashMap<>();
+            for (final Map.Entry<String, Double> valorVuelo : entry.getValue().entrySet()) {
+                porMaleta.put(valorVuelo.getKey(), limitar(valorVuelo.getValue() * factorConservacion));
+            }
+            copia.valores.put(entry.getKey(), porMaleta);
         }
         return copia;
-    }
-
-    private String construirClave(final Maleta maleta, final VueloInstancia vuelo) {
-        if (maleta == null || maleta.getIdMaleta() == null || vuelo == null || vuelo.getIdVueloInstancia() == null) {
-            return null;
-        }
-        return construirClave(maleta.getIdMaleta(), vuelo.getIdVueloInstancia());
-    }
-
-    private String construirClave(final String idMaleta, final String idVuelo) {
-        return idMaleta + SEPARADOR_CLAVE + idVuelo;
     }
 
     private double limitar(final double valor) {

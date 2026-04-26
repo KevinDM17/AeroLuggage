@@ -11,7 +11,6 @@ import java.util.Set;
 
 import pe.edu.pucp.aeroluggage.algoritmos.InstanciaProblema;
 import pe.edu.pucp.aeroluggage.algoritmos.Solucion;
-import pe.edu.pucp.aeroluggage.algoritmos.common.DijkstraRuteador;
 import pe.edu.pucp.aeroluggage.algoritmos.common.GrafoTiempoExpandido;
 import pe.edu.pucp.aeroluggage.dominio.entidades.Maleta;
 import pe.edu.pucp.aeroluggage.dominio.entidades.Pedido;
@@ -80,7 +79,7 @@ public final class OperadorMutacion {
                 bloqueados.add(vueloAzar.getIdVueloInstancia());
             }
         }
-        final List<VueloInstancia> nuevoCamino = DijkstraRuteador.rutear(
+        final List<VueloInstancia> nuevoCamino = GARuteadorCache.rutear(
                 pedido.getAeropuertoOrigen(), pedido.getAeropuertoDestino(),
                 pedido.getFechaRegistro(), pedido.getFechaHoraPlazo(),
                 instancia.getGrafo(), params.getMinutosConexion(), bloqueados);
@@ -155,7 +154,7 @@ public final class OperadorMutacion {
         if (siguienteActual != null && siguienteActual.getIdVueloInstancia() != null) {
             bloqueados.add(siguienteActual.getIdVueloInstancia());
         }
-        final List<VueloInstancia> suffix = DijkstraRuteador.rutear(
+        final List<VueloInstancia> suffix = GARuteadorCache.rutear(
                 previo.getAeropuertoDestino(), pedido.getAeropuertoDestino(),
                 tDesde, pedido.getFechaHoraPlazo(),
                 grafo, params.getMinutosConexion(), bloqueados);

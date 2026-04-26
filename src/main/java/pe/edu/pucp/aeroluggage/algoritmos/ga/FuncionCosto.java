@@ -309,7 +309,8 @@ public final class FuncionCosto {
         return overflow;
     }
 
-    private static double calcularOcupacionPromedioAlmacenes(final Solucion solucion, final InstanciaProblema instancia) {
+    private static double calcularOcupacionPromedioAlmacenes(final Solucion solucion,
+                                                            final InstanciaProblema instancia) {
         if (solucion == null || solucion.getSolucion() == null || solucion.getSolucion().isEmpty()
                 || instancia == null || instancia.getAeropuertos() == null) {
             return 0.0;

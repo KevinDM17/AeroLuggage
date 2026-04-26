@@ -1,7 +1,7 @@
 package pe.edu.pucp.aeroluggage.io;
 
-import java.io.BufferedReader;
 import java.io.IOException;
+import java.io.RandomAccessFile;
 import java.nio.charset.StandardCharsets;
 import java.nio.file.Files;
 import java.nio.file.Path;
@@ -35,6 +35,9 @@ public final class CargadorDatosPrueba {
     private static final int MALETAS_ACTUALES_INICIALES = 0;
     private static final String ESTADO_PEDIDO_REGISTRADO = "REGISTRADO";
     private static final String ESTADO_MALETA_PENDIENTE = "PENDIENTE";
+    private static final int INDICE_INICIO_FECHA_ENVIO = 10;
+    private static final int INDICE_FIN_FECHA_ENVIO = 18;
+    private static final int BYTES_MUESTRA_REGISTRO = 256;
     private static final DateTimeFormatter FORMATO_FECHA_ENVIO = DateTimeFormatter.BASIC_ISO_DATE;
     private static final Pattern COORDENADAS = Pattern.compile(
             ".*Latitude:\\D*(\\d+)\\D+(\\d+)\\D+(\\d+)\\D*([NS])"
@@ -110,9 +113,53 @@ public final class CargadorDatosPrueba {
         return new DatosEntrada(pedidos, maletas);
     }
 
+    public static DatosEntrada cargarEnviosEnRango(final Path carpetaEnvios,
+                                                   final Map<String, Aeropuerto> aeropuertos,
+                                                   final LocalDate fechaInicio,
+                                                   final LocalDate fechaFin) {
+        final ArrayList<Pedido> pedidos = new ArrayList<>();
+        final ArrayList<Maleta> maletas = new ArrayList<>();
+        if (fechaInicio == null || fechaFin == null || fechaFin.isBefore(fechaInicio)) {
+            return new DatosEntrada(pedidos, maletas);
+        }
+
+        try (LectorLotesEnvios lector = crearLectorLotesEnvios(carpetaEnvios, aeropuertos, fechaInicio)) {
+            while (!lector.pendientes.isEmpty()) {
+                final RegistroEnvio registro = lector.pendientes.poll();
+                if (registro == null) {
+                    continue;
+                }
+
+                final LocalDate fechaRegistro = registro.getFechaRegistro().toLocalDate();
+                registro.getFuente().leerSiguiente(aeropuertos, lector.pendientes);
+
+                if (fechaRegistro.isBefore(fechaInicio)) {
+                    continue;
+                }
+                if (fechaRegistro.isAfter(fechaFin)) {
+                    break;
+                }
+
+                final Pedido pedido = registro.crearPedido();
+                pedidos.add(pedido);
+                agregarMaletas(pedido, pedido.getCantidadMaletas(), pedido.getFechaRegistro(), maletas);
+            }
+        }
+
+        ordenarPorFecha(maletas);
+        ordenarPedidosPorFecha(pedidos);
+        return new DatosEntrada(pedidos, maletas);
+    }
+
     public static LectorLotesEnvios crearLectorLotesEnvios(final Path carpetaEnvios,
                                                            final Map<String, Aeropuerto> aeropuertos) {
         return new LectorLotesEnvios(carpetaEnvios, aeropuertos);
+    }
+
+    public static LectorLotesEnvios crearLectorLotesEnvios(final Path carpetaEnvios,
+                                                           final Map<String, Aeropuerto> aeropuertos,
+                                                           final LocalDate fechaInicio) {
+        return new LectorLotesEnvios(carpetaEnvios, aeropuertos, fechaInicio);
     }
 
     public static ArrayList<VueloProgramado> cargarVuelosProgramados(final Path archivoVuelos,
@@ -391,14 +438,21 @@ public final class CargadorDatosPrueba {
         private final Map<String, Aeropuerto> aeropuertos;
         private final PriorityQueue<RegistroEnvio> pendientes;
         private final ArrayList<FuenteEnvio> fuentes;
+        private final LocalDate fechaInicio;
 
         private LectorLotesEnvios(final Path carpetaEnvios, final Map<String, Aeropuerto> aeropuertos) {
+            this(carpetaEnvios, aeropuertos, null);
+        }
+
+        private LectorLotesEnvios(final Path carpetaEnvios, final Map<String, Aeropuerto> aeropuertos,
+                                  final LocalDate fechaInicio) {
             this.aeropuertos = aeropuertos;
             this.pendientes = new PriorityQueue<>(
                     Comparator.comparing(RegistroEnvio::getFechaRegistro)
                             .thenComparing(RegistroEnvio::getIdPedido)
             );
             this.fuentes = new ArrayList<>();
+            this.fechaInicio = fechaInicio;
             inicializarFuentes(carpetaEnvios);
         }
 
@@ -433,6 +487,9 @@ public final class CargadorDatosPrueba {
             for (final Path archivo : archivos) {
                 final FuenteEnvio fuente = FuenteEnvio.abrir(archivo);
                 fuentes.add(fuente);
+                if (fechaInicio != null) {
+                    fuente.posicionarEnFecha(fechaInicio);
+                }
                 fuente.leerSiguiente(aeropuertos, pendientes);
             }
         }
@@ -440,21 +497,42 @@ public final class CargadorDatosPrueba {
 
     private static final class FuenteEnvio implements AutoCloseable {
         private final String codigoOrigen;
-        private final BufferedReader reader;
+        private final RandomAccessFile reader;
+        private final long bytesPorRegistro;
 
-        private FuenteEnvio(final String codigoOrigen, final BufferedReader reader) {
+        private FuenteEnvio(final String codigoOrigen, final RandomAccessFile reader,
+                            final long bytesPorRegistro) {
             this.codigoOrigen = codigoOrigen;
             this.reader = reader;
+            this.bytesPorRegistro = bytesPorRegistro;
         }
 
         static FuenteEnvio abrir(final Path archivo) {
             try {
+                final RandomAccessFile reader = new RandomAccessFile(archivo.toFile(), "r");
                 return new FuenteEnvio(
                         extraerCodigoOrigen(archivo),
-                        Files.newBufferedReader(archivo, StandardCharsets.UTF_8)
+                        reader,
+                        detectarBytesPorRegistro(reader)
                 );
             } catch (final IOException exception) {
                 throw new IllegalStateException("No se pudo abrir el archivo de envios: " + archivo, exception);
+            }
+        }
+
+        void posicionarEnFecha(final LocalDate fechaInicio) {
+            if (fechaInicio == null) {
+                return;
+            }
+            try {
+                final long posicion = buscarPrimeraPosicionDesdeFecha(fechaInicio);
+                reader.seek(posicion);
+            } catch (final IOException exception) {
+                throw new IllegalStateException(
+                        "No se pudo posicionar el archivo de envios de " + codigoOrigen + " en la fecha "
+                                + fechaInicio,
+                        exception
+                );
             }
         }
 
@@ -481,6 +559,163 @@ public final class CargadorDatosPrueba {
             } catch (final IOException exception) {
                 throw new IllegalStateException("No se pudo cerrar el archivo de envios de " + codigoOrigen, exception);
             }
+        }
+
+        private long buscarPrimeraPosicionDesdeFecha(final LocalDate fechaObjetivo) throws IOException {
+            if (bytesPorRegistro > 0L) {
+                return buscarPrimeraPosicionDesdeFechaRegistroFijo(fechaObjetivo);
+            }
+            return buscarPrimeraPosicionDesdeFechaLineal(fechaObjetivo);
+        }
+
+        private long buscarPrimeraPosicionDesdeFechaRegistroFijo(final LocalDate fechaObjetivo) throws IOException {
+            final long totalRegistros = reader.length() / bytesPorRegistro;
+            long izquierda = 0L;
+            long derecha = totalRegistros;
+            while (izquierda < derecha) {
+                final long mitad = (izquierda + derecha) >>> 1;
+                final LocalDate fechaLinea = leerFechaRegistro(mitad);
+                if (fechaLinea == null || fechaLinea.isBefore(fechaObjetivo)) {
+                    izquierda = mitad + 1L;
+                    continue;
+                }
+                derecha = mitad;
+            }
+            return Math.min(izquierda * bytesPorRegistro, reader.length());
+        }
+
+        private LocalDate leerFechaRegistro(final long indiceRegistro) throws IOException {
+            reader.seek(indiceRegistro * bytesPorRegistro);
+            return extraerFechaLinea(reader.readLine());
+        }
+
+        private long buscarPrimeraPosicionDesdeFechaLineal(final LocalDate fechaObjetivo) throws IOException {
+            final long longitud = reader.length();
+            if (longitud <= 0L) {
+                return 0L;
+            }
+
+            long izquierda = 0L;
+            long derecha = longitud;
+            while (izquierda < derecha) {
+                final long mitad = (izquierda + derecha) >>> 1;
+                final long inicioLinea = posicionarEnInicioLinea(mitad, longitud);
+                if (inicioLinea >= longitud) {
+                    derecha = mitad;
+                    continue;
+                }
+
+                reader.seek(inicioLinea);
+                final String linea = reader.readLine();
+                final LocalDate fechaLinea = extraerFechaLinea(linea);
+                if (fechaLinea == null) {
+                    final long siguiente = reader.getFilePointer();
+                    if (siguiente <= inicioLinea) {
+                        break;
+                    }
+                    izquierda = siguiente;
+                    continue;
+                }
+
+                if (fechaLinea.isBefore(fechaObjetivo)) {
+                    final long siguiente = reader.getFilePointer();
+                    if (siguiente <= inicioLinea) {
+                        break;
+                    }
+                    izquierda = siguiente;
+                    continue;
+                }
+
+                derecha = inicioLinea;
+            }
+            return normalizarPosicionInicial(izquierda, longitud);
+        }
+
+        private long posicionarEnInicioLinea(final long posicion, final long longitud) throws IOException {
+            if (posicion <= 0L) {
+                return 0L;
+            }
+            if (posicion >= longitud) {
+                return longitud;
+            }
+            reader.seek(posicion - 1L);
+            int actual;
+            while (reader.getFilePointer() < longitud) {
+                actual = reader.read();
+                if (actual == '\n') {
+                    return reader.getFilePointer();
+                }
+                final long actualPosicion = reader.getFilePointer();
+                if (actualPosicion <= 1L) {
+                    return 0L;
+                }
+                reader.seek(actualPosicion - 2L);
+            }
+            return longitud;
+        }
+
+        private long normalizarPosicionInicial(final long posicion, final long longitud) throws IOException {
+            long inicioLinea = posicionarEnInicioLinea(posicion, longitud);
+            reader.seek(inicioLinea);
+            String linea = reader.readLine();
+            while (linea != null) {
+                final LocalDate fecha = extraerFechaLinea(linea);
+                if (fecha != null) {
+                    return inicioLinea;
+                }
+                final long siguiente = reader.getFilePointer();
+                if (siguiente <= inicioLinea) {
+                    return 0L;
+                }
+                inicioLinea = siguiente;
+                reader.seek(siguiente);
+                linea = reader.readLine();
+            }
+            return longitud;
+        }
+
+        private LocalDate extraerFechaLinea(final String linea) {
+            if (linea == null || linea.isBlank()) {
+                return null;
+            }
+            if (linea.length() >= INDICE_FIN_FECHA_ENVIO) {
+                return extraerFechaPorPosicion(linea);
+            }
+            final String[] partes = linea.trim().split("-");
+            if (partes.length != 7) {
+                return null;
+            }
+            try {
+                return LocalDate.parse(partes[1].trim(), FORMATO_FECHA_ENVIO);
+            } catch (final RuntimeException exception) {
+                return null;
+            }
+        }
+
+        private LocalDate extraerFechaPorPosicion(final String linea) {
+            try {
+                final String fecha = linea.substring(INDICE_INICIO_FECHA_ENVIO, INDICE_FIN_FECHA_ENVIO);
+                return LocalDate.parse(fecha, FORMATO_FECHA_ENVIO);
+            } catch (final RuntimeException exception) {
+                return null;
+            }
+        }
+
+        private static long detectarBytesPorRegistro(final RandomAccessFile reader) throws IOException {
+            final long longitud = reader.length();
+            if (longitud <= 0L) {
+                return 0L;
+            }
+            reader.seek(0L);
+            final int limite = (int) Math.min(longitud, BYTES_MUESTRA_REGISTRO);
+            for (int i = 0; i < limite; i++) {
+                final int actual = reader.read();
+                if (actual == '\n') {
+                    final long bytesRegistro = i + 1L;
+                    return longitud % bytesRegistro == 0L ? bytesRegistro : 0L;
+                }
+            }
+            return 0L;
         }
     }
 

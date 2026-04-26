@@ -13,7 +13,6 @@ import java.util.Set;
 
 import pe.edu.pucp.aeroluggage.algoritmos.InstanciaProblema;
 import pe.edu.pucp.aeroluggage.algoritmos.Solucion;
-import pe.edu.pucp.aeroluggage.algoritmos.common.DijkstraRuteador;
 import pe.edu.pucp.aeroluggage.algoritmos.common.GrafoTiempoExpandido;
 import pe.edu.pucp.aeroluggage.dominio.entidades.Aeropuerto;
 import pe.edu.pucp.aeroluggage.dominio.entidades.Maleta;
@@ -173,7 +172,7 @@ public final class Reparador {
                 ruta.setEstado(EstadoRuta.FALLIDA);
                 ruta.setDuracion(0.0);
             } else {
-                final List<VueloInstancia> camino = DijkstraRuteador.rutear(
+                final List<VueloInstancia> camino = GARuteadorCache.rutear(
                         pedido.getAeropuertoOrigen(), pedido.getAeropuertoDestino(),
                         pedido.getFechaRegistro(), pedido.getFechaHoraPlazo(),
                         grafo, params.getMinutosConexion(), new HashSet<>());
@@ -225,7 +224,7 @@ public final class Reparador {
         final Pedido pedido = maleta.getPedido();
         final Set<String> bloqueados = new HashSet<>();
         bloqueados.add(idVueloBloqueado);
-        final List<VueloInstancia> nuevo = DijkstraRuteador.rutear(
+        final List<VueloInstancia> nuevo = GARuteadorCache.rutear(
                 pedido.getAeropuertoOrigen(), pedido.getAeropuertoDestino(),
                 pedido.getFechaRegistro(), pedido.getFechaHoraPlazo(),
                 grafo, params.getMinutosConexion(), bloqueados);
@@ -385,8 +384,11 @@ public final class Reparador {
         }
     }
 
-    private static void rerutearBloqueandoAeropuerto(final Ruta ruta, final Maleta maleta, final String idAeropuertoBloqueado,
-                                                final GrafoTiempoExpandido grafo, final ParametrosGA params) {
+    private static void rerutearBloqueandoAeropuerto(final Ruta ruta,
+                                                     final Maleta maleta,
+                                                     final String idAeropuertoBloqueado,
+                                                     final GrafoTiempoExpandido grafo,
+                                                     final ParametrosGA params) {
         if (maleta == null || maleta.getPedido() == null) {
             ruta.setSubrutas(new ArrayList<>());
             ruta.setEstado(EstadoRuta.FALLIDA);
@@ -396,7 +398,7 @@ public final class Reparador {
         final Pedido pedido = maleta.getPedido();
         final Set<String> bloqueados = new HashSet<>();
         bloqueados.add(idAeropuertoBloqueado);
-        final List<VueloInstancia> nuevo = DijkstraRuteador.rutear(
+        final List<VueloInstancia> nuevo = GARuteadorCache.rutear(
                 pedido.getAeropuertoOrigen(), pedido.getAeropuertoDestino(),
                 pedido.getFechaRegistro(), pedido.getFechaHoraPlazo(),
                 grafo, params.getMinutosConexion(), bloqueados);

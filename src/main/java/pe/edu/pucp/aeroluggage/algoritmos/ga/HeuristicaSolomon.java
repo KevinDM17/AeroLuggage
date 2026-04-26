@@ -12,7 +12,6 @@ import java.util.Set;
 
 import pe.edu.pucp.aeroluggage.algoritmos.InstanciaProblema;
 import pe.edu.pucp.aeroluggage.algoritmos.Solucion;
-import pe.edu.pucp.aeroluggage.algoritmos.common.DijkstraRuteador;
 import pe.edu.pucp.aeroluggage.algoritmos.common.GrafoTiempoExpandido;
 import pe.edu.pucp.aeroluggage.dominio.entidades.Aeropuerto;
 import pe.edu.pucp.aeroluggage.dominio.entidades.Maleta;
@@ -110,7 +109,7 @@ public final class HeuristicaSolomon {
                                                            final Map<String, Integer> consumoAeropuerto,
                                                            final Map<String, Aeropuerto> aeropuertos) {
         for (int intento = 0; intento < 4; intento++) {
-            final List<VueloInstancia> camino = DijkstraRuteador.rutear(
+            final List<VueloInstancia> camino = GARuteadorCache.rutear(
                     pedido.getAeropuertoOrigen(), pedido.getAeropuertoDestino(),
                     tListo, tLimite, grafo, params.getMinutosConexion(), bloqueados);
             if (camino == null) {
@@ -134,7 +133,7 @@ public final class HeuristicaSolomon {
             }
             bloqueados.add(vueloSaturado);
         }
-        return DijkstraRuteador.rutear(
+        return GARuteadorCache.rutear(
                 pedido.getAeropuertoOrigen(), pedido.getAeropuertoDestino(),
                 tListo, tLimite, grafo, params.getMinutosConexion(), bloqueados);
     }

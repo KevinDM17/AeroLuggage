@@ -27,6 +27,9 @@ import pe.edu.pucp.aeroluggage.algoritmos.Metaheuristico;
 import pe.edu.pucp.aeroluggage.algoritmos.Solucion;
 import pe.edu.pucp.aeroluggage.algoritmos.aco.ACO;
 import pe.edu.pucp.aeroluggage.algoritmos.aco.ACOConfiguracion;
+import pe.edu.pucp.aeroluggage.algoritmos.common.CalculadorFitnessExperimental;
+import pe.edu.pucp.aeroluggage.algoritmos.common.ResultadoFitnessExperimental;
+import pe.edu.pucp.aeroluggage.algoritmos.ga.FuncionCosto;
 import pe.edu.pucp.aeroluggage.algoritmos.ga.GA;
 import pe.edu.pucp.aeroluggage.algoritmos.ga.ParametrosGA;
 import pe.edu.pucp.aeroluggage.dominio.entidades.Aeropuerto;
@@ -82,7 +85,12 @@ class SimulacionTemporalTest {
         todosVuelosInstancia = CargadorDatosPrueba.cargarVuelosInstancia(
                 archivoVuelos, indice, fechaInicio, totalDias);
 
-        final DatosEntrada datosEntrada = CargadorDatosPrueba.cargarEnvios(carpetaEnvios, indice);
+        final DatosEntrada datosEntrada = CargadorDatosPrueba.cargarEnviosEnRango(
+                carpetaEnvios,
+                indice,
+                fechaInicio,
+                fechaFin
+        );
         maletasPorDia = new HashMap<>();
         for (final Maleta m : datosEntrada.getMaletas()) {
             if (m == null || m.getFechaRegistro() == null) {
@@ -120,9 +128,12 @@ class SimulacionTemporalTest {
                                                    final String nombre) {
         final List<Maleta> pendientes = new ArrayList<>();
         final Map<String, Integer> ocupacion = new HashMap<>();
+        final Map<String, VueloInstancia> vuelosPorId = indexarVuelosInstancia(copiaVuelos);
         final List<PasoSimulacion> historial = new ArrayList<>();
+        final long inicioEjecucionMs = System.currentTimeMillis();
         int totalEnrutadas = 0;
         final ResultadoSimulacion resultado = new ResultadoSimulacion();
+        ResultadoFitnessExperimental fitnessExperimental = new ResultadoFitnessExperimental(0D, 0, 0D, 0D, 0D);
 
         System.out.printf("%n=== SIMULACION TEMPORAL [%s] %s → %s ===%n", nombre, fechaInicio, fechaFin);
 
@@ -179,6 +190,9 @@ class SimulacionTemporalTest {
             // 4. Run algorithm
             algoritmo.ejecutar(instancia);
             final Solucion sol = obtenerSolucion(algoritmo);
+            fitnessExperimental = fitnessExperimental.sumar(
+                    CalculadorFitnessExperimental.calcular(sol, instancia)
+            );
 
             // 5. Commit successful routes — decrement flight capacity on this algo's copy
             final Set<String> idsMaletasEnrutadas = new HashSet<>();
@@ -190,9 +204,10 @@ class SimulacionTemporalTest {
                     }
                     idsMaletasEnrutadas.add(ruta.getIdMaleta());
                     for (final VueloInstancia vi : ruta.getSubrutas()) {
-                        if (vi != null && vi.getCapacidadDisponible() > 0) {
+                        final VueloInstancia vueloReal = obtenerVueloReal(vuelosPorId, vi);
+                        if (vueloReal != null && vueloReal.getCapacidadDisponible() > 0) {
                             try {
-                                vi.actualizarCapacidad(1);
+                                vueloReal.actualizarCapacidad(1);
                             } catch (final IllegalStateException ignored) {
                                 // over-committed flight; skip silently
                             }
@@ -228,6 +243,8 @@ class SimulacionTemporalTest {
                 }
             }
 
+            FuncionCosto.calcularCostoSolucion(sol, instancia, construirParametrosGA());
+
             // 8. Record step metrics
             final String masCargado = ocupacion.entrySet().stream()
                     .max(Map.Entry.comparingByValue())
@@ -254,6 +271,8 @@ class SimulacionTemporalTest {
         resultado.totalMaletasEnrutadas = totalEnrutadas;
         resultado.totalMaletasPendientes = pendientes.size();
         resultado.historial = historial;
+        resultado.tiempoEjecucionMs = System.currentTimeMillis() - inicioEjecucionMs;
+        resultado.fitnessExperimental = fitnessExperimental;
         reportarResumen(nombre, resultado);
         return resultado;
     }
@@ -273,6 +292,28 @@ class SimulacionTemporalTest {
             return ((ACO) algoritmo).getUltimaSolucion();
         }
         return null;
+    }
+
+    private static Map<String, VueloInstancia> indexarVuelosInstancia(final ArrayList<VueloInstancia> vuelos) {
+        final Map<String, VueloInstancia> vuelosPorId = new HashMap<>();
+        if (vuelos == null || vuelos.isEmpty()) {
+            return vuelosPorId;
+        }
+        for (final VueloInstancia vuelo : vuelos) {
+            if (vuelo == null || vuelo.getIdVueloInstancia() == null) {
+                continue;
+            }
+            vuelosPorId.put(vuelo.getIdVueloInstancia(), vuelo);
+        }
+        return vuelosPorId;
+    }
+
+    private static VueloInstancia obtenerVueloReal(final Map<String, VueloInstancia> vuelosPorId,
+                                                   final VueloInstancia vueloRuta) {
+        if (vueloRuta == null || vueloRuta.getIdVueloInstancia() == null) {
+            return null;
+        }
+        return vuelosPorId.get(vueloRuta.getIdVueloInstancia());
     }
 
     private static ArrayList<VueloInstancia> clonarVuelosInstancia(
@@ -310,6 +351,11 @@ class SimulacionTemporalTest {
         System.out.printf("Total enrutadas: %d%n", resultado.totalMaletasEnrutadas);
         System.out.printf("Pendientes fin:  %d%n", resultado.totalMaletasPendientes);
         System.out.printf("Pasos:           %d%n", resultado.historial.size());
+        System.out.printf("Tiempo ejecucion:%d ms (%.3f s)%n",
+                resultado.tiempoEjecucionMs,
+                resultado.tiempoEjecucionMs / 1000D
+        );
+        reportarFitnessExperimental(resultado.fitnessExperimental);
         System.out.println();
         System.out.printf("%-12s %8s %10s %10s %10s%n",
                 "Dia", "Nuevas", "Enrutadas", "Pendientes", "Semaforo");
@@ -319,6 +365,19 @@ class SimulacionTemporalTest {
                     paso.dia(), paso.nuevas(), paso.enrutadas(), paso.pendientes(), sem);
         }
         System.out.println();
+    }
+
+    private static void reportarFitnessExperimental(final ResultadoFitnessExperimental fitnessExperimental) {
+        if (fitnessExperimental == null) {
+            return;
+        }
+        System.out.printf("Fitness experimental: %.3f%n", fitnessExperimental.getFitnessExperimental());
+        System.out.printf("Maletas no ruteadas acumuladas: %d%n", fitnessExperimental.getMaletasNoRuteadas());
+        System.out.printf("Uso capacidad vuelos: %.3f%n", fitnessExperimental.getUsoCapacidadVuelos());
+        System.out.printf("Uso capacidad aeropuertos: %.3f%n",
+                fitnessExperimental.getUsoCapacidadAeropuertos()
+        );
+        System.out.printf("Duracion total horas: %.3f%n", fitnessExperimental.getDuracionTotalHoras());
     }
 
     // ---- parameter helpers (identical to AlgoritmosDesdeArchivoTest) ----
@@ -398,6 +457,8 @@ class SimulacionTemporalTest {
         LocalDate diaColapso = null;
         int totalMaletasEnrutadas = 0;
         int totalMaletasPendientes = 0;
+        long tiempoEjecucionMs = 0L;
+        ResultadoFitnessExperimental fitnessExperimental = null;
         List<PasoSimulacion> historial = new ArrayList<>();
     }
 }
