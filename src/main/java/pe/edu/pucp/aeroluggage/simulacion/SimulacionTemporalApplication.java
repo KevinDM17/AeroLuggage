@@ -4,6 +4,7 @@ public final class SimulacionTemporalApplication {
 
     private static final String MODO_GA = "ga";
     private static final String MODO_ACO = "aco";
+    private static final String MODO_EXPERIMENTO = "experimento";
     private static final String MODO_TODOS = "todos";
 
     private SimulacionTemporalApplication() {
@@ -18,6 +19,10 @@ public final class SimulacionTemporalApplication {
         }
         if (MODO_ACO.equals(modo)) {
             SimulacionTemporalRunner.ejecutarAco();
+            return;
+        }
+        if (MODO_EXPERIMENTO.equals(modo)) {
+            SimulacionTemporalRunner.ejecutarExperimento();
             return;
         }
         SimulacionTemporalRunner.ejecutarDesdeConfiguracion();

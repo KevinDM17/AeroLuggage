@@ -17,7 +17,7 @@ public class Solucion {
     private int maletasIncumplidas;
     private double ocupacionPromedioVuelos;
     private double ocupacionPromedioAlmacenes;
-    private int overflowAlmacenes;
+    private double overflowAlmacenes;
     private Semaforo semaforo;
 
     public Solucion() {
@@ -183,11 +183,11 @@ public class Solucion {
         this.ocupacionPromedioAlmacenes = ocupacionPromedioAlmacenes;
     }
 
-    public int getOverflowAlmacenes() {
+    public double getOverflowAlmacenes() {
         return overflowAlmacenes;
     }
 
-    public void setOverflowAlmacenes(final int overflowAlmacenes) {
+    public void setOverflowAlmacenes(final double overflowAlmacenes) {
         this.overflowAlmacenes = overflowAlmacenes;
     }
 

@@ -7,7 +7,7 @@ final class EvaluacionACO {
     private final int rutasFactibles;
     private final int rutasNoFactibles;
     private final int sobrecargaVuelos;
-    private final int sobrecargaAlmacenes;
+    private final double sobrecargaAlmacenes;
     private final int numeroReplanificaciones;
 
     EvaluacionACO(
@@ -17,7 +17,7 @@ final class EvaluacionACO {
             final int rutasFactibles,
             final int rutasNoFactibles,
             final int sobrecargaVuelos,
-            final int sobrecargaAlmacenes,
+            final double sobrecargaAlmacenes,
             final int numeroReplanificaciones
     ) {
         this.costo = costo;
@@ -54,7 +54,7 @@ final class EvaluacionACO {
         return sobrecargaVuelos;
     }
 
-    int getSobrecargaAlmacenes() {
+    double getSobrecargaAlmacenes() {
         return sobrecargaAlmacenes;
     }
 

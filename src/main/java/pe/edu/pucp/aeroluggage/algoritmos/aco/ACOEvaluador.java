@@ -86,17 +86,21 @@ final class ACOEvaluador {
             sobrecargaVuelos += Math.max(0, entry.getValue() - capacidadBase);
         }
 
-        int sobrecargaAlmacenes = 0;
+        double ocupacionAlmacenes = 0D;
         for (final Map.Entry<String, Integer> entry : usoAlmacenes.entrySet()) {
             final int capacidadBase = subproblema.getCapacidadRestanteAlmacenBase().getOrDefault(entry.getKey(), 0);
-            sobrecargaAlmacenes += Math.max(0, entry.getValue() - capacidadBase);
+            if (capacidadBase > 0) {
+                ocupacionAlmacenes += (double) entry.getValue() / capacidadBase;
+            } else {
+                ocupacionAlmacenes += entry.getValue();
+            }
         }
 
         final double costo = tiempoTotalDias
                 + rutasNoFactibles * configuracion.getPenalizacionNoFactible()
                 + incumplimientosPlazo * configuracion.getPenalizacionIncumplimiento()
                 + sobrecargaVuelos * configuracion.getPenalizacionSobrecargaVuelo()
-                + sobrecargaAlmacenes * configuracion.getPenalizacionSobrecargaAlmacen()
+                + ocupacionAlmacenes * configuracion.getPenalizacionSobrecargaAlmacen()
                 + numeroReplanificaciones * configuracion.getPenalizacionReplanificacion();
 
         return new EvaluacionACO(
@@ -106,7 +110,7 @@ final class ACOEvaluador {
                 rutasFactibles,
                 rutasNoFactibles,
                 sobrecargaVuelos,
-                sobrecargaAlmacenes,
+                ocupacionAlmacenes,
                 numeroReplanificaciones
         );
     }

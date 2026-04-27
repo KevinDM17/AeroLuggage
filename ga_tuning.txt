@@ -1,0 +1,29 @@
+# Tuning Taguchi - GA AeroLuggage
+# Menor fitnessExperimental = mejor resultado
+
+fecha=2026-01-05
+semilla=42
+
+# Parametros del GA a tunear (nombres exactos de los setters de ParametrosGA)
+columnas=tamanioPoblacion,probCruce,probMutacion,torneoK,elites,pesoGreedySolomon
+
+# Arreglo ortogonal L18 (6 factores x 3 niveles, 18 corridas x 10 replicas = 90 ejecuciones)
+# tamanioPoblacion | probCruce | probMutacion | torneoK | elites | pesoGreedySolomon
+5,0.70,0.05,2,1,0.4
+5,0.85,0.15,3,2,0.6
+5,0.95,0.25,5,4,0.8
+10,0.70,0.05,3,2,0.8
+10,0.85,0.15,5,4,0.4
+10,0.95,0.25,2,1,0.6
+15,0.70,0.15,2,4,0.6
+15,0.85,0.25,3,1,0.8
+15,0.95,0.05,5,2,0.4
+5,0.70,0.25,5,2,0.6
+5,0.85,0.05,2,4,0.8
+5,0.95,0.15,3,1,0.4
+5,0.70,0.15,5,1,0.8
+5,0.85,0.25,2,2,0.4
+10,0.95,0.05,3,4,0.6
+15,0.70,0.25,3,4,0.4
+15,0.85,0.05,5,1,0.6
+15,0.95,0.15,2,2,0.8

@@ -71,7 +71,7 @@ public final class FuncionCosto {
         }
 
         final double overflowVuelos = calcularOverflowVuelos(cargaPorVuelo, instancia);
-        final double overflowAlmacenes = calcularOverflowAlmacenes(solucion, instancia);
+        final double overflowAlmacenes = calcularOcupacionAlmacenes(solucion, instancia);
         final double transitoPromedio = rutasContadas > 0 ? sumaTransito / rutasContadas : 0.0;
         final double ocupacionPromedio = calcularOcupacionPromedio(cargaPorVuelo, instancia);
 
@@ -87,7 +87,7 @@ public final class FuncionCosto {
         solucion.setMaletasIncumplidas(incumplidas);
         solucion.setOcupacionPromedioVuelos(ocupacionPromedio);
         solucion.setOcupacionPromedioAlmacenes(calcularOcupacionPromedioAlmacenes(solucion, instancia));
-        solucion.setOverflowAlmacenes((int) overflowAlmacenes);
+        solucion.setOverflowAlmacenes(overflowAlmacenes);
         solucion.setFactible(incumplidas == 0 && overflowVuelos == 0.0 && overflowAlmacenes == 0.0);
         solucion.setSemaforo(CalculadorSemaforo.clasificarGlobal(solucion, instancia, params));
         return costoTotal;
@@ -265,7 +265,7 @@ public final class FuncionCosto {
         return indice;
     }
 
-    private static double calcularOverflowAlmacenes(final Solucion solucion, final InstanciaProblema instancia) {
+    private static double calcularOcupacionAlmacenes(final Solucion solucion, final InstanciaProblema instancia) {
         if (solucion == null || solucion.getSolucion() == null || solucion.getSolucion().isEmpty()
                 || instancia == null || instancia.getAeropuertos() == null) {
             return 0.0;
@@ -291,7 +291,7 @@ public final class FuncionCosto {
             }
         }
 
-        double overflow = 0.0;
+        double ocupacion = 0.0;
         for (final Map.Entry<String, Integer> entry : cargaPorAeropuerto.entrySet()) {
             final Aeropuerto aeropuerto = aeropuertos.get(entry.getKey());
             if (aeropuerto == null) {
@@ -299,14 +299,12 @@ public final class FuncionCosto {
             }
             final int capacidad = aeropuerto.getCapacidadAlmacen();
             if (capacidad <= 0) {
+                ocupacion += entry.getValue();
                 continue;
             }
-            final int carga = entry.getValue();
-            if (carga > capacidad) {
-                overflow += carga - capacidad;
-            }
+            ocupacion += (double) entry.getValue() / capacidad;
         }
-        return overflow;
+        return ocupacion;
     }
 
     private static double calcularOcupacionPromedioAlmacenes(final Solucion solucion,

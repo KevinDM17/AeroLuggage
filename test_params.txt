@@ -4,20 +4,22 @@ ejecutar.aco=true
 
 # Rango de fechas de simulacion (yyyy-MM-dd)
 simulacion.fecha.inicio=2026-01-02
-simulacion.fecha.fin=2026-01-10
+simulacion.fecha.fin=2026-01-06
 simulacion.ventana.dias=3
+simulacion.iteraciones=30
 
 # ---------- Parametros GA ----------
-ga.tamanioPoblacion=20
+ga.tamanioPoblacion=5
 ga.maxGeneraciones=30
 ga.maxSinMejora=10
 ga.tiempoMaximoMs=60000
-ga.probCruce=0.85
-ga.probMutacion=0.15
+ga.probCruce=0.7
+ga.probMutacion=0.25
 ga.torneoK=3
-ga.elites=2
+ga.probTorneo=0.8
+ga.elites=1
 ga.semilla=-1
-ga.minutosConexion=60
+ga.minutosConexion=0
 ga.w1MaletasIncumplidas=10000
 ga.w2ExcesoHorasPlazo=100
 ga.w3OverflowVuelo=500
@@ -31,11 +33,11 @@ ga.pesoGreedySolomon=0.6
 # ---------- Parametros ACO ----------
 aco.nts=3
 aco.maxIter=20
-aco.nAnts=16
-aco.alpha=1.0
+aco.nAnts=8
+aco.alpha=2.0
 aco.beta=2.0
-aco.rho=0.15
-aco.gamma=0.05
+aco.rho=0.3
+aco.gamma=0.1
 aco.tau0=1.0
 aco.tauMin=0.01
 aco.tauMax=25.0

@@ -1,0 +1,29 @@
+# Tuning Taguchi - ACO AeroLuggage
+# Menor fitnessExperimental = mejor resultado
+
+fecha=2026-01-05
+semilla=42
+
+# Parametros del ACO a tunear (nombres exactos de los setters de ACOConfiguracion)
+columnas=nAnts,alpha,beta,rho,gamma,tauMax
+
+# Arreglo ortogonal L18 (6 factores x 3 niveles, 18 corridas x 10 replicas = 180 ejecuciones)
+# nAnts | alpha | beta | rho  | gamma | tauMax
+8,0.5,1.0,0.05,0.01,10.0
+8,0.5,2.0,0.15,0.05,25.0
+8,0.5,4.0,0.30,0.10,50.0
+8,1.0,1.0,0.15,0.05,50.0
+8,1.0,2.0,0.30,0.10,10.0
+8,1.0,4.0,0.05,0.01,25.0
+8,2.0,1.0,0.15,0.10,25.0
+8,2.0,2.0,0.30,0.01,50.0
+8,2.0,4.0,0.05,0.05,10.0
+16,0.5,1.0,0.30,0.10,25.0
+16,0.5,2.0,0.05,0.01,50.0
+16,0.5,4.0,0.15,0.05,10.0
+16,1.0,1.0,0.15,0.10,10.0
+16,1.0,2.0,0.30,0.01,25.0
+16,1.0,4.0,0.05,0.05,50.0
+32,0.5,1.0,0.30,0.05,25.0
+32,0.5,2.0,0.05,0.10,10.0
+32,0.5,4.0,0.15,0.01,50.0

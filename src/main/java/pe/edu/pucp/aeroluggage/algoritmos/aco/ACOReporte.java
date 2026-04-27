@@ -8,7 +8,7 @@ public class ACOReporte {
     private double tiempoTotalDias;
     private int incumplimientosPlazo;
     private int sobrecargaVuelos;
-    private int sobrecargaAlmacenes;
+    private double sobrecargaAlmacenes;
     private int numeroReplanificaciones;
     private double mejorCosto;
 
@@ -68,11 +68,11 @@ public class ACOReporte {
         this.sobrecargaVuelos = sobrecargaVuelos;
     }
 
-    public int getSobrecargaAlmacenes() {
+    public double getSobrecargaAlmacenes() {
         return sobrecargaAlmacenes;
     }
 
-    public void setSobrecargaAlmacenes(final int sobrecargaAlmacenes) {
+    public void setSobrecargaAlmacenes(final double sobrecargaAlmacenes) {
         this.sobrecargaAlmacenes = sobrecargaAlmacenes;
     }
 

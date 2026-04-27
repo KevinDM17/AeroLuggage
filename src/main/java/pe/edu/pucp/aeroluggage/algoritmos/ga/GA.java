@@ -81,9 +81,6 @@ public class GA extends Metaheuristico {
         generacionesEjecutadas = 0;
 
         for (int gen = 0; gen < maxGeneracionesEfectivo; gen++) {
-            if (System.currentTimeMillis() - tInicio > parametros.getTiempoMaximoMs()) {
-                break;
-            }
             if (generacionesSinMejora >= maxSinMejoraEfectivo) {
                 break;
             }
@@ -174,35 +171,35 @@ public class GA extends Metaheuristico {
     }
 
     private int obtenerTamanioPoblacionEfectivo(final InstanciaProblema instancia) {
-        final int cantidadMaletas = instancia.getMaletas().size();
-        if (cantidadMaletas >= UMBRAL_INSTANCIA_GIGANTE) {
-            return Math.min(parametros.getTamanioPoblacion(), POBLACION_MAXIMA_GIGANTE);
-        }
-        if (cantidadMaletas >= UMBRAL_INSTANCIA_GRANDE) {
-            return Math.min(parametros.getTamanioPoblacion(), POBLACION_MAXIMA_GRANDE);
-        }
+        // final int cantidadMaletas = instancia.getMaletas().size();
+        // if (cantidadMaletas >= UMBRAL_INSTANCIA_GIGANTE) {
+        //     return Math.min(parametros.getTamanioPoblacion(), POBLACION_MAXIMA_GIGANTE);
+        // }
+        // if (cantidadMaletas >= UMBRAL_INSTANCIA_GRANDE) {
+        //     return Math.min(parametros.getTamanioPoblacion(), POBLACION_MAXIMA_GRANDE);
+        // }
         return Math.max(1, parametros.getTamanioPoblacion());
     }
 
     private int obtenerMaxGeneracionesEfectivo(final InstanciaProblema instancia) {
-        final int cantidadMaletas = instancia.getMaletas().size();
-        if (cantidadMaletas >= UMBRAL_INSTANCIA_GIGANTE) {
-            return Math.min(parametros.getMaxGeneraciones(), GENERACIONES_MAXIMAS_GIGANTE);
-        }
-        if (cantidadMaletas >= UMBRAL_INSTANCIA_GRANDE) {
-            return Math.min(parametros.getMaxGeneraciones(), GENERACIONES_MAXIMAS_GRANDE);
-        }
+        // final int cantidadMaletas = instancia.getMaletas().size();
+        // if (cantidadMaletas >= UMBRAL_INSTANCIA_GIGANTE) {
+        //     return Math.min(parametros.getMaxGeneraciones(), GENERACIONES_MAXIMAS_GIGANTE);
+        // }
+        // if (cantidadMaletas >= UMBRAL_INSTANCIA_GRANDE) {
+        //     return Math.min(parametros.getMaxGeneraciones(), GENERACIONES_MAXIMAS_GRANDE);
+        // }
         return Math.max(1, parametros.getMaxGeneraciones());
     }
 
     private int obtenerMaxSinMejoraEfectivo(final InstanciaProblema instancia) {
-        final int cantidadMaletas = instancia.getMaletas().size();
-        if (cantidadMaletas >= UMBRAL_INSTANCIA_GIGANTE) {
-            return Math.min(parametros.getMaxSinMejora(), SIN_MEJORA_MAXIMO_GIGANTE);
-        }
-        if (cantidadMaletas >= UMBRAL_INSTANCIA_GRANDE) {
-            return Math.min(parametros.getMaxSinMejora(), SIN_MEJORA_MAXIMO_GRANDE);
-        }
+        // final int cantidadMaletas = instancia.getMaletas().size();
+        // if (cantidadMaletas >= UMBRAL_INSTANCIA_GIGANTE) {
+        //     return Math.min(parametros.getMaxSinMejora(), SIN_MEJORA_MAXIMO_GIGANTE);
+        // }
+        // if (cantidadMaletas >= UMBRAL_INSTANCIA_GRANDE) {
+        //     return Math.min(parametros.getMaxSinMejora(), SIN_MEJORA_MAXIMO_GRANDE);
+        // }
         return Math.max(1, parametros.getMaxSinMejora());
     }
 
@@ -220,13 +217,18 @@ public class GA extends Metaheuristico {
 
     private Individuo seleccionTorneo(final Poblacion poblacion, final Random random) {
         final int k = Math.max(2, parametros.getTorneoK());
+        final List<Individuo> candidatos = new ArrayList<>(k);
         Individuo mejor = null;
         for (int i = 0; i < k; i++) {
             final Individuo candidato = poblacion.get(random.nextInt(poblacion.tamano()));
+            candidatos.add(candidato);
             if (mejor == null || candidato.getFitness() > mejor.getFitness()) {
                 mejor = candidato;
             }
         }
-        return mejor;
+        if (random.nextDouble() < parametros.getProbTorneo()) {
+            return mejor;
+        }
+        return candidatos.get(random.nextInt(candidatos.size()));
     }
 }

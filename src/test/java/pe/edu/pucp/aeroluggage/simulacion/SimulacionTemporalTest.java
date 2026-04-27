@@ -17,6 +17,7 @@ import java.util.Iterator;
 import java.util.List;
 import java.util.Map;
 import java.util.Properties;
+import java.util.Random;
 import java.util.Set;
 
 import org.junit.jupiter.api.BeforeAll;
@@ -121,6 +122,59 @@ class SimulacionTemporalTest {
         final ResultadoSimulacion resultado = ejecutarSimulacion(
                 aco, clonarVuelosInstancia(todosVuelosInstancia), "ACO");
         assertNotNull(resultado);
+    }
+
+    @Test
+    void simulacion_experimental() {
+        final boolean ejecutarGa = Boolean.parseBoolean(params.getProperty("ejecutar.ga", "true"));
+        final boolean ejecutarAco = Boolean.parseBoolean(params.getProperty("ejecutar.aco", "true"));
+        assumeTrue(ejecutarGa || ejecutarAco, "Ningun algoritmo habilitado en test_params.txt.");
+
+        final int iteraciones = intParam("simulacion.iteraciones", 30);
+        final Random rng = new Random();
+        final List<ResultadoIteracion> historialExp = new ArrayList<>();
+
+        System.out.printf("%n=== EXPERIMENTO: %d iteraciones [%s -> %s] ===%n",
+                iteraciones, fechaInicio, fechaFin);
+
+        for (int i = 1; i <= iteraciones; i++) {
+            final long semilla = rng.nextLong();
+            System.out.printf("%n-- Iteracion %d/%d  semilla=%d --%n", i, iteraciones, semilla);
+
+            ResultadoSimulacion resGA = null;
+            ResultadoSimulacion resACO = null;
+
+            if (ejecutarGa) {
+                final ParametrosGA pGA = construirParametrosGA();
+                pGA.setSemilla(semilla);
+                resGA = ejecutarSimulacion(new GA(pGA),
+                        clonarVuelosInstancia(todosVuelosInstancia), "GA-" + i);
+            }
+            if (ejecutarAco) {
+                final ACOConfiguracion cACO = construirConfiguracionACO();
+                cACO.setSemilla(semilla);
+                resACO = ejecutarSimulacion(new ACO(cACO),
+                        clonarVuelosInstancia(todosVuelosInstancia), "ACO-" + i);
+            }
+
+            historialExp.add(new ResultadoIteracion(i, semilla, resGA, resACO));
+
+            System.out.printf("[ITER %2d] semilla=%-20d", i, semilla);
+            if (resGA != null) {
+                System.out.printf("  GA: %-10s enr=%-5d t=%dms",
+                        resGA.colapsada ? "COLAPSO" : "OK",
+                        resGA.totalMaletasEnrutadas, resGA.tiempoEjecucionMs);
+            }
+            if (resACO != null) {
+                System.out.printf("  ACO: %-10s enr=%-5d t=%dms",
+                        resACO.colapsada ? "COLAPSO" : "OK",
+                        resACO.totalMaletasEnrutadas, resACO.tiempoEjecucionMs);
+            }
+            System.out.println();
+        }
+
+        reportarExperimento(historialExp, iteraciones, ejecutarGa, ejecutarAco);
+        assertNotNull(historialExp);
     }
 
     private ResultadoSimulacion ejecutarSimulacion(final Metaheuristico algoritmo,
@@ -367,6 +421,59 @@ class SimulacionTemporalTest {
         System.out.println();
     }
 
+    private static void reportarExperimento(final List<ResultadoIteracion> historial,
+                                             final int iteraciones,
+                                             final boolean conGA,
+                                             final boolean conACO) {
+        System.out.printf("%n=== RESUMEN EXPERIMENTO (%d iteraciones) ===%n", iteraciones);
+
+        if (conGA) {
+            final long completadas = historial.stream()
+                    .filter(r -> r.resGA() != null && !r.resGA().colapsada).count();
+            final double avgEnr = historial.stream()
+                    .filter(r -> r.resGA() != null)
+                    .mapToInt(r -> r.resGA().totalMaletasEnrutadas).average().orElse(0);
+            final double avgMs = historial.stream()
+                    .filter(r -> r.resGA() != null)
+                    .mapToLong(r -> r.resGA().tiempoEjecucionMs).average().orElse(0);
+            System.out.printf("GA  — completadas: %d/%d (%.1f%%)  enr_prom: %.1f  t_prom: %.0f ms%n",
+                    completadas, iteraciones, 100.0 * completadas / iteraciones, avgEnr, avgMs);
+        }
+        if (conACO) {
+            final long completadas = historial.stream()
+                    .filter(r -> r.resACO() != null && !r.resACO().colapsada).count();
+            final double avgEnr = historial.stream()
+                    .filter(r -> r.resACO() != null)
+                    .mapToInt(r -> r.resACO().totalMaletasEnrutadas).average().orElse(0);
+            final double avgMs = historial.stream()
+                    .filter(r -> r.resACO() != null)
+                    .mapToLong(r -> r.resACO().tiempoEjecucionMs).average().orElse(0);
+            System.out.printf("ACO — completadas: %d/%d (%.1f%%)  enr_prom: %.1f  t_prom: %.0f ms%n",
+                    completadas, iteraciones, 100.0 * completadas / iteraciones, avgEnr, avgMs);
+        }
+
+        System.out.println();
+        System.out.printf("%-5s %-22s", "Iter", "Semilla");
+        if (conGA)  System.out.printf(" %-12s %-6s %-8s", "GA-Estado", "GA-Enr", "GA-ms");
+        if (conACO) System.out.printf(" %-12s %-6s %-8s", "ACO-Estado", "ACO-Enr", "ACO-ms");
+        System.out.println();
+        for (final ResultadoIteracion r : historial) {
+            System.out.printf("%-5d %-22d", r.iteracion(), r.semilla());
+            if (conGA && r.resGA() != null) {
+                System.out.printf(" %-12s %-6d %-8d",
+                        r.resGA().colapsada ? "COLAPSO" : "COMPLETADA",
+                        r.resGA().totalMaletasEnrutadas, r.resGA().tiempoEjecucionMs);
+            }
+            if (conACO && r.resACO() != null) {
+                System.out.printf(" %-12s %-6d %-8d",
+                        r.resACO().colapsada ? "COLAPSO" : "COMPLETADA",
+                        r.resACO().totalMaletasEnrutadas, r.resACO().tiempoEjecucionMs);
+            }
+            System.out.println();
+        }
+        System.out.println();
+    }
+
     private static void reportarFitnessExperimental(final ResultadoFitnessExperimental fitnessExperimental) {
         if (fitnessExperimental == null) {
             return;
@@ -391,6 +498,7 @@ class SimulacionTemporalTest {
         p.setProbCruce(doubleParam("ga.probCruce", p.getProbCruce()));
         p.setProbMutacion(doubleParam("ga.probMutacion", p.getProbMutacion()));
         p.setTorneoK(intParam("ga.torneoK", p.getTorneoK()));
+        p.setProbTorneo(doubleParam("ga.probTorneo", p.getProbTorneo()));
         p.setElites(intParam("ga.elites", p.getElites()));
         p.setSemilla(longParam("ga.semilla", p.getSemilla()));
         p.setMinutosConexion(longParam("ga.minutosConexion", p.getMinutosConexion()));
@@ -451,6 +559,9 @@ class SimulacionTemporalTest {
 
     private record PasoSimulacion(LocalDate dia, int nuevas, int enrutadas, int pendientes,
                                   Semaforo semaforo, String aeropuertoMasCargado) {}
+
+    private record ResultadoIteracion(int iteracion, long semilla,
+                                      ResultadoSimulacion resGA, ResultadoSimulacion resACO) {}
 
     private static final class ResultadoSimulacion {
         boolean colapsada = false;

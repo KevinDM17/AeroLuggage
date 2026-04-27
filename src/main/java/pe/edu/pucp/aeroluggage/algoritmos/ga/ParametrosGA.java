@@ -10,6 +10,7 @@ public class ParametrosGA {
     private double probMutacion = 0.15;
     private double probBusquedaLocal = 0.20;
     private int torneoK = 3;
+    private double probTorneo = 0.85;
     private int elites = 4;
     private long semilla = 42L;
     private long minutosConexion = 60L;
@@ -101,6 +102,14 @@ public class ParametrosGA {
 
     public void setTorneoK(final int torneoK) {
         this.torneoK = torneoK;
+    }
+
+    public double getProbTorneo() {
+        return probTorneo;
+    }
+
+    public void setProbTorneo(final double probTorneo) {
+        this.probTorneo = probTorneo;
     }
 
     public int getElites() {
