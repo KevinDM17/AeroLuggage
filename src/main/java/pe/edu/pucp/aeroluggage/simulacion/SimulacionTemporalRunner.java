@@ -45,6 +45,8 @@ public final class SimulacionTemporalRunner {
     private static final Path PARAMS_FILE = Path.of("test_params.txt");
     private static final Path RESULTADOS_DIR = Path.of("target", "resultados-experimentales");
     private static final Path FITNESS_EXPERIMENTAL_CSV = RESULTADOS_DIR.resolve("fitness-experimental.csv");
+    private static final String FITNESS_EXPERIMENTAL_CABECERA =
+            "Muestra,ACO,ACO Tiempo Ms,Algoritmo Genetico,Algoritmo Genetico Tiempo Ms";
     private static final DateTimeFormatter FMT = DateTimeFormatter.ISO_LOCAL_DATE;
     private static final long SEMILLA_ALEATORIA = -1L;
 
@@ -67,7 +69,7 @@ public final class SimulacionTemporalRunner {
             final GA ga = new GA(parametrosGa);
             final ResultadoSimulacion resultado = ejecutarSimulacion(
                     ga,
-                    clonarVuelosInstancia(contexto.todosVuelosInstancia()),
+                    crearContextoEjecucion(contexto),
                     "GA",
                     contexto
             );
@@ -80,7 +82,7 @@ public final class SimulacionTemporalRunner {
             final ACO aco = new ACO(configuracionAco);
             final ResultadoSimulacion resultado = ejecutarSimulacion(
                     aco,
-                    clonarVuelosInstancia(contexto.todosVuelosInstancia()),
+                    crearContextoEjecucion(contexto),
                     "ACO",
                     contexto
             );
@@ -98,7 +100,7 @@ public final class SimulacionTemporalRunner {
         final GA ga = new GA(parametrosGa);
         final ResultadoSimulacion resultado = ejecutarSimulacion(
                 ga,
-                clonarVuelosInstancia(contexto.todosVuelosInstancia()),
+                crearContextoEjecucion(contexto),
                 "GA",
                 contexto
         );
@@ -115,7 +117,7 @@ public final class SimulacionTemporalRunner {
         final ACO aco = new ACO(configuracionAco);
         final ResultadoSimulacion resultado = ejecutarSimulacion(
                 aco,
-                clonarVuelosInstancia(contexto.todosVuelosInstancia()),
+                crearContextoEjecucion(contexto),
                 "ACO",
                 contexto
         );
@@ -151,17 +153,21 @@ public final class SimulacionTemporalRunner {
             ResultadoSimulacion resGA = null;
             ResultadoSimulacion resACO = null;
 
-            if (ejecutarGa) {
+            final boolean ejecutarGaPrimero = i % 2 != 0;
+            if (ejecutarGaPrimero && ejecutarGa) {
                 final ParametrosGA pGA = construirParametrosGA(contexto.params());
                 pGA.setSemilla(semilla);
-                resGA = ejecutarSimulacion(new GA(pGA),
-                        clonarVuelosInstancia(contexto.todosVuelosInstancia()), "GA-" + i, contexto);
+                resGA = ejecutarSimulacion(new GA(pGA), crearContextoEjecucion(contexto), "GA-" + i, contexto);
             }
             if (ejecutarAco) {
                 final ACOConfiguracion cACO = construirConfiguracionACO(contexto.params());
                 cACO.setSemilla(semilla);
-                resACO = ejecutarSimulacion(new ACO(cACO),
-                        clonarVuelosInstancia(contexto.todosVuelosInstancia()), "ACO-" + i, contexto);
+                resACO = ejecutarSimulacion(new ACO(cACO), crearContextoEjecucion(contexto), "ACO-" + i, contexto);
+            }
+            if (!ejecutarGaPrimero && ejecutarGa) {
+                final ParametrosGA pGA = construirParametrosGA(contexto.params());
+                pGA.setSemilla(semilla);
+                resGA = ejecutarSimulacion(new GA(pGA), crearContextoEjecucion(contexto), "GA-" + i, contexto);
             }
 
             final ExportadorFitnessExperimental exportador =
@@ -302,12 +308,14 @@ public final class SimulacionTemporalRunner {
     }
 
     private static ResultadoSimulacion ejecutarSimulacion(final Metaheuristico algoritmo,
-                                                          final ArrayList<VueloInstancia> copiaVuelos,
+                                                          final ContextoEjecucion contextoEjecucion,
                                                           final String nombre,
                                                           final ContextoSimulacion contexto) {
         final List<Maleta> pendientes = new ArrayList<>();
         final Map<String, Integer> ocupacion = new HashMap<>();
-        final Map<String, VueloInstancia> vuelosPorId = indexarVuelosInstancia(copiaVuelos);
+        final Map<String, VueloInstancia> vuelosPorId = indexarVuelosInstancia(
+                contextoEjecucion.todosVuelosInstancia()
+        );
         final List<PasoSimulacion> historial = new ArrayList<>();
         final long inicioEjecucionMs = System.currentTimeMillis();
         int totalEnrutadas = 0;
@@ -332,7 +340,7 @@ public final class SimulacionTemporalRunner {
             }
 
             for (final Map.Entry<String, Integer> entry : ocupacion.entrySet()) {
-                final Aeropuerto aeropuerto = contexto.indiceAeropuertos().get(entry.getKey());
+                final Aeropuerto aeropuerto = contextoEjecucion.indiceAeropuertos().get(entry.getKey());
                 if (aeropuerto != null) {
                     aeropuerto.setMaletasActuales(Math.max(0, entry.getValue()));
                 }
@@ -341,7 +349,7 @@ public final class SimulacionTemporalRunner {
             final LocalDate ventanaFin = dia.plusDays(contexto.ventanaDias() - 1L);
             final ArrayList<VueloInstancia> vuelosVentana = new ArrayList<>();
             final Set<String> idsProgramadosVentana = new HashSet<>();
-            for (final VueloInstancia vueloInstancia : copiaVuelos) {
+            for (final VueloInstancia vueloInstancia : contextoEjecucion.todosVuelosInstancia()) {
                 if (vueloInstancia.getFechaSalida() == null) {
                     continue;
                 }
@@ -356,7 +364,7 @@ public final class SimulacionTemporalRunner {
             }
 
             final ArrayList<VueloProgramado> programadosVentana = new ArrayList<>();
-            for (final VueloProgramado vueloProgramado : contexto.todosVuelosProgramados()) {
+            for (final VueloProgramado vueloProgramado : contextoEjecucion.todosVuelosProgramados()) {
                 if (idsProgramadosVentana.contains(vueloProgramado.getIdVueloProgramado())) {
                     programadosVentana.add(vueloProgramado);
                 }
@@ -367,7 +375,7 @@ public final class SimulacionTemporalRunner {
                     new ArrayList<>(pendientes),
                     programadosVentana,
                     vuelosVentana,
-                    contexto.aeropuertos()
+                    contextoEjecucion.aeropuertos()
             );
             final ParametrosGA parametrosGa = construirParametrosGA(contexto.params());
             instancia.construirGrafo();
@@ -420,7 +428,7 @@ public final class SimulacionTemporalRunner {
             totalEnrutadas += idsMaletasEnrutadas.size();
 
             final LocalDateTime finDia = dia.atTime(23, 59);
-            for (final VueloInstancia vueloInstancia : copiaVuelos) {
+            for (final VueloInstancia vueloInstancia : contextoEjecucion.todosVuelosInstancia()) {
                 if (vueloInstancia.getEstado() == EstadoVuelo.CANCELADO) {
                     continue;
                 }
@@ -518,21 +526,134 @@ public final class SimulacionTemporalRunner {
         solucion.setSemaforo(CalculadorSemaforo.clasificarGlobal(solucion, instancia, parametrosGa));
     }
 
-    private static ArrayList<VueloInstancia> clonarVuelosInstancia(final ArrayList<VueloInstancia> originales) {
+    private static ContextoEjecucion crearContextoEjecucion(final ContextoSimulacion contexto) {
+        final ArrayList<Aeropuerto> aeropuertos = clonarAeropuertos(contexto.aeropuertos());
+        final Map<String, Aeropuerto> indiceAeropuertos = indexarAeropuertos(aeropuertos);
+        final ArrayList<VueloProgramado> vuelosProgramados = clonarVuelosProgramados(
+                contexto.todosVuelosProgramados(),
+                indiceAeropuertos
+        );
+        final Map<String, VueloProgramado> vuelosProgramadosPorId = indexarVuelosProgramados(vuelosProgramados);
+        final ArrayList<VueloInstancia> vuelosInstancia = clonarVuelosInstancia(
+                contexto.todosVuelosInstancia(),
+                indiceAeropuertos,
+                vuelosProgramadosPorId
+        );
+        return new ContextoEjecucion(aeropuertos, indiceAeropuertos, vuelosProgramados, vuelosInstancia);
+    }
+
+    private static ArrayList<Aeropuerto> clonarAeropuertos(final ArrayList<Aeropuerto> originales) {
+        final ArrayList<Aeropuerto> clon = new ArrayList<>(originales.size());
+        for (final Aeropuerto aeropuerto : originales) {
+            if (aeropuerto == null) {
+                continue;
+            }
+            clon.add(new Aeropuerto(
+                    aeropuerto.getIdAeropuerto(),
+                    aeropuerto.getCiudad(),
+                    aeropuerto.getCapacidadAlmacen(),
+                    aeropuerto.getMaletasActuales(),
+                    aeropuerto.getLongitud(),
+                    aeropuerto.getLatitud(),
+                    aeropuerto.getHusoGMT()
+            ));
+        }
+        return clon;
+    }
+
+    private static Map<String, Aeropuerto> indexarAeropuertos(final ArrayList<Aeropuerto> aeropuertos) {
+        final Map<String, Aeropuerto> indice = new HashMap<>();
+        for (final Aeropuerto aeropuerto : aeropuertos) {
+            if (aeropuerto == null || aeropuerto.getIdAeropuerto() == null) {
+                continue;
+            }
+            indice.put(aeropuerto.getIdAeropuerto(), aeropuerto);
+        }
+        return indice;
+    }
+
+    private static ArrayList<VueloProgramado> clonarVuelosProgramados(
+            final ArrayList<VueloProgramado> originales,
+            final Map<String, Aeropuerto> indiceAeropuertos
+    ) {
+        final ArrayList<VueloProgramado> clon = new ArrayList<>(originales.size());
+        for (final VueloProgramado vueloProgramado : originales) {
+            if (vueloProgramado == null) {
+                continue;
+            }
+            clon.add(new VueloProgramado(
+                    vueloProgramado.getIdVueloProgramado(),
+                    vueloProgramado.getCodigo(),
+                    vueloProgramado.getHoraSalida(),
+                    vueloProgramado.getHoraLlegada(),
+                    vueloProgramado.getCapacidadBase(),
+                    obtenerAeropuertoClonado(indiceAeropuertos, vueloProgramado.getAeropuertoOrigen()),
+                    obtenerAeropuertoClonado(indiceAeropuertos, vueloProgramado.getAeropuertoDestino())
+            ));
+        }
+        return clon;
+    }
+
+    private static Map<String, VueloProgramado> indexarVuelosProgramados(
+            final ArrayList<VueloProgramado> vuelosProgramados
+    ) {
+        final Map<String, VueloProgramado> indice = new HashMap<>();
+        for (final VueloProgramado vueloProgramado : vuelosProgramados) {
+            if (vueloProgramado == null || vueloProgramado.getIdVueloProgramado() == null) {
+                continue;
+            }
+            indice.put(vueloProgramado.getIdVueloProgramado(), vueloProgramado);
+        }
+        return indice;
+    }
+
+    private static ArrayList<VueloInstancia> clonarVuelosInstancia(
+            final ArrayList<VueloInstancia> originales,
+            final Map<String, Aeropuerto> indiceAeropuertos,
+            final Map<String, VueloProgramado> vuelosProgramadosPorId
+    ) {
         final ArrayList<VueloInstancia> clon = new ArrayList<>(originales.size());
         for (final VueloInstancia vueloInstancia : originales) {
+            if (vueloInstancia == null) {
+                continue;
+            }
+            final VueloProgramado vueloProgramado = obtenerVueloProgramadoClonado(
+                    vuelosProgramadosPorId,
+                    vueloInstancia.getVueloProgramado()
+            );
             clon.add(new VueloInstancia(
                     vueloInstancia.getIdVueloInstancia(),
-                    vueloInstancia.getVueloProgramado(),
+                    vueloInstancia.getCodigo(),
+                    vueloProgramado,
                     vueloInstancia.getFechaOperacion(),
                     vueloInstancia.getFechaSalida(),
                     vueloInstancia.getFechaLlegada(),
                     vueloInstancia.getCapacidadMaxima(),
                     vueloInstancia.getCapacidadDisponible(),
+                    obtenerAeropuertoClonado(indiceAeropuertos, vueloInstancia.getAeropuertoOrigen()),
+                    obtenerAeropuertoClonado(indiceAeropuertos, vueloInstancia.getAeropuertoDestino()),
                     vueloInstancia.getEstado()
             ));
         }
         return clon;
+    }
+
+    private static Aeropuerto obtenerAeropuertoClonado(final Map<String, Aeropuerto> indiceAeropuertos,
+                                                       final Aeropuerto aeropuertoOriginal) {
+        if (aeropuertoOriginal == null || aeropuertoOriginal.getIdAeropuerto() == null) {
+            return null;
+        }
+        return indiceAeropuertos.get(aeropuertoOriginal.getIdAeropuerto());
+    }
+
+    private static VueloProgramado obtenerVueloProgramadoClonado(
+            final Map<String, VueloProgramado> vuelosProgramadosPorId,
+            final VueloProgramado vueloProgramadoOriginal
+    ) {
+        if (vueloProgramadoOriginal == null || vueloProgramadoOriginal.getIdVueloProgramado() == null) {
+            return null;
+        }
+        return vuelosProgramadosPorId.get(vueloProgramadoOriginal.getIdVueloProgramado());
     }
 
     private static void reportarPaso(final String nombre, final LocalDate dia, final int nuevas,
@@ -645,16 +766,15 @@ public final class SimulacionTemporalRunner {
     }
 
     private static void inicializarCsvFitnessExperimental() throws IOException {
-        final String cabecera = "Muestra,ACO,Algoritmo Genetico";
         if (!Files.exists(FITNESS_EXPERIMENTAL_CSV)) {
-            Files.write(FITNESS_EXPERIMENTAL_CSV, List.of(cabecera));
+            Files.write(FITNESS_EXPERIMENTAL_CSV, List.of(FITNESS_EXPERIMENTAL_CABECERA));
             return;
         }
         final List<String> lineas = Files.readAllLines(FITNESS_EXPERIMENTAL_CSV);
-        if (!lineas.isEmpty() && cabecera.equals(lineas.get(0))) {
+        if (!lineas.isEmpty() && FITNESS_EXPERIMENTAL_CABECERA.equals(lineas.get(0))) {
             return;
         }
-        Files.write(FITNESS_EXPERIMENTAL_CSV, List.of(cabecera));
+        Files.write(FITNESS_EXPERIMENTAL_CSV, List.of(FITNESS_EXPERIMENTAL_CABECERA));
     }
 
     private static void resolverSemillaGa(final ParametrosGA parametrosGa) {
@@ -743,7 +863,6 @@ public final class SimulacionTemporalRunner {
         );
         configuracion.setPenalizacionReplanificacion(
                 doubleParam(params, "aco.penalizacionReplanificacion", configuracion.getPenalizacionReplanificacion()));
-        configuracion.setNts(Math.max(configuracion.getNts(), intParam(params, "simulacion.ventana.dias", 3)));
         return configuracion;
     }
 
@@ -778,6 +897,12 @@ public final class SimulacionTemporalRunner {
                                       LocalDate fechaFin, int ventanaDias) {
     }
 
+    private record ContextoEjecucion(ArrayList<Aeropuerto> aeropuertos,
+                                     Map<String, Aeropuerto> indiceAeropuertos,
+                                     ArrayList<VueloProgramado> todosVuelosProgramados,
+                                     ArrayList<VueloInstancia> todosVuelosInstancia) {
+    }
+
     private static final class ResultadoSimulacion {
         private boolean colapsada;
         private LocalDate diaColapso;
@@ -791,7 +916,9 @@ public final class SimulacionTemporalRunner {
     private static final class ExportadorFitnessExperimental {
         private final Path archivo;
         private Double fitnessAco;
+        private Long tiempoAcoMs;
         private Double fitnessGa;
+        private Long tiempoGaMs;
 
         private ExportadorFitnessExperimental(final Path archivo) {
             this.archivo = archivo;
@@ -803,10 +930,12 @@ public final class SimulacionTemporalRunner {
             }
             if ("ACO".equals(algoritmo)) {
                 fitnessAco = resultado.fitnessExperimental.getFitnessExperimental();
+                tiempoAcoMs = resultado.tiempoEjecucionMs;
                 return;
             }
             if ("GA".equals(algoritmo)) {
                 fitnessGa = resultado.fitnessExperimental.getFitnessExperimental();
+                tiempoGaMs = resultado.tiempoEjecucionMs;
             }
         }
 
@@ -838,10 +967,12 @@ public final class SimulacionTemporalRunner {
             final int muestra = Math.max(1, lineas.size());
             final String linea = String.format(
                     java.util.Locale.US,
-                    "%d,%s,%s",
+                    "%d,%s,%s,%s,%s",
                     muestra,
                     formatearFitness(fitnessAco),
-                    formatearFitness(fitnessGa)
+                    formatearTiempo(tiempoAcoMs),
+                    formatearFitness(fitnessGa),
+                    formatearTiempo(tiempoGaMs)
             );
             lineas.add(linea);
             Files.write(archivo, lineas);
@@ -850,18 +981,20 @@ public final class SimulacionTemporalRunner {
         private boolean completarMuestraPendiente(final List<String> lineas, final boolean completarAco) {
             for (int i = 1; i < lineas.size(); i++) {
                 final String[] columnas = lineas.get(i).split(",", -1);
-                if (columnas.length != 3) {
+                if (columnas.length != 5) {
                     continue;
                 }
                 final boolean columnaAcoVacia = columnas[1].isBlank();
-                final boolean columnaGaVacia = columnas[2].isBlank();
+                final boolean columnaGaVacia = columnas[3].isBlank();
                 if (completarAco && columnaAcoVacia && !columnaGaVacia) {
                     columnas[1] = formatearFitness(fitnessAco);
+                    columnas[2] = formatearTiempo(tiempoAcoMs);
                     lineas.set(i, String.join(",", columnas));
                     return true;
                 }
                 if (!completarAco && columnaGaVacia && !columnaAcoVacia) {
-                    columnas[2] = formatearFitness(fitnessGa);
+                    columnas[3] = formatearFitness(fitnessGa);
+                    columnas[4] = formatearTiempo(tiempoGaMs);
                     lineas.set(i, String.join(",", columnas));
                     return true;
                 }
@@ -874,6 +1007,13 @@ public final class SimulacionTemporalRunner {
                 return "";
             }
             return String.format(java.util.Locale.US, "%.3f", fitness);
+        }
+
+        private String formatearTiempo(final Long tiempoMs) {
+            if (tiempoMs == null) {
+                return "";
+            }
+            return String.valueOf(tiempoMs);
         }
     }
 }

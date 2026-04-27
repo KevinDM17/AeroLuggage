@@ -9,7 +9,7 @@ simulacion.ventana.dias=3
 simulacion.iteraciones=30
 
 # ---------- Parametros GA ----------
-ga.tamanioPoblacion=5
+ga.tamanioPoblacion=15
 ga.maxGeneraciones=30
 ga.maxSinMejora=10
 ga.tiempoMaximoMs=60000

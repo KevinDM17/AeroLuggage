@@ -111,7 +111,7 @@ public final class HeuristicaSolomon {
         for (int intento = 0; intento < 4; intento++) {
             final List<VueloInstancia> camino = GARuteadorCache.rutear(
                     pedido.getAeropuertoOrigen(), pedido.getAeropuertoDestino(),
-                    tListo, tLimite, grafo, params.getMinutosConexion(), bloqueados);
+                    tListo, tLimite, grafo, params.getMinutosConexion(), bloqueados, consumo);
             if (camino == null) {
                 return null;
             }
@@ -135,7 +135,7 @@ public final class HeuristicaSolomon {
         }
         return GARuteadorCache.rutear(
                 pedido.getAeropuertoOrigen(), pedido.getAeropuertoDestino(),
-                tListo, tLimite, grafo, params.getMinutosConexion(), bloqueados);
+                tListo, tLimite, grafo, params.getMinutosConexion(), bloqueados, consumo);
     }
 
     private static String aeropuertoSaturado(final List<VueloInstancia> camino,
