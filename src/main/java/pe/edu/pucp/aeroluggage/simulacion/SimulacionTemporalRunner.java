@@ -357,7 +357,9 @@ public final class SimulacionTemporalRunner {
                                                           final String nombre,
                                                           final ContextoSimulacion contexto) {
         final List<Maleta> pendientes = new ArrayList<>();
+        final List<Maleta> registradas = new ArrayList<>();
         final Map<String, Integer> ocupacion = new HashMap<>();
+        final Map<String, List<VueloInstancia>> rutasConfirmadasPorMaleta = new HashMap<>();
         final Map<String, VueloInstancia> vuelosPorId = indexarVuelosInstancia(
                 contextoEjecucion.todosVuelosInstancia()
         );
@@ -398,23 +400,19 @@ public final class SimulacionTemporalRunner {
 
             final List<Maleta> nuevas =
                     maletasPorPedido.getOrDefault(pedido.getIdPedido(), List.of());
-            for (final Maleta maleta : nuevas) {
-                final String icao = icaoOrigen(maleta);
-                if (icao != null) {
-                    ocupacion.merge(icao, 1, Integer::sum);
-                }
-            }
+            registradas.addAll(nuevas);
             pendientes.addAll(nuevas);
+
+            recalcularOcupacionAeropuertos(
+                    ocupacion,
+                    contextoEjecucion.aeropuertos(),
+                    registradas,
+                    rutasConfirmadasPorMaleta,
+                    currentTime
+            );
 
             if (pendientes.isEmpty()) {
                 continue;
-            }
-
-            for (final Map.Entry<String, Integer> entry : ocupacion.entrySet()) {
-                final Aeropuerto aeropuerto = contextoEjecucion.indiceAeropuertos().get(entry.getKey());
-                if (aeropuerto != null) {
-                    aeropuerto.setMaletasActuales(Math.max(0, entry.getValue()));
-                }
             }
 
             final LocalDateTime ventanaFin = currentTime.plusDays(contexto.ventanaDias() - 1L)
@@ -471,6 +469,7 @@ public final class SimulacionTemporalRunner {
                         continue;
                     }
                     idsMaletasEnrutadas.add(ruta.getIdMaleta());
+                    final List<VueloInstancia> vuelosConfirmados = new ArrayList<>();
                     for (final VueloInstancia vueloInstancia : ruta.getSubrutas()) {
                         final VueloInstancia vueloReal = obtenerVueloReal(vuelosPorId, vueloInstancia);
                         final boolean vueloConCapacidad = vueloReal != null
@@ -478,11 +477,15 @@ public final class SimulacionTemporalRunner {
                         if (!vueloConCapacidad) {
                             continue;
                         }
+                        vuelosConfirmados.add(vueloReal);
                         try {
                             vueloReal.actualizarCapacidad(1);
                         } catch (final IllegalStateException ignored) {
                             // no-op
                         }
+                    }
+                    if (!vuelosConfirmados.isEmpty() && ruta.getIdMaleta() != null) {
+                        rutasConfirmadasPorMaleta.put(ruta.getIdMaleta(), vuelosConfirmados);
                     }
                 }
             }
@@ -493,12 +496,15 @@ public final class SimulacionTemporalRunner {
                 if (!idsMaletasEnrutadas.contains(maleta.getIdMaleta())) {
                     continue;
                 }
-                final String icao = icaoOrigen(maleta);
-                if (icao != null) {
-                    ocupacion.merge(icao, -1, Integer::sum);
-                }
                 iterator.remove();
             }
+            recalcularOcupacionAeropuertos(
+                    ocupacion,
+                    contextoEjecucion.aeropuertos(),
+                    registradas,
+                    rutasConfirmadasPorMaleta,
+                    currentTime
+            );
             totalEnrutadas += idsMaletasEnrutadas.size();
             nuevasEnDia += nuevas.size();
             enrutadasEnDia += idsMaletasEnrutadas.size();
@@ -544,12 +550,83 @@ public final class SimulacionTemporalRunner {
         return resultado;
     }
 
+    private static void recalcularOcupacionAeropuertos(final Map<String, Integer> ocupacion,
+                                                       final ArrayList<Aeropuerto> aeropuertos,
+                                                       final List<Maleta> registradas,
+                                                       final Map<String, List<VueloInstancia>> rutasConfirmadasPorMaleta,
+                                                       final LocalDateTime currentTime) {
+        ocupacion.clear();
+        for (final Maleta maleta : registradas) {
+            if (maleta == null || maleta.getIdMaleta() == null) {
+                continue;
+            }
+            final String aeropuertoActual = resolverAeropuertoOcupacion(
+                    maleta,
+                    rutasConfirmadasPorMaleta.get(maleta.getIdMaleta()),
+                    currentTime
+            );
+            if (aeropuertoActual == null) {
+                continue;
+            }
+            ocupacion.merge(aeropuertoActual, 1, Integer::sum);
+        }
+        for (final Aeropuerto aeropuerto : aeropuertos) {
+            if (aeropuerto == null) {
+                continue;
+            }
+            final int maletasActuales = ocupacion.getOrDefault(aeropuerto.getIdAeropuerto(), 0);
+            aeropuerto.setMaletasActuales(Math.max(0, maletasActuales));
+        }
+    }
+
+    private static String resolverAeropuertoOcupacion(final Maleta maleta,
+                                                      final List<VueloInstancia> rutaConfirmada,
+                                                      final LocalDateTime currentTime) {
+        String aeropuertoActual = icaoOrigen(maleta);
+        if (rutaConfirmada == null || rutaConfirmada.isEmpty()) {
+            return aeropuertoActual;
+        }
+        for (final VueloInstancia vueloInstancia : rutaConfirmada) {
+            if (vueloInstancia == null) {
+                continue;
+            }
+            final String aeropuertoOrigen = idAeropuerto(vueloInstancia.getAeropuertoOrigen());
+            if (aeropuertoActual == null) {
+                aeropuertoActual = aeropuertoOrigen;
+            }
+            final LocalDateTime fechaSalida = vueloInstancia.getFechaSalida();
+            if (fechaSalida != null && currentTime.isBefore(fechaSalida)) {
+                return aeropuertoActual;
+            }
+            final LocalDateTime fechaLlegada = vueloInstancia.getFechaLlegada();
+            final boolean vueloEnCurso = fechaSalida != null
+                    && !currentTime.isBefore(fechaSalida)
+                    && (fechaLlegada == null || currentTime.isBefore(fechaLlegada));
+            if (vueloEnCurso) {
+                return null;
+            }
+            final String aeropuertoDestino = idAeropuerto(vueloInstancia.getAeropuertoDestino());
+            if (fechaLlegada != null && !currentTime.isBefore(fechaLlegada)) {
+                aeropuertoActual = aeropuertoDestino;
+                continue;
+            }
+            if (aeropuertoDestino != null) {
+                aeropuertoActual = aeropuertoDestino;
+            }
+        }
+        return aeropuertoActual;
+    }
+
     private static String icaoOrigen(final Maleta maleta) {
         final boolean origenInvalido = maleta.getPedido() == null || maleta.getPedido().getAeropuertoOrigen() == null;
         if (origenInvalido) {
             return null;
         }
         return maleta.getPedido().getAeropuertoOrigen().getIdAeropuerto();
+    }
+
+    private static String idAeropuerto(final Aeropuerto aeropuerto) {
+        return aeropuerto == null ? null : aeropuerto.getIdAeropuerto();
     }
 
     private static Solucion obtenerSolucion(final Metaheuristico algoritmo) {
