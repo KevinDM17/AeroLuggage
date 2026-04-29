@@ -28,14 +28,14 @@ ga.w5TransitoPromedio=1
 ga.penalizacionRutaVacia=5000
 ga.penalizacionSinDestino=8000
 ga.penalizacionRutaInvalida=3000
-ga.pesoGreedySolomon=0.6
+ga.pesoGreedySolomon=0.8
 
 # ---------- Parametros ACO ----------
 aco.nts=3
 aco.maxIter=20
-aco.nAnts=8
+aco.nAnts=16
 aco.alpha=2.0
-aco.beta=2.0
+aco.beta=4.0
 aco.rho=0.3
 aco.gamma=0.1
 aco.tau0=1.0
