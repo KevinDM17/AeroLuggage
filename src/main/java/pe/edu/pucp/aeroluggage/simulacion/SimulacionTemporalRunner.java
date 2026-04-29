@@ -6,7 +6,9 @@ import java.nio.file.Files;
 import java.nio.file.Path;
 import java.time.LocalDate;
 import java.time.LocalDateTime;
+import java.time.LocalTime;
 import java.time.format.DateTimeFormatter;
+import java.util.Comparator;
 import java.util.ArrayList;
 import java.util.HashMap;
 import java.util.HashSet;
@@ -30,6 +32,7 @@ import pe.edu.pucp.aeroluggage.algoritmos.ga.GA;
 import pe.edu.pucp.aeroluggage.algoritmos.ga.ParametrosGA;
 import pe.edu.pucp.aeroluggage.dominio.entidades.Aeropuerto;
 import pe.edu.pucp.aeroluggage.dominio.entidades.Maleta;
+import pe.edu.pucp.aeroluggage.dominio.entidades.Pedido;
 import pe.edu.pucp.aeroluggage.dominio.entidades.Ruta;
 import pe.edu.pucp.aeroluggage.dominio.entidades.VueloInstancia;
 import pe.edu.pucp.aeroluggage.dominio.entidades.VueloProgramado;
@@ -225,11 +228,12 @@ public final class SimulacionTemporalRunner {
                 fechaInicio,
                 fechaFin
         );
-        final Map<LocalDate, List<Maleta>> maletasPorDia = agruparMaletasPorDia(
-                datosEntrada, fechaInicio, fechaFin);
+        final List<Maleta> todasLasMaletas = new ArrayList<>(datosEntrada.getMaletas());
+        validarMaletas(todasLasMaletas);
+        final List<Pedido> pedidosOrdenados = ordenarPedidosCronologicamente(datosEntrada);
         reportarCargaInicial(
                 datosEntrada,
-                maletasPorDia,
+                pedidosOrdenados,
                 fechaInicio,
                 fechaFin,
                 totalDias,
@@ -242,7 +246,8 @@ public final class SimulacionTemporalRunner {
                 indiceAeropuertos,
                 todosVuelosProgramados,
                 todosVuelosInstancia,
-                maletasPorDia,
+                pedidosOrdenados,
+                todasLasMaletas,
                 fechaInicio,
                 fechaFin,
                 ventanaDias
@@ -268,41 +273,81 @@ public final class SimulacionTemporalRunner {
         }
     }
 
-    private static Map<LocalDate, List<Maleta>> agruparMaletasPorDia(final DatosEntrada datosEntrada,
-                                                                      final LocalDate fechaInicio,
-                                                                      final LocalDate fechaFin) {
-        final Map<LocalDate, List<Maleta>> maletasPorDia = new HashMap<>();
-        for (final Maleta maleta : datosEntrada.getMaletas()) {
-            final boolean maletaInvalida = maleta == null || maleta.getFechaRegistro() == null;
-            if (maletaInvalida) {
-                continue;
+    private static void validarMaletas(final List<Maleta> maletas) {
+        for (final Maleta maleta : maletas) {
+            final String id = maleta != null ? maleta.getIdMaleta() : "(null)";
+            if (maleta == null) {
+                throw new IllegalStateException("Maleta nula encontrada en los datos de entrada");
             }
-            final LocalDate dia = maleta.getFechaRegistro().toLocalDate();
-            final boolean diaDentroDeRango = !dia.isBefore(fechaInicio) && !dia.isAfter(fechaFin);
-            if (diaDentroDeRango) {
-                maletasPorDia.computeIfAbsent(dia, key -> new ArrayList<>()).add(maleta);
+            if (maleta.getPedido() == null) {
+                throw new IllegalStateException("Maleta " + id + " no tiene pedido asignado");
+            }
+            if (maleta.getFechaRegistro() == null) {
+                throw new IllegalStateException("Maleta " + id + " no tiene fechaRegistro");
+            }
+            if (maleta.getPedido().getFechaHoraPlazo() == null) {
+                maleta.getPedido().calcularFechaHoraPlazo();
+            }
+            if (maleta.getPedido().getFechaHoraPlazo() == null) {
+                throw new IllegalStateException(
+                        "Maleta " + id + " (pedido " + maleta.getPedido().getIdPedido()
+                        + ") no tiene fechaHoraPlazo y no se pudo calcular"
+                        + " (aeropuerto origen/destino o continente podria ser null)");
             }
         }
-        return maletasPorDia;
+    }
+
+    private static List<Pedido> ordenarPedidosCronologicamente(final DatosEntrada datosEntrada) {
+        final List<Pedido> pedidos = new ArrayList<>(datosEntrada.getPedidos());
+        pedidos.sort(Comparator.comparing(Pedido::getFechaRegistro,
+                Comparator.nullsLast(Comparator.naturalOrder()))
+                .thenComparing(Pedido::getIdPedido));
+        return pedidos;
+    }
+
+    private static Map<String, List<Maleta>> agruparMaletasPorPedido(final List<Maleta> maletas) {
+        final Map<String, List<Maleta>> indice = new HashMap<>();
+        for (final Maleta maleta : maletas) {
+            if (maleta == null || maleta.getPedido() == null
+                    || maleta.getPedido().getIdPedido() == null) {
+                continue;
+            }
+            indice.computeIfAbsent(maleta.getPedido().getIdPedido(), k -> new ArrayList<>())
+                    .add(maleta);
+        }
+        return indice;
+    }
+
+    private static void actualizarEstadosVuelos(final List<VueloInstancia> todos,
+                                                final LocalDateTime currentTime) {
+        for (final VueloInstancia v : todos) {
+            if (v.getEstado() == EstadoVuelo.CANCELADO) {
+                continue;
+            }
+            if (v.getFechaLlegada() != null && !v.getFechaLlegada().isAfter(currentTime)) {
+                v.setEstado(EstadoVuelo.FINALIZADO);
+            } else if (v.getFechaSalida() != null && !v.getFechaSalida().isAfter(currentTime)) {
+                v.setEstado(EstadoVuelo.EN_PROGRESO);
+            }
+        }
     }
 
     private static void reportarCargaInicial(final DatosEntrada datosEntrada,
-                                             final Map<LocalDate, List<Maleta>> maletasPorDia,
+                                             final List<Pedido> pedidosOrdenados,
                                              final LocalDate fechaInicio,
                                              final LocalDate fechaFin,
                                              final int totalDias,
                                              final long tiempoCargaMs) {
         final int pedidos = datosEntrada.getPedidos().size();
         final int maletas = datosEntrada.getMaletas().size();
-        final int diasConPedidos = maletasPorDia.size();
         System.out.printf(
-                "Carga simulacion: pedidos=%d maletas=%d rango=%s..%s diasVuelos=%d diasConPedidos=%d tiempo=%d ms%n",
+                "Carga simulacion: pedidos=%d maletas=%d rango=%s..%s diasVuelos=%d totalPedidos=%d tiempo=%d ms%n",
                 pedidos,
                 maletas,
                 fechaInicio,
                 fechaFin,
                 totalDias,
-                diasConPedidos,
+                pedidosOrdenados.size(),
                 tiempoCargaMs
         );
     }
@@ -325,8 +370,34 @@ public final class SimulacionTemporalRunner {
         System.out.printf("%n=== SIMULACION TEMPORAL [%s] %s -> %s ===%n",
                 nombre, contexto.fechaInicio(), contexto.fechaFin());
 
-        for (LocalDate dia = contexto.fechaInicio(); !dia.isAfter(contexto.fechaFin()); dia = dia.plusDays(1)) {
-            final List<Maleta> nuevas = contexto.maletasPorDia().getOrDefault(dia, List.of());
+        final Map<String, List<Maleta>> maletasPorPedido =
+                agruparMaletasPorPedido(contexto.todasLasMaletas());
+
+        LocalDate diaActual = null;
+        int nuevasEnDia = 0;
+        int enrutadasEnDia = 0;
+
+        for (final Pedido pedido : contexto.pedidosOrdenados()) {
+            if (pedido.getFechaRegistro() == null) {
+                continue;
+            }
+            final LocalDateTime currentTime = pedido.getFechaRegistro();
+
+            final LocalDate diaPedido = currentTime.toLocalDate();
+            if (!diaPedido.equals(diaActual)) {
+                if (diaActual != null) {
+                    reportarResumenDiario(nombre, diaActual, nuevasEnDia, enrutadasEnDia,
+                            pendientes.size(), contextoEjecucion.aeropuertos());
+                }
+                diaActual = diaPedido;
+                nuevasEnDia = 0;
+                enrutadasEnDia = 0;
+            }
+
+            actualizarEstadosVuelos(contextoEjecucion.todosVuelosInstancia(), currentTime);
+
+            final List<Maleta> nuevas =
+                    maletasPorPedido.getOrDefault(pedido.getIdPedido(), List.of());
             for (final Maleta maleta : nuevas) {
                 final String icao = icaoOrigen(maleta);
                 if (icao != null) {
@@ -346,15 +417,17 @@ public final class SimulacionTemporalRunner {
                 }
             }
 
-            final LocalDate ventanaFin = dia.plusDays(contexto.ventanaDias() - 1L);
+            final LocalDateTime ventanaFin = currentTime.plusDays(contexto.ventanaDias() - 1L)
+                    .with(LocalTime.MAX);
             final ArrayList<VueloInstancia> vuelosVentana = new ArrayList<>();
             final Set<String> idsProgramadosVentana = new HashSet<>();
             for (final VueloInstancia vueloInstancia : contextoEjecucion.todosVuelosInstancia()) {
                 if (vueloInstancia.getFechaSalida() == null) {
                     continue;
                 }
-                final LocalDate fechaSalida = vueloInstancia.getFechaSalida().toLocalDate();
-                final boolean vueloDentroVentana = !fechaSalida.isBefore(dia) && !fechaSalida.isAfter(ventanaFin);
+                final boolean vueloDentroVentana =
+                        !vueloInstancia.getFechaSalida().isBefore(currentTime)
+                        && !vueloInstancia.getFechaSalida().isAfter(ventanaFin);
                 if (vueloDentroVentana) {
                     vuelosVentana.add(vueloInstancia);
                     if (vueloInstancia.getVueloProgramado() != null) {
@@ -370,8 +443,9 @@ public final class SimulacionTemporalRunner {
                 }
             }
 
+            final DateTimeFormatter fmtMomento = DateTimeFormatter.ofPattern("yyyyMMdd-HHmm");
             final InstanciaProblema instancia = new InstanciaProblema(
-                    "SIM-" + dia,
+                    "SIM-" + currentTime.format(fmtMomento),
                     new ArrayList<>(pendientes),
                     programadosVentana,
                     vuelosVentana,
@@ -426,46 +500,39 @@ public final class SimulacionTemporalRunner {
                 iterator.remove();
             }
             totalEnrutadas += idsMaletasEnrutadas.size();
+            nuevasEnDia += nuevas.size();
+            enrutadasEnDia += idsMaletasEnrutadas.size();
 
-            final LocalDateTime finDia = dia.atTime(23, 59);
-            for (final VueloInstancia vueloInstancia : contextoEjecucion.todosVuelosInstancia()) {
-                if (vueloInstancia.getEstado() == EstadoVuelo.CANCELADO) {
-                    continue;
-                }
-                if (vueloInstancia.getFechaLlegada() != null && !vueloInstancia.getFechaLlegada().isAfter(finDia)) {
-                    vueloInstancia.setEstado(EstadoVuelo.FINALIZADO);
-                    continue;
-                }
-                if (vueloInstancia.getFechaSalida() != null && !vueloInstancia.getFechaSalida().isAfter(finDia)) {
-                    vueloInstancia.setEstado(EstadoVuelo.EN_PROGRESO);
-                }
-            }
+            final boolean hayColapso = pendientes.stream().anyMatch(m -> {
+                final LocalDateTime plazo = m.getPedido() != null
+                        ? m.getPedido().getFechaHoraPlazo() : null;
+                return plazo != null && !plazo.isAfter(currentTime);
+            });
 
             final String aeropuertoMasCargado = ocupacion.entrySet().stream()
                     .max(Map.Entry.comparingByValue())
                     .map(Map.Entry::getKey)
                     .orElse("-");
             historial.add(new PasoSimulacion(
-                    dia,
+                    currentTime,
                     nuevas.size(),
                     idsMaletasEnrutadas.size(),
                     pendientes.size(),
                     solucion != null ? solucion.getSemaforo() : null,
                     aeropuertoMasCargado
             ));
-            reportarPaso(nombre, dia, nuevas.size(), idsMaletasEnrutadas.size(), pendientes.size(), solucion);
-
-            final LocalDate diaActual = dia;
-            final boolean hayCarryOver = pendientes.stream()
-                    .anyMatch(maleta -> maleta.getFechaRegistro() != null
-                            && maleta.getFechaRegistro().toLocalDate().isBefore(diaActual));
-            if (hayCarryOver) {
-                System.out.printf("[COLAPSO] %s colapso en dia %s -> %d maleta(s) sin ruta%n",
-                        nombre, dia, pendientes.size());
+            if (hayColapso) {
+                System.out.printf("[COLAPSO] %s colapso en momento %s -> %d maleta(s) sin ruta%n",
+                        nombre, currentTime, pendientes.size());
                 resultado.colapsada = true;
-                resultado.diaColapso = dia;
+                resultado.momentoColapso = currentTime;
                 break;
             }
+        }
+
+        if (diaActual != null) {
+            reportarResumenDiario(nombre, diaActual, nuevasEnDia, enrutadasEnDia,
+                    pendientes.size(), contextoEjecucion.aeropuertos());
         }
 
         resultado.totalMaletasEnrutadas = totalEnrutadas;
@@ -656,38 +723,40 @@ public final class SimulacionTemporalRunner {
         return vuelosProgramadosPorId.get(vueloProgramadoOriginal.getIdVueloProgramado());
     }
 
-    private static void reportarPaso(final String nombre, final LocalDate dia, final int nuevas,
-                                     final int enrutadas, final int pendientes, final Solucion solucion) {
-        final String semaforo = solucion != null && solucion.getSemaforo() != null
-                ? solucion.getSemaforo().name()
-                : "N/A";
-        System.out.printf("[%s][DIA %s] nuevas=%d enrutadas=%d pendientes=%d semaforo=%s%n",
-                nombre, dia, nuevas, enrutadas, pendientes, semaforo);
+    private static void reportarResumenDiario(final String nombre, final LocalDate dia,
+                                              final int nuevas, final int enrutadas,
+                                              final int pendientes,
+                                              final ArrayList<Aeropuerto> aeropuertos) {
+        System.out.printf("%n=== RESUMEN DIA [%s] [%s] ===%n", nombre, dia);
+        System.out.printf("  Maletas nuevas:     %d%n", nuevas);
+        System.out.printf("  Maletas enrutadas:  %d%n", enrutadas);
+        System.out.printf("  Maletas pendientes: %d%n", pendientes);
+        System.out.println();
+        System.out.printf("  %-10s %10s %10s %12s%n",
+                "Aeropuerto", "Ocupacion", "Capacidad", "Porcentaje");
+        for (final Aeropuerto aeropuerto : aeropuertos) {
+            final int ocupacionAeropuerto = aeropuerto.getMaletasActuales();
+            final int capacidad = aeropuerto.getCapacidadAlmacen();
+            final double porcentaje = capacidad > 0 ? 100.0 * ocupacionAeropuerto / capacidad : 0.0;
+            System.out.printf("  %-10s %10d %10d %11.1f%%%n",
+                    aeropuerto.getIdAeropuerto(), ocupacionAeropuerto, capacidad, porcentaje);
+        }
+        System.out.println();
     }
 
     private static void reportarResumen(final String nombre, final ResultadoSimulacion resultado) {
         System.out.printf("%n--- RESUMEN [%s] ---%n", nombre);
         System.out.printf("Estado:          %s%n",
                 resultado.colapsada
-                        ? "COLAPSADA (dia " + resultado.diaColapso + ")"
+                        ? "COLAPSADA (momento " + resultado.momentoColapso + ")"
                         : "COMPLETADA");
         System.out.printf("Total enrutadas: %d%n", resultado.totalMaletasEnrutadas);
         System.out.printf("Pendientes fin:  %d%n", resultado.totalMaletasPendientes);
-        System.out.printf("Pasos:           %d%n", resultado.historial.size());
         System.out.printf("Tiempo ejecucion:%d ms (%.3f s)%n",
                 resultado.tiempoEjecucionMs,
                 resultado.tiempoEjecucionMs / 1000D
         );
         reportarFitnessExperimental(resultado.fitnessExperimental);
-        System.out.println();
-        System.out.printf("%-12s %8s %10s %10s %10s %18s%n",
-                "Dia", "Nuevas", "Enrutadas", "Pendientes", "Semaforo", "AeropuertoCargado");
-        for (final PasoSimulacion paso : resultado.historial) {
-            final String semaforo = paso.semaforo() != null ? paso.semaforo().name() : "N/A";
-            System.out.printf("%-12s %8d %10d %10d %10s %18s%n",
-                    paso.dia(), paso.nuevas(), paso.enrutadas(), paso.pendientes(),
-                    semaforo, paso.aeropuertoMasCargado());
-        }
         System.out.println();
     }
 
@@ -881,7 +950,7 @@ public final class SimulacionTemporalRunner {
         return value != null ? Double.parseDouble(value.trim()) : defaultValue;
     }
 
-    private record PasoSimulacion(LocalDate dia, int nuevas, int enrutadas, int pendientes,
+    private record PasoSimulacion(LocalDateTime momento, int nuevas, int enrutadas, int pendientes,
                                   Semaforo semaforo, String aeropuertoMasCargado) {
     }
 
@@ -893,7 +962,9 @@ public final class SimulacionTemporalRunner {
                                       Map<String, Aeropuerto> indiceAeropuertos,
                                       ArrayList<VueloProgramado> todosVuelosProgramados,
                                       ArrayList<VueloInstancia> todosVuelosInstancia,
-                                      Map<LocalDate, List<Maleta>> maletasPorDia, LocalDate fechaInicio,
+                                      List<Pedido> pedidosOrdenados,
+                                      List<Maleta> todasLasMaletas,
+                                      LocalDate fechaInicio,
                                       LocalDate fechaFin, int ventanaDias) {
     }
 
@@ -905,7 +976,7 @@ public final class SimulacionTemporalRunner {
 
     private static final class ResultadoSimulacion {
         private boolean colapsada;
-        private LocalDate diaColapso;
+        private LocalDateTime momentoColapso;
         private int totalMaletasEnrutadas;
         private int totalMaletasPendientes;
         private long tiempoEjecucionMs;
