@@ -3,10 +3,13 @@ ejecutar.ga=true
 ejecutar.aco=true
 
 # Rango de fechas de simulacion (yyyy-MM-dd)
-simulacion.fecha.inicio=2026-01-02
-simulacion.fecha.fin=2026-01-06
+simulacion.fecha.inicio=2027-02-07
+simulacion.fecha.fin=2027-02-07
 simulacion.ventana.dias=3
-simulacion.iteraciones=30
+simulacion.iteraciones=1
+simulacion.programada.sa.segundos=10
+simulacion.programada.k=420
+simulacion.programada.sleep.habilitado=true
 
 # ---------- Parametros GA ----------
 ga.tamanioPoblacion=15

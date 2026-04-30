@@ -5,6 +5,8 @@ public final class SimulacionTemporalApplication {
     private static final String MODO_GA = "ga";
     private static final String MODO_ACO = "aco";
     private static final String MODO_EXPERIMENTO = "experimento";
+    private static final String MODO_EXPERIMENTO_LIMITES = "experimentolimites";
+    private static final String MODO_PROMEDIO_DURACION = "promedioduracion";
     private static final String MODO_TODOS = "todos";
 
     private SimulacionTemporalApplication() {
@@ -23,6 +25,14 @@ public final class SimulacionTemporalApplication {
         }
         if (MODO_EXPERIMENTO.equals(modo)) {
             SimulacionTemporalRunner.ejecutarExperimento();
+            return;
+        }
+        if (MODO_EXPERIMENTO_LIMITES.equals(modo)) {
+            ExperimentoLimitesRunner.ejecutar();
+            return;
+        }
+        if (MODO_PROMEDIO_DURACION.equals(modo)) {
+            PromedioDuracionRunner.ejecutar();
             return;
         }
         SimulacionTemporalRunner.ejecutarDesdeConfiguracion();

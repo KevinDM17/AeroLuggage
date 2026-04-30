@@ -9,8 +9,10 @@ import java.nio.file.Files;
 import java.nio.file.Path;
 import java.time.LocalDate;
 import java.time.LocalDateTime;
+import java.time.LocalTime;
 import java.time.format.DateTimeFormatter;
 import java.util.ArrayList;
+import java.util.Comparator;
 import java.util.HashMap;
 import java.util.HashSet;
 import java.util.Iterator;
@@ -35,6 +37,7 @@ import pe.edu.pucp.aeroluggage.algoritmos.ga.GA;
 import pe.edu.pucp.aeroluggage.algoritmos.ga.ParametrosGA;
 import pe.edu.pucp.aeroluggage.dominio.entidades.Aeropuerto;
 import pe.edu.pucp.aeroluggage.dominio.entidades.Maleta;
+import pe.edu.pucp.aeroluggage.dominio.entidades.Pedido;
 import pe.edu.pucp.aeroluggage.dominio.entidades.Ruta;
 import pe.edu.pucp.aeroluggage.dominio.entidades.VueloInstancia;
 import pe.edu.pucp.aeroluggage.dominio.entidades.VueloProgramado;
@@ -55,7 +58,8 @@ class SimulacionTemporalTest {
     private static Map<String, Aeropuerto> indiceAeropuertos;
     private static ArrayList<VueloProgramado> todosVuelosProgramados;
     private static ArrayList<VueloInstancia> todosVuelosInstancia;
-    private static Map<LocalDate, List<Maleta>> maletasPorDia;
+    private static List<Pedido> pedidosOrdenados;
+    private static List<Maleta> todasLasMaletas;
     private static LocalDate fechaInicio;
     private static LocalDate fechaFin;
     private static int ventanaDias;
@@ -92,14 +96,15 @@ class SimulacionTemporalTest {
                 fechaInicio,
                 fechaFin
         );
-        maletasPorDia = new HashMap<>();
-        for (final Maleta m : datosEntrada.getMaletas()) {
-            if (m == null || m.getFechaRegistro() == null) {
-                continue;
-            }
-            final LocalDate dia = m.getFechaRegistro().toLocalDate();
-            if (!dia.isBefore(fechaInicio) && !dia.isAfter(fechaFin)) {
-                maletasPorDia.computeIfAbsent(dia, k -> new ArrayList<>()).add(m);
+        todasLasMaletas = new ArrayList<>(datosEntrada.getMaletas());
+        validarMaletas(todasLasMaletas);
+        pedidosOrdenados = new ArrayList<>(datosEntrada.getPedidos());
+        pedidosOrdenados.sort(Comparator.comparing(Pedido::getFechaRegistro,
+                Comparator.nullsLast(Comparator.naturalOrder()))
+                .thenComparing(Pedido::getIdPedido));
+        for (final Pedido p : pedidosOrdenados) {
+            if (p.getFechaHoraPlazo() == null) {
+                p.calcularFechaHoraPlazo();
             }
         }
     }
@@ -191,10 +196,35 @@ class SimulacionTemporalTest {
 
         System.out.printf("%n=== SIMULACION TEMPORAL [%s] %s → %s ===%n", nombre, fechaInicio, fechaFin);
 
-        for (LocalDate dia = fechaInicio; !dia.isAfter(fechaFin); dia = dia.plusDays(1)) {
+        final Map<String, List<Maleta>> maletasPorPedido = agruparMaletasPorPedido(todasLasMaletas);
 
-            // 1. Register new orders arriving today
-            final List<Maleta> nuevas = maletasPorDia.getOrDefault(dia, List.of());
+        LocalDate diaActual = null;
+        int nuevasEnDia = 0;
+        int enrutadasEnDia = 0;
+
+        for (final Pedido pedido : pedidosOrdenados) {
+            if (pedido.getFechaRegistro() == null) {
+                continue;
+            }
+            final LocalDateTime currentTime = pedido.getFechaRegistro();
+
+            final LocalDate diaPedido = currentTime.toLocalDate();
+            if (!diaPedido.equals(diaActual)) {
+                if (diaActual != null) {
+                    reportarResumenDiario(nombre, diaActual, nuevasEnDia, enrutadasEnDia,
+                            pendientes.size(), aeropuertos);
+                }
+                diaActual = diaPedido;
+                nuevasEnDia = 0;
+                enrutadasEnDia = 0;
+            }
+
+            // 1. Actualizar estados de vuelos hasta currentTime
+            actualizarEstadosVuelos(copiaVuelos, currentTime);
+
+            // 2. Agregar maletas del pedido a pendientes y ocupación
+            final List<Maleta> nuevas =
+                    maletasPorPedido.getOrDefault(pedido.getIdPedido(), List.of());
             for (final Maleta m : nuevas) {
                 final String icao = icaoOrigen(m);
                 if (icao != null) {
@@ -207,7 +237,7 @@ class SimulacionTemporalTest {
                 continue;
             }
 
-            // 2. Reflect current occupancy on shared airport objects
+            // 3. Reflejar ocupación en objetos Aeropuerto
             for (final Map.Entry<String, Integer> e : ocupacion.entrySet()) {
                 final Aeropuerto ap = indiceAeropuertos.get(e.getKey());
                 if (ap != null) {
@@ -215,16 +245,17 @@ class SimulacionTemporalTest {
                 }
             }
 
-            // 3. Build InstanciaProblema for this step (flights in [dia, dia + ventana))
-            final LocalDate ventanaFin = dia.plusDays(ventanaDias - 1);
+            // 4. Ventana de vuelos: [currentTime, currentTime + ventanaDias]
+            final LocalDateTime ventanaFin = currentTime.plusDays(ventanaDias - 1L)
+                    .with(LocalTime.MAX);
             final ArrayList<VueloInstancia> vuelosVentana = new ArrayList<>();
             final Set<String> idsProgramadosVentana = new HashSet<>();
             for (final VueloInstancia vi : copiaVuelos) {
                 if (vi.getFechaSalida() == null) {
                     continue;
                 }
-                final LocalDate fechaSalida = vi.getFechaSalida().toLocalDate();
-                if (!fechaSalida.isBefore(dia) && !fechaSalida.isAfter(ventanaFin)) {
+                if (!vi.getFechaSalida().isBefore(currentTime)
+                        && !vi.getFechaSalida().isAfter(ventanaFin)) {
                     vuelosVentana.add(vi);
                     if (vi.getVueloProgramado() != null) {
                         idsProgramadosVentana.add(vi.getVueloProgramado().getIdVueloProgramado());
@@ -238,17 +269,18 @@ class SimulacionTemporalTest {
                 }
             }
 
+            // 5. Construir instancia y ejecutar algoritmo
+            final DateTimeFormatter fmtMomento = DateTimeFormatter.ofPattern("yyyyMMdd-HHmm");
             final InstanciaProblema instancia = new InstanciaProblema(
-                    "SIM-" + dia, new ArrayList<>(pendientes), progVentana, vuelosVentana, aeropuertos);
-
-            // 4. Run algorithm
+                    "SIM-" + currentTime.format(fmtMomento),
+                    new ArrayList<>(pendientes), progVentana, vuelosVentana, aeropuertos);
             algoritmo.ejecutar(instancia);
             final Solucion sol = obtenerSolucion(algoritmo);
             fitnessExperimental = fitnessExperimental.sumar(
-                    CalculadorFitnessExperimental.calcular(sol, instancia)
-            );
+                    CalculadorFitnessExperimental.calcular(sol, instancia));
+            FuncionCosto.calcularCostoSolucion(sol, instancia, construirParametrosGA());
 
-            // 5. Commit successful routes — decrement flight capacity on this algo's copy
+            // 6. Reducir capacidades y remover maletas enrutadas
             final Set<String> idsMaletasEnrutadas = new HashSet<>();
             if (sol != null) {
                 for (final Ruta ruta : sol.getSolucion()) {
@@ -263,63 +295,56 @@ class SimulacionTemporalTest {
                             try {
                                 vueloReal.actualizarCapacidad(1);
                             } catch (final IllegalStateException ignored) {
-                                // over-committed flight; skip silently
+                                // no-op
                             }
                         }
                     }
                 }
             }
-
-            // 6. Remove routed maletas from pending; update origin airport occupancy
             final Iterator<Maleta> it = pendientes.iterator();
             while (it.hasNext()) {
                 final Maleta m = it.next();
-                if (idsMaletasEnrutadas.contains(m.getIdMaleta())) {
-                    final String icao = icaoOrigen(m);
-                    if (icao != null) {
-                        ocupacion.merge(icao, -1, Integer::sum);
-                    }
-                    it.remove();
-                }
-            }
-            totalEnrutadas += idsMaletasEnrutadas.size();
-
-            // 7. Advance flight states for today
-            final LocalDateTime finDia = dia.atTime(23, 59);
-            for (final VueloInstancia vi : copiaVuelos) {
-                if (vi.getEstado() == EstadoVuelo.CANCELADO) {
+                if (!idsMaletasEnrutadas.contains(m.getIdMaleta())) {
                     continue;
                 }
-                if (vi.getFechaLlegada() != null && !vi.getFechaLlegada().isAfter(finDia)) {
-                    vi.setEstado(EstadoVuelo.FINALIZADO);
-                } else if (vi.getFechaSalida() != null && !vi.getFechaSalida().isAfter(finDia)) {
-                    vi.setEstado(EstadoVuelo.EN_PROGRESO);
+                final String icao = icaoOrigen(m);
+                if (icao != null) {
+                    ocupacion.merge(icao, -1, Integer::sum);
                 }
+                it.remove();
             }
+            totalEnrutadas += idsMaletasEnrutadas.size();
+            nuevasEnDia += nuevas.size();
+            enrutadasEnDia += idsMaletasEnrutadas.size();
 
-            FuncionCosto.calcularCostoSolucion(sol, instancia, construirParametrosGA());
+            // 7. Detección de colapso: maletas sin ruta cuyo plazo ya expiró
+            final boolean hayColapso = pendientes.stream().anyMatch(m -> {
+                final LocalDateTime plazo = m.getPedido() != null
+                        ? m.getPedido().getFechaHoraPlazo() : null;
+                return plazo != null && !plazo.isAfter(currentTime);
+            });
 
-            // 8. Record step metrics
+            // 8. Registrar paso
             final String masCargado = ocupacion.entrySet().stream()
                     .max(Map.Entry.comparingByValue())
                     .map(Map.Entry::getKey)
                     .orElse("-");
-            historial.add(new PasoSimulacion(dia, nuevas.size(), idsMaletasEnrutadas.size(),
+            historial.add(new PasoSimulacion(
+                    currentTime, nuevas.size(), idsMaletasEnrutadas.size(),
                     pendientes.size(), sol != null ? sol.getSemaforo() : null, masCargado));
-            reportarPaso(nombre, dia, nuevas.size(), idsMaletasEnrutadas.size(), pendientes.size(), sol);
 
-            // 9. Collapse check: any carry-over maleta (registered before today) still unrouted?
-            final LocalDate diaActual = dia;
-            final boolean hayCarryOver = pendientes.stream()
-                    .anyMatch(m -> m.getFechaRegistro() != null
-                            && m.getFechaRegistro().toLocalDate().isBefore(diaActual));
-            if (hayCarryOver) {
-                System.out.printf("[COLAPSO] %s colapsó en día %s — %d maleta(s) sin ruta%n",
-                        nombre, dia, pendientes.size());
+            if (hayColapso) {
+                System.out.printf("[COLAPSO] %s colapsó en momento %s — %d maleta(s) sin ruta%n",
+                        nombre, currentTime, pendientes.size());
                 resultado.colapsada = true;
-                resultado.diaColapso = dia;
+                resultado.momentoColapso = currentTime;
                 break;
             }
+        }
+
+        if (diaActual != null) {
+            reportarResumenDiario(nombre, diaActual, nuevasEnDia, enrutadasEnDia,
+                    pendientes.size(), aeropuertos);
         }
 
         resultado.totalMaletasEnrutadas = totalEnrutadas;
@@ -329,6 +354,57 @@ class SimulacionTemporalTest {
         resultado.fitnessExperimental = fitnessExperimental;
         reportarResumen(nombre, resultado);
         return resultado;
+    }
+
+    private static void validarMaletas(final List<Maleta> maletas) {
+        for (final Maleta maleta : maletas) {
+            final String id = maleta != null ? maleta.getIdMaleta() : "(null)";
+            if (maleta == null) {
+                throw new IllegalStateException("Maleta nula encontrada en los datos de entrada");
+            }
+            if (maleta.getPedido() == null) {
+                throw new IllegalStateException("Maleta " + id + " no tiene pedido asignado");
+            }
+            if (maleta.getFechaRegistro() == null) {
+                throw new IllegalStateException("Maleta " + id + " no tiene fechaRegistro");
+            }
+            if (maleta.getPedido().getFechaHoraPlazo() == null) {
+                maleta.getPedido().calcularFechaHoraPlazo();
+            }
+            if (maleta.getPedido().getFechaHoraPlazo() == null) {
+                throw new IllegalStateException(
+                        "Maleta " + id + " (pedido " + maleta.getPedido().getIdPedido()
+                        + ") no tiene fechaHoraPlazo y no se pudo calcular"
+                        + " (aeropuerto origen/destino o continente podria ser null)");
+            }
+        }
+    }
+
+    private static Map<String, List<Maleta>> agruparMaletasPorPedido(final List<Maleta> maletas) {
+        final Map<String, List<Maleta>> indice = new HashMap<>();
+        for (final Maleta maleta : maletas) {
+            if (maleta == null || maleta.getPedido() == null
+                    || maleta.getPedido().getIdPedido() == null) {
+                continue;
+            }
+            indice.computeIfAbsent(maleta.getPedido().getIdPedido(), k -> new ArrayList<>())
+                  .add(maleta);
+        }
+        return indice;
+    }
+
+    private static void actualizarEstadosVuelos(final List<VueloInstancia> todos,
+                                                final LocalDateTime currentTime) {
+        for (final VueloInstancia v : todos) {
+            if (v.getEstado() == EstadoVuelo.CANCELADO) {
+                continue;
+            }
+            if (v.getFechaLlegada() != null && !v.getFechaLlegada().isAfter(currentTime)) {
+                v.setEstado(EstadoVuelo.FINALIZADO);
+            } else if (v.getFechaSalida() != null && !v.getFechaSalida().isAfter(currentTime)) {
+                v.setEstado(EstadoVuelo.EN_PROGRESO);
+            }
+        }
     }
 
     private static String icaoOrigen(final Maleta m) {
@@ -388,36 +464,40 @@ class SimulacionTemporalTest {
         return clon;
     }
 
-    private static void reportarPaso(final String nombre, final LocalDate dia, final int nuevas,
-                                     final int enrutadas, final int pendientes, final Solucion sol) {
-        final String semaforo = sol != null && sol.getSemaforo() != null
-                ? sol.getSemaforo().name() : "N/A";
-        System.out.printf("[%s][DIA %s] nuevas=%d enrutadas=%d pendientes=%d semaforo=%s%n",
-                nombre, dia, nuevas, enrutadas, pendientes, semaforo);
+    private static void reportarResumenDiario(final String nombre, final LocalDate dia,
+                                              final int nuevas, final int enrutadas,
+                                              final int pendientes,
+                                              final ArrayList<Aeropuerto> listaAeropuertos) {
+        System.out.printf("%n=== RESUMEN DIA [%s] [%s] ===%n", nombre, dia);
+        System.out.printf("  Maletas nuevas:     %d%n", nuevas);
+        System.out.printf("  Maletas enrutadas:  %d%n", enrutadas);
+        System.out.printf("  Maletas pendientes: %d%n", pendientes);
+        System.out.println();
+        System.out.printf("  %-10s %10s %10s %12s%n",
+                "Aeropuerto", "Ocupacion", "Capacidad", "Porcentaje");
+        for (final Aeropuerto aeropuerto : listaAeropuertos) {
+            final int ocupacionAeropuerto = aeropuerto.getMaletasActuales();
+            final int capacidad = aeropuerto.getCapacidadAlmacen();
+            final double porcentaje = capacidad > 0 ? 100.0 * ocupacionAeropuerto / capacidad : 0.0;
+            System.out.printf("  %-10s %10d %10d %11.1f%%%n",
+                    aeropuerto.getIdAeropuerto(), ocupacionAeropuerto, capacidad, porcentaje);
+        }
+        System.out.println();
     }
 
     private static void reportarResumen(final String nombre, final ResultadoSimulacion resultado) {
         System.out.printf("%n--- RESUMEN [%s] ---%n", nombre);
         System.out.printf("Estado:          %s%n",
                 resultado.colapsada
-                        ? "COLAPSADA (dia " + resultado.diaColapso + ")"
+                        ? "COLAPSADA (momento " + resultado.momentoColapso + ")"
                         : "COMPLETADA");
         System.out.printf("Total enrutadas: %d%n", resultado.totalMaletasEnrutadas);
         System.out.printf("Pendientes fin:  %d%n", resultado.totalMaletasPendientes);
-        System.out.printf("Pasos:           %d%n", resultado.historial.size());
         System.out.printf("Tiempo ejecucion:%d ms (%.3f s)%n",
                 resultado.tiempoEjecucionMs,
                 resultado.tiempoEjecucionMs / 1000D
         );
         reportarFitnessExperimental(resultado.fitnessExperimental);
-        System.out.println();
-        System.out.printf("%-12s %8s %10s %10s %10s%n",
-                "Dia", "Nuevas", "Enrutadas", "Pendientes", "Semaforo");
-        for (final PasoSimulacion paso : resultado.historial) {
-            final String sem = paso.semaforo() != null ? paso.semaforo().name() : "N/A";
-            System.out.printf("%-12s %8d %10d %10d %10s%n",
-                    paso.dia(), paso.nuevas(), paso.enrutadas(), paso.pendientes(), sem);
-        }
         System.out.println();
     }
 
@@ -557,7 +637,7 @@ class SimulacionTemporalTest {
 
     // ---- inner types ----
 
-    private record PasoSimulacion(LocalDate dia, int nuevas, int enrutadas, int pendientes,
+    private record PasoSimulacion(LocalDateTime momento, int nuevas, int enrutadas, int pendientes,
                                   Semaforo semaforo, String aeropuertoMasCargado) {}
 
     private record ResultadoIteracion(int iteracion, long semilla,
@@ -565,7 +645,7 @@ class SimulacionTemporalTest {
 
     private static final class ResultadoSimulacion {
         boolean colapsada = false;
-        LocalDate diaColapso = null;
+        LocalDateTime momentoColapso = null;
         int totalMaletasEnrutadas = 0;
         int totalMaletasPendientes = 0;
         long tiempoEjecucionMs = 0L;

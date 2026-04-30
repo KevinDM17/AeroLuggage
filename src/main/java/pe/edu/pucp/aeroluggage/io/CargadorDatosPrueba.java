@@ -5,6 +5,7 @@ import java.io.RandomAccessFile;
 import java.nio.charset.StandardCharsets;
 import java.nio.file.Files;
 import java.nio.file.Path;
+import java.time.Duration;
 import java.time.LocalDate;
 import java.time.LocalDateTime;
 import java.time.LocalTime;
@@ -12,9 +13,11 @@ import java.time.format.DateTimeFormatter;
 import java.util.ArrayList;
 import java.util.Comparator;
 import java.util.HashMap;
+import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Map;
 import java.util.PriorityQueue;
+import java.util.TreeMap;
 import java.util.regex.Matcher;
 import java.util.regex.Pattern;
 import java.util.stream.Stream;
@@ -113,6 +116,71 @@ public final class CargadorDatosPrueba {
         return new DatosEntrada(pedidos, maletas);
     }
 
+    public static Map<LocalDate, Integer> calcularDemandaMaletasPorDia(final List<Pedido> pedidos) {
+        final Map<LocalDate, Integer> demandaPorDia = new TreeMap<>();
+        if (pedidos == null || pedidos.isEmpty()) {
+            return demandaPorDia;
+        }
+        for (final Pedido pedido : pedidos) {
+            if (pedido == null || pedido.getFechaRegistro() == null) {
+                continue;
+            }
+            final LocalDate fecha = pedido.getFechaRegistro().toLocalDate();
+            demandaPorDia.merge(fecha, pedido.getCantidadMaletas(), Integer::sum);
+        }
+        return demandaPorDia;
+    }
+
+    public static Map<LocalDate, Integer> encontrarDiasConMayorDemanda(final List<Pedido> pedidos) {
+        final Map<LocalDate, Integer> demandaPorDia = calcularDemandaMaletasPorDia(pedidos);
+        final Map<LocalDate, Integer> diasConMayorDemanda = new LinkedHashMap<>();
+        if (demandaPorDia.isEmpty()) {
+            return diasConMayorDemanda;
+        }
+        int maximoMaletas = 0;
+        for (final Integer totalMaletas : demandaPorDia.values()) {
+            if (totalMaletas != null && totalMaletas > maximoMaletas) {
+                maximoMaletas = totalMaletas;
+            }
+        }
+        for (final Map.Entry<LocalDate, Integer> entry : demandaPorDia.entrySet()) {
+            final Integer totalMaletas = entry.getValue();
+            if (totalMaletas != null && totalMaletas == maximoMaletas) {
+                diasConMayorDemanda.put(entry.getKey(), totalMaletas);
+            }
+        }
+        return diasConMayorDemanda;
+    }
+
+    public static Map<LocalDate, Integer> encontrarDiasConMayorDemanda(final Path carpetaEnvios,
+                                                                        final Map<String, Aeropuerto> aeropuertos) {
+        final DatosEntrada datosEntrada = cargarEnvios(carpetaEnvios, aeropuertos);
+        return encontrarDiasConMayorDemanda(datosEntrada.getPedidos());
+    }
+
+    public static Map<LocalDate, Integer> ordenarDiasPorDemandaDescendente(final List<Pedido> pedidos) {
+        final Map<LocalDate, Integer> demandaPorDia = calcularDemandaMaletasPorDia(pedidos);
+        final List<Map.Entry<LocalDate, Integer>> entradasOrdenadas = new ArrayList<>(demandaPorDia.entrySet());
+        entradasOrdenadas.sort((primero, segundo) -> {
+            final int comparacionMaletas = Integer.compare(segundo.getValue(), primero.getValue());
+            if (comparacionMaletas != 0) {
+                return comparacionMaletas;
+            }
+            return primero.getKey().compareTo(segundo.getKey());
+        });
+        final Map<LocalDate, Integer> diasOrdenados = new LinkedHashMap<>();
+        for (final Map.Entry<LocalDate, Integer> entry : entradasOrdenadas) {
+            diasOrdenados.put(entry.getKey(), entry.getValue());
+        }
+        return diasOrdenados;
+    }
+
+    public static Map<LocalDate, Integer> ordenarDiasPorDemandaDescendente(final Path carpetaEnvios,
+                                                                            final Map<String, Aeropuerto> aeropuertos) {
+        final DatosEntrada datosEntrada = cargarEnvios(carpetaEnvios, aeropuertos);
+        return ordenarDiasPorDemandaDescendente(datosEntrada.getPedidos());
+    }
+
     public static DatosEntrada cargarEnviosEnRango(final Path carpetaEnvios,
                                                    final Map<String, Aeropuerto> aeropuertos,
                                                    final LocalDate fechaInicio,
@@ -194,6 +262,44 @@ public final class CargadorDatosPrueba {
                 dias
         );
         return GeneradorVuelosInstancia.generar(vuelosProgramados, fechaInicio, dias);
+    }
+
+    public static long calcularDuracionVueloProgramadoMinutos(final VueloProgramado vueloProgramado) {
+        final boolean vueloInvalido = vueloProgramado == null
+                || vueloProgramado.getHoraSalida() == null
+                || vueloProgramado.getHoraLlegada() == null;
+        if (vueloInvalido) {
+            return 0L;
+        }
+        final LocalDate fechaBase = LocalDate.of(2026, 1, 1);
+        final LocalDateTime salida = LocalDateTime.of(fechaBase, vueloProgramado.getHoraSalida());
+        LocalDateTime llegada = LocalDateTime.of(fechaBase, vueloProgramado.getHoraLlegada());
+        if (!llegada.isAfter(salida)) {
+            llegada = llegada.plusDays(1);
+        }
+        return Duration.between(salida, llegada).toMinutes();
+    }
+
+    public static double calcularPromedioDuracionVuelosHoras(final List<VueloProgramado> vuelosProgramados) {
+        if (vuelosProgramados == null || vuelosProgramados.isEmpty()) {
+            return 0D;
+        }
+        long totalMinutos = 0L;
+        int vuelosValidos = 0;
+        for (final VueloProgramado vueloProgramado : vuelosProgramados) {
+            final boolean vueloInvalido = vueloProgramado == null
+                    || vueloProgramado.getHoraSalida() == null
+                    || vueloProgramado.getHoraLlegada() == null;
+            if (vueloInvalido) {
+                continue;
+            }
+            totalMinutos += calcularDuracionVueloProgramadoMinutos(vueloProgramado);
+            vuelosValidos++;
+        }
+        if (vuelosValidos == 0) {
+            return 0D;
+        }
+        return totalMinutos / 60D / vuelosValidos;
     }
 
     public static Map<String, Aeropuerto> indexarAeropuertos(final ArrayList<Aeropuerto> aeropuertos) {
