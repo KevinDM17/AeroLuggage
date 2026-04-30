@@ -5,6 +5,7 @@ import java.io.InputStream;
 import java.nio.file.Files;
 import java.nio.file.Path;
 import java.time.LocalDate;
+import java.time.Duration;
 import java.time.LocalDateTime;
 import java.time.LocalTime;
 import java.time.format.DateTimeFormatter;
@@ -52,6 +53,11 @@ public final class SimulacionTemporalRunner {
             "Muestra,ACO,ACO Tiempo Ms,Algoritmo Genetico,Algoritmo Genetico Tiempo Ms";
     private static final DateTimeFormatter FMT = DateTimeFormatter.ISO_LOCAL_DATE;
     private static final long SEMILLA_ALEATORIA = -1L;
+    private static final long MINUTOS_SALIDA_SISTEMA_DESTINO = 10L;
+    private static final long DEFAULT_SA_SEGUNDOS = 60L;
+    private static final long DEFAULT_K = 70L;
+    private static final boolean DEFAULT_SLEEP_HABILITADO = true;
+    private static Runnable terminadorPrograma = () -> System.exit(0);
 
     private SimulacionTemporalRunner() {
         throw new UnsupportedOperationException("This class should never be instantiated");
@@ -356,193 +362,201 @@ public final class SimulacionTemporalRunner {
                                                           final ContextoEjecucion contextoEjecucion,
                                                           final String nombre,
                                                           final ContextoSimulacion contexto) {
-        final List<Maleta> pendientes = new ArrayList<>();
         final List<Maleta> registradas = new ArrayList<>();
         final Map<String, Integer> ocupacion = new HashMap<>();
-        final Map<String, List<VueloInstancia>> rutasConfirmadasPorMaleta = new HashMap<>();
+        final Map<String, RutaMaletaProgramada> rutasProgramadasPorMaleta = new HashMap<>();
         final Map<String, VueloInstancia> vuelosPorId = indexarVuelosInstancia(
                 contextoEjecucion.todosVuelosInstancia()
         );
         final List<PasoSimulacion> historial = new ArrayList<>();
         final long inicioEjecucionMs = System.currentTimeMillis();
-        int totalEnrutadas = 0;
+        final ConfiguracionProgramada configuracionProgramada = construirConfiguracionProgramada(contexto.params());
+        final Set<String> maletasEnrutadas = new HashSet<>();
         final ResultadoSimulacion resultado = new ResultadoSimulacion();
         ResultadoFitnessExperimental fitnessExperimental = new ResultadoFitnessExperimental(0D, 0, 0D, 0D, 0D);
 
-        System.out.printf("%n=== SIMULACION TEMPORAL [%s] %s -> %s ===%n",
+        System.out.printf("%n=== SIMULACION PROGRAMADA [%s] %s -> %s ===%n",
                 nombre, contexto.fechaInicio(), contexto.fechaFin());
+        System.out.printf(
+                "Configuracion programada: SA=%d s, K=%d, SC=%d min, sleep=%s%n",
+                configuracionProgramada.saMs() / 1000L,
+                configuracionProgramada.k(),
+                configuracionProgramada.sc().toMinutes(),
+                configuracionProgramada.sleepHabilitado()
+        );
 
         final Map<String, List<Maleta>> maletasPorPedido =
                 agruparMaletasPorPedido(contexto.todasLasMaletas());
+        final LocalDateTime primerMomento = obtenerPrimerMomentoPedidos(contexto.pedidosOrdenados());
+        if (primerMomento == null) {
+            resultado.totalMaletasPendientes = 0;
+            resultado.tiempoEjecucionMs = System.currentTimeMillis() - inicioEjecucionMs;
+            resultado.fitnessExperimental = fitnessExperimental;
+            reportarResumen(nombre, resultado);
+            return resultado;
+        }
 
-        LocalDate diaActual = null;
-        int nuevasEnDia = 0;
-        int enrutadasEnDia = 0;
+        LocalDateTime limiteProcesado = primerMomento.minusNanos(1L);
+        final LocalDateTime finSimulacion = contexto.fechaFin().atTime(LocalTime.MAX);
+        int indicePedido = 0;
+        int numeroCiclo = 0;
 
-        for (final Pedido pedido : contexto.pedidosOrdenados()) {
-            if (pedido.getFechaRegistro() == null) {
-                continue;
-            }
-            final LocalDateTime currentTime = pedido.getFechaRegistro();
+        while (limiteProcesado.isBefore(finSimulacion)
+                && (indicePedido < contexto.pedidosOrdenados().size()
+                || existenMaletasNoFinalizadas(registradas, rutasProgramadasPorMaleta, limiteProcesado))) {
+            numeroCiclo++;
+            final LocalDateTime inicioCicloDatos = limiteProcesado.plusNanos(1L);
+            final LocalDateTime finCicloPropuesto = inicioCicloDatos.plus(configuracionProgramada.sc());
+            final LocalDateTime finCicloDatos = finCicloPropuesto.isAfter(finSimulacion)
+                    ? finSimulacion
+                    : finCicloPropuesto;
+            final long inicioCicloRealMs = System.currentTimeMillis();
+            final int registradasAntes = registradas.size();
 
-            final LocalDate diaPedido = currentTime.toLocalDate();
-            if (!diaPedido.equals(diaActual)) {
-                if (diaActual != null) {
-                    reportarResumenDiario(nombre, diaActual, nuevasEnDia, enrutadasEnDia,
-                            pendientes.size(), contextoEjecucion.aeropuertos());
-                }
-                diaActual = diaPedido;
-                nuevasEnDia = 0;
-                enrutadasEnDia = 0;
-            }
+            indicePedido = incorporarPedidosHastaMomento(
+                    contexto.pedidosOrdenados(),
+                    indicePedido,
+                    finCicloDatos,
+                    maletasPorPedido,
+                    registradas
+            );
 
-            actualizarEstadosVuelos(contextoEjecucion.todosVuelosInstancia(), currentTime);
-
-            final List<Maleta> nuevas =
-                    maletasPorPedido.getOrDefault(pedido.getIdPedido(), List.of());
-            registradas.addAll(nuevas);
-            pendientes.addAll(nuevas);
-
+            actualizarEstadosVuelos(contextoEjecucion.todosVuelosInstancia(), finCicloDatos);
+            final Map<String, EstadoMaletaTemporal> estadosPorMaleta = evaluarEstadosMaletas(
+                    registradas,
+                    rutasProgramadasPorMaleta,
+                    finCicloDatos
+            );
             recalcularOcupacionAeropuertos(
                     ocupacion,
                     contextoEjecucion.aeropuertos(),
                     registradas,
-                    rutasConfirmadasPorMaleta,
-                    currentTime
+                    rutasProgramadasPorMaleta,
+                    finCicloDatos
             );
 
-            if (pendientes.isEmpty()) {
-                continue;
-            }
-
-            final LocalDateTime ventanaFin = currentTime.plusDays(contexto.ventanaDias() - 1L)
-                    .with(LocalTime.MAX);
-            final ArrayList<VueloInstancia> vuelosVentana = new ArrayList<>();
-            final Set<String> idsProgramadosVentana = new HashSet<>();
-            for (final VueloInstancia vueloInstancia : contextoEjecucion.todosVuelosInstancia()) {
-                if (vueloInstancia.getFechaSalida() == null) {
-                    continue;
-                }
-                final boolean vueloDentroVentana =
-                        !vueloInstancia.getFechaSalida().isBefore(currentTime)
-                        && !vueloInstancia.getFechaSalida().isAfter(ventanaFin);
-                if (vueloDentroVentana) {
-                    vuelosVentana.add(vueloInstancia);
-                    if (vueloInstancia.getVueloProgramado() != null) {
-                        idsProgramadosVentana.add(vueloInstancia.getVueloProgramado().getIdVueloProgramado());
-                    }
-                }
-            }
-
-            final ArrayList<VueloProgramado> programadosVentana = new ArrayList<>();
-            for (final VueloProgramado vueloProgramado : contextoEjecucion.todosVuelosProgramados()) {
-                if (idsProgramadosVentana.contains(vueloProgramado.getIdVueloProgramado())) {
-                    programadosVentana.add(vueloProgramado);
-                }
-            }
-
-            final DateTimeFormatter fmtMomento = DateTimeFormatter.ofPattern("yyyyMMdd-HHmm");
-            final InstanciaProblema instancia = new InstanciaProblema(
-                    "SIM-" + currentTime.format(fmtMomento),
-                    new ArrayList<>(pendientes),
-                    programadosVentana,
-                    vuelosVentana,
-                    contextoEjecucion.aeropuertos()
-            );
-            final ParametrosGA parametrosGa = construirParametrosGA(contexto.params());
-            instancia.construirGrafo();
-
-            algoritmo.ejecutar(instancia);
-            final Solucion solucion = obtenerSolucion(algoritmo);
-            postprocesarSolucion(solucion, instancia, parametrosGa);
-            fitnessExperimental = fitnessExperimental.sumar(
-                    CalculadorFitnessExperimental.calcular(solucion, instancia)
-            );
-
-            final Set<String> idsMaletasEnrutadas = new HashSet<>();
-            if (solucion != null) {
-                for (final Ruta ruta : solucion.getSolucion()) {
-                    final boolean rutaFallida = ruta == null
-                            || ruta.getEstado() == EstadoRuta.FALLIDA
-                            || ruta.getSubrutas().isEmpty();
-                    if (rutaFallida) {
-                        continue;
-                    }
-                    idsMaletasEnrutadas.add(ruta.getIdMaleta());
-                    final List<VueloInstancia> vuelosConfirmados = new ArrayList<>();
-                    for (final VueloInstancia vueloInstancia : ruta.getSubrutas()) {
-                        final VueloInstancia vueloReal = obtenerVueloReal(vuelosPorId, vueloInstancia);
-                        final boolean vueloConCapacidad = vueloReal != null
-                                && vueloReal.getCapacidadDisponible() > 0;
-                        if (!vueloConCapacidad) {
-                            continue;
-                        }
-                        vuelosConfirmados.add(vueloReal);
-                        try {
-                            vueloReal.actualizarCapacidad(1);
-                        } catch (final IllegalStateException ignored) {
-                            // no-op
-                        }
-                    }
-                    if (!vuelosConfirmados.isEmpty() && ruta.getIdMaleta() != null) {
-                        rutasConfirmadasPorMaleta.put(ruta.getIdMaleta(), vuelosConfirmados);
-                    }
-                }
-            }
-
-            final Iterator<Maleta> iterator = pendientes.iterator();
-            while (iterator.hasNext()) {
-                final Maleta maleta = iterator.next();
-                if (!idsMaletasEnrutadas.contains(maleta.getIdMaleta())) {
-                    continue;
-                }
-                iterator.remove();
-            }
-            recalcularOcupacionAeropuertos(
-                    ocupacion,
-                    contextoEjecucion.aeropuertos(),
+            int enrutadasEnCiclo = 0;
+            final int nuevasEnCiclo = registradas.size() - registradasAntes;
+            Solucion solucion = null;
+            final List<Maleta> maletasReplanificables = construirMaletasReplanificables(
                     registradas,
-                    rutasConfirmadasPorMaleta,
-                    currentTime
+                    estadosPorMaleta,
+                    contextoEjecucion.indiceAeropuertos(),
+                    finCicloDatos
             );
-            totalEnrutadas += idsMaletasEnrutadas.size();
-            nuevasEnDia += nuevas.size();
-            enrutadasEnDia += idsMaletasEnrutadas.size();
 
-            final boolean hayColapso = pendientes.stream().anyMatch(m -> {
-                final LocalDateTime plazo = m.getPedido() != null
-                        ? m.getPedido().getFechaHoraPlazo() : null;
-                return plazo != null && !plazo.isAfter(currentTime);
-            });
+            if (!maletasReplanificables.isEmpty()) {
+                liberarCapacidadFuturaReplanificable(estadosPorMaleta, rutasProgramadasPorMaleta);
+                final VentanaVuelos ventana = construirVentanaVuelos(
+                        contextoEjecucion.todosVuelosInstancia(),
+                        contextoEjecucion.todosVuelosProgramados(),
+                        finCicloDatos,
+                        contexto.ventanaDias()
+                );
+                final DateTimeFormatter fmtMomento = DateTimeFormatter.ofPattern("yyyyMMdd-HHmm");
+                final InstanciaProblema instancia = new InstanciaProblema(
+                        "SIM-" + finCicloDatos.format(fmtMomento),
+                        new ArrayList<>(maletasReplanificables),
+                        ventana.vuelosProgramados(),
+                        ventana.vuelosInstancia(),
+                        contextoEjecucion.aeropuertos()
+                );
+                final ParametrosGA parametrosGa = construirParametrosGA(contexto.params());
+                instancia.construirGrafo();
+
+                algoritmo.ejecutar(instancia);
+                solucion = obtenerSolucion(algoritmo);
+                postprocesarSolucion(solucion, instancia, parametrosGa);
+                fitnessExperimental = fitnessExperimental.sumar(
+                        CalculadorFitnessExperimental.calcular(solucion, instancia)
+                );
+
+                final Map<String, List<VueloInstancia>> nuevasRutas = extraerRutasConfirmadas(
+                        solucion,
+                        vuelosPorId
+                );
+                aplicarRutasReplanificadas(
+                        estadosPorMaleta,
+                        rutasProgramadasPorMaleta,
+                        nuevasRutas,
+                        maletasEnrutadas
+                );
+                reservarCapacidadRutas(nuevasRutas);
+                recalcularOcupacionAeropuertos(
+                        ocupacion,
+                        contextoEjecucion.aeropuertos(),
+                        registradas,
+                        rutasProgramadasPorMaleta,
+                        finCicloDatos
+                );
+                enrutadasEnCiclo = nuevasRutas.size();
+            }
+
+            final Map<String, EstadoMaletaTemporal> estadosActualizados = evaluarEstadosMaletas(
+                    registradas,
+                    rutasProgramadasPorMaleta,
+                    finCicloDatos
+            );
+            final int pendientesSinRuta = contarMaletasPendientesSinRuta(estadosActualizados);
+            final DetalleColapso detalleColapso = detectarDetalleColapso(
+                    estadosActualizados,
+                    contextoEjecucion.aeropuertos(),
+                    contextoEjecucion.todosVuelosInstancia(),
+                    inicioCicloDatos,
+                    finCicloDatos
+            );
+            final boolean hayColapso = detalleColapso != null;
 
             final String aeropuertoMasCargado = ocupacion.entrySet().stream()
                     .max(Map.Entry.comparingByValue())
                     .map(Map.Entry::getKey)
                     .orElse("-");
             historial.add(new PasoSimulacion(
-                    currentTime,
-                    nuevas.size(),
-                    idsMaletasEnrutadas.size(),
-                    pendientes.size(),
+                    finCicloDatos,
+                    nuevasEnCiclo,
+                    enrutadasEnCiclo,
+                    pendientesSinRuta,
                     solucion != null ? solucion.getSemaforo() : null,
                     aeropuertoMasCargado
             ));
+
+            final long taMs = System.currentTimeMillis() - inicioCicloRealMs;
+            reportarResumenCiclo(
+                    nombre,
+                    numeroCiclo,
+                    inicioCicloDatos,
+                    finCicloDatos,
+                    nuevasEnCiclo,
+                    enrutadasEnCiclo,
+                    pendientesSinRuta,
+                    taMs,
+                    configuracionProgramada.saMs()
+            );
+            reportarCapacidadAeropuertosCiclo(nombre, numeroCiclo, contextoEjecucion.aeropuertos());
+            if (taMs > configuracionProgramada.saMs()) {
+                terminarPorTiempoExcedido(taMs, configuracionProgramada.saMs());
+            }
+
             if (hayColapso) {
-                System.out.printf("[COLAPSO] %s colapso en momento %s -> %d maleta(s) sin ruta%n",
-                        nombre, currentTime, pendientes.size());
+                System.out.printf("[COLAPSO] %s colapso en momento %s -> %s%n",
+                        nombre, finCicloDatos, detalleColapso.motivo());
+                reportarDiagnosticoColapso(detalleColapso);
                 resultado.colapsada = true;
-                resultado.momentoColapso = currentTime;
+                resultado.momentoColapso = finCicloDatos;
                 break;
             }
+
+            limiteProcesado = finCicloDatos;
+            dormirHastaSiguienteCiclo(configuracionProgramada, taMs);
         }
 
-        if (diaActual != null) {
-            reportarResumenDiario(nombre, diaActual, nuevasEnDia, enrutadasEnDia,
-                    pendientes.size(), contextoEjecucion.aeropuertos());
-        }
-
-        resultado.totalMaletasEnrutadas = totalEnrutadas;
-        resultado.totalMaletasPendientes = pendientes.size();
+        final LocalDateTime momentoFinal = resultado.colapsada && resultado.momentoColapso != null
+                ? resultado.momentoColapso
+                : limiteProcesado;
+        resultado.totalMaletasEnrutadas = maletasEnrutadas.size();
+        resultado.totalMaletasPendientes = contarMaletasPendientesSinRuta(
+                evaluarEstadosMaletas(registradas, rutasProgramadasPorMaleta, momentoFinal)
+        );
         resultado.historial = historial;
         resultado.tiempoEjecucionMs = System.currentTimeMillis() - inicioEjecucionMs;
         resultado.fitnessExperimental = fitnessExperimental;
@@ -553,16 +567,17 @@ public final class SimulacionTemporalRunner {
     private static void recalcularOcupacionAeropuertos(final Map<String, Integer> ocupacion,
                                                        final ArrayList<Aeropuerto> aeropuertos,
                                                        final List<Maleta> registradas,
-                                                       final Map<String, List<VueloInstancia>> rutasConfirmadasPorMaleta,
+                                                       final Map<String, RutaMaletaProgramada> rutasConfirmadasPorMaleta,
                                                        final LocalDateTime currentTime) {
         ocupacion.clear();
         for (final Maleta maleta : registradas) {
             if (maleta == null || maleta.getIdMaleta() == null) {
                 continue;
             }
+            final RutaMaletaProgramada rutaProgramada = rutasConfirmadasPorMaleta.get(maleta.getIdMaleta());
             final String aeropuertoActual = resolverAeropuertoOcupacion(
                     maleta,
-                    rutasConfirmadasPorMaleta.get(maleta.getIdMaleta()),
+                    rutaProgramada,
                     currentTime
             );
             if (aeropuertoActual == null) {
@@ -580,41 +595,677 @@ public final class SimulacionTemporalRunner {
     }
 
     private static String resolverAeropuertoOcupacion(final Maleta maleta,
-                                                      final List<VueloInstancia> rutaConfirmada,
+                                                      final RutaMaletaProgramada rutaConfirmada,
                                                       final LocalDateTime currentTime) {
-        String aeropuertoActual = icaoOrigen(maleta);
-        if (rutaConfirmada == null || rutaConfirmada.isEmpty()) {
-            return aeropuertoActual;
+        final EstadoMaletaTemporal estado = evaluarEstadoMaleta(maleta, rutaConfirmada, currentTime);
+        return estado.aeropuertoActual();
+    }
+
+    private static ConfiguracionProgramada construirConfiguracionProgramada(final Properties params) {
+        final long saSegundos = longParam(params, "simulacion.programada.sa.segundos", DEFAULT_SA_SEGUNDOS);
+        final long k = longParam(params, "simulacion.programada.k", DEFAULT_K);
+        final boolean sleepHabilitado = Boolean.parseBoolean(
+                params.getProperty("simulacion.programada.sleep.habilitado", String.valueOf(DEFAULT_SLEEP_HABILITADO))
+        );
+        if (saSegundos <= 0L) {
+            throw new IllegalStateException("simulacion.programada.sa.segundos debe ser mayor a 0");
         }
-        for (final VueloInstancia vueloInstancia : rutaConfirmada) {
+        if (k <= 0L) {
+            throw new IllegalStateException("simulacion.programada.k debe ser mayor a 0");
+        }
+        final long saMs = saSegundos * 1000L;
+        final Duration sc = Duration.ofSeconds(saSegundos).multipliedBy(k);
+        return new ConfiguracionProgramada(saMs, k, sc, sleepHabilitado);
+    }
+
+    static long calcularSaltoPlanificacionMs(final Properties params) {
+        return construirConfiguracionProgramada(params).saMs();
+    }
+
+    static Duration calcularSaltoConsumoDatos(final Properties params) {
+        return construirConfiguracionProgramada(params).sc();
+    }
+
+    static boolean excedeVentanaPlanificacion(final long taMs, final long saMs) {
+        return taMs > saMs;
+    }
+
+    static LocalDateTime obtenerPrimerMomentoPedidos(final List<Pedido> pedidos) {
+        for (final Pedido pedido : pedidos) {
+            if (pedido != null && pedido.getFechaRegistro() != null) {
+                return pedido.getFechaRegistro();
+            }
+        }
+        return null;
+    }
+
+    static int incorporarPedidosHastaMomento(final List<Pedido> pedidosOrdenados,
+                                             final int indiceInicial,
+                                             final LocalDateTime finCicloDatos,
+                                             final Map<String, List<Maleta>> maletasPorPedido,
+                                             final List<Maleta> registradas) {
+        int indiceActual = indiceInicial;
+        while (indiceActual < pedidosOrdenados.size()) {
+            final Pedido pedido = pedidosOrdenados.get(indiceActual);
+            if (pedido == null) {
+                indiceActual++;
+                continue;
+            }
+            final LocalDateTime fechaRegistro = pedido.getFechaRegistro();
+            if (fechaRegistro == null) {
+                indiceActual++;
+                continue;
+            }
+            if (fechaRegistro.isAfter(finCicloDatos)) {
+                break;
+            }
+            final List<Maleta> nuevas = maletasPorPedido.getOrDefault(pedido.getIdPedido(), List.of());
+            registradas.addAll(nuevas);
+            indiceActual++;
+        }
+        return indiceActual;
+    }
+
+    private static boolean existenMaletasNoFinalizadas(final List<Maleta> registradas,
+                                                       final Map<String, RutaMaletaProgramada> rutasProgramadasPorMaleta,
+                                                       final LocalDateTime currentTime) {
+        for (final Maleta maleta : registradas) {
+            if (maleta == null || maleta.getIdMaleta() == null) {
+                continue;
+            }
+            final EstadoMaletaTemporal estado = evaluarEstadoMaleta(
+                    maleta,
+                    rutasProgramadasPorMaleta.get(maleta.getIdMaleta()),
+                    currentTime
+            );
+            if (estado.estado() != EstadoOperacionMaleta.FINALIZADA) {
+                return true;
+            }
+        }
+        return false;
+    }
+
+    private static Map<String, EstadoMaletaTemporal> evaluarEstadosMaletas(
+            final List<Maleta> registradas,
+            final Map<String, RutaMaletaProgramada> rutasProgramadasPorMaleta,
+            final LocalDateTime currentTime
+    ) {
+        final Map<String, EstadoMaletaTemporal> estados = new HashMap<>();
+        for (final Maleta maleta : registradas) {
+            if (maleta == null || maleta.getIdMaleta() == null) {
+                continue;
+            }
+            estados.put(
+                    maleta.getIdMaleta(),
+                    evaluarEstadoMaleta(maleta, rutasProgramadasPorMaleta.get(maleta.getIdMaleta()), currentTime)
+            );
+        }
+        return estados;
+    }
+
+    static EstadoMaletaTemporal evaluarEstadoMaleta(final Maleta maleta,
+                                                    final RutaMaletaProgramada rutaProgramada,
+                                                    final LocalDateTime currentTime) {
+        final String aeropuertoOrigen = icaoOrigen(maleta);
+        final String destinoFinal = maleta != null && maleta.getPedido() != null
+                ? idAeropuerto(maleta.getPedido().getAeropuertoDestino())
+                : null;
+        if (rutaProgramada == null) {
+            return new EstadoMaletaTemporal(
+                    maleta,
+                    maleta != null ? maleta.getIdMaleta() : null,
+                    EstadoOperacionMaleta.SIN_RUTA,
+                    aeropuertoOrigen,
+                    List.of(),
+                    List.of(),
+                    true,
+                    false
+            );
+        }
+        final List<VueloInstancia> vuelos = rutaProgramada.vuelos();
+        if (rutaProgramada.aeropuertoEspera() != null && (vuelos == null || vuelos.isEmpty())) {
+            return new EstadoMaletaTemporal(
+                    maleta,
+                    maleta != null ? maleta.getIdMaleta() : null,
+                    EstadoOperacionMaleta.SIN_RUTA,
+                    rutaProgramada.aeropuertoEspera(),
+                    List.of(),
+                    List.of(),
+                    true,
+                    false
+            );
+        }
+        String aeropuertoActual = rutaProgramada.aeropuertoEspera() != null
+                ? rutaProgramada.aeropuertoEspera()
+                : aeropuertoOrigen;
+        final List<VueloInstancia> vuelosEjecutados = new ArrayList<>();
+        if (vuelos == null || vuelos.isEmpty()) {
+            return new EstadoMaletaTemporal(
+                    maleta,
+                    maleta != null ? maleta.getIdMaleta() : null,
+                    EstadoOperacionMaleta.SIN_RUTA,
+                    aeropuertoActual,
+                    vuelosEjecutados,
+                    List.of(),
+                    true,
+                    false
+            );
+        }
+        for (int i = 0; i < vuelos.size(); i++) {
+            final VueloInstancia vueloInstancia = vuelos.get(i);
             if (vueloInstancia == null) {
                 continue;
             }
-            final String aeropuertoOrigen = idAeropuerto(vueloInstancia.getAeropuertoOrigen());
-            if (aeropuertoActual == null) {
-                aeropuertoActual = aeropuertoOrigen;
-            }
             final LocalDateTime fechaSalida = vueloInstancia.getFechaSalida();
-            if (fechaSalida != null && currentTime.isBefore(fechaSalida)) {
-                return aeropuertoActual;
-            }
             final LocalDateTime fechaLlegada = vueloInstancia.getFechaLlegada();
+            if (fechaSalida != null && currentTime.isBefore(fechaSalida)) {
+                final EstadoOperacionMaleta estado = vuelosEjecutados.isEmpty()
+                        ? EstadoOperacionMaleta.ESPERANDO_ORIGEN
+                        : EstadoOperacionMaleta.ESPERANDO_CONEXION;
+                return new EstadoMaletaTemporal(
+                        maleta,
+                        maleta != null ? maleta.getIdMaleta() : null,
+                        estado,
+                        aeropuertoActual,
+                        vuelosEjecutados,
+                        new ArrayList<>(vuelos.subList(i, vuelos.size())),
+                        true,
+                        false
+                );
+            }
             final boolean vueloEnCurso = fechaSalida != null
                     && !currentTime.isBefore(fechaSalida)
                     && (fechaLlegada == null || currentTime.isBefore(fechaLlegada));
             if (vueloEnCurso) {
-                return null;
+                return new EstadoMaletaTemporal(
+                        maleta,
+                        maleta != null ? maleta.getIdMaleta() : null,
+                        EstadoOperacionMaleta.EN_TRANSITO,
+                        null,
+                        vuelosEjecutados,
+                        new ArrayList<>(vuelos.subList(i, vuelos.size())),
+                        false,
+                        true
+                );
             }
-            final String aeropuertoDestino = idAeropuerto(vueloInstancia.getAeropuertoDestino());
             if (fechaLlegada != null && !currentTime.isBefore(fechaLlegada)) {
-                aeropuertoActual = aeropuertoDestino;
-                continue;
-            }
-            if (aeropuertoDestino != null) {
-                aeropuertoActual = aeropuertoDestino;
+                vuelosEjecutados.add(vueloInstancia);
+                final String aeropuertoDestino = idAeropuerto(vueloInstancia.getAeropuertoDestino());
+                if (aeropuertoDestino != null) {
+                    aeropuertoActual = aeropuertoDestino;
+                }
             }
         }
-        return aeropuertoActual;
+        if (rutaProgramada.aeropuertoEspera() != null && !rutaProgramada.aeropuertoEspera().equals(destinoFinal)) {
+            return new EstadoMaletaTemporal(
+                    maleta,
+                    maleta != null ? maleta.getIdMaleta() : null,
+                    EstadoOperacionMaleta.ESPERANDO_CONEXION,
+                    rutaProgramada.aeropuertoEspera(),
+                    vuelosEjecutados,
+                    List.of(),
+                    true,
+                    false
+            );
+        }
+        final boolean llegoDestinoFinal = destinoFinal == null || destinoFinal.equals(aeropuertoActual);
+        if (llegoDestinoFinal) {
+            final LocalDateTime salidaSistemaDestino = calcularSalidaSistemaDestino(vuelosEjecutados);
+            final boolean permaneceEnDestinoFinal = salidaSistemaDestino == null
+                    || currentTime.isBefore(salidaSistemaDestino);
+            if (permaneceEnDestinoFinal) {
+                return new EstadoMaletaTemporal(
+                        maleta,
+                        maleta != null ? maleta.getIdMaleta() : null,
+                        EstadoOperacionMaleta.EN_DESTINO_FINAL,
+                        aeropuertoActual,
+                        vuelosEjecutados,
+                        List.of(),
+                        false,
+                        false
+                );
+            }
+            return new EstadoMaletaTemporal(
+                    maleta,
+                    maleta != null ? maleta.getIdMaleta() : null,
+                    EstadoOperacionMaleta.FINALIZADA,
+                    aeropuertoActual,
+                    vuelosEjecutados,
+                    List.of(),
+                    false,
+                    false
+            );
+        }
+        return new EstadoMaletaTemporal(
+                maleta,
+                maleta != null ? maleta.getIdMaleta() : null,
+                EstadoOperacionMaleta.ESPERANDO_CONEXION,
+                aeropuertoActual,
+                vuelosEjecutados,
+                List.of(),
+                true,
+                false
+        );
+    }
+
+    private static LocalDateTime calcularSalidaSistemaDestino(final List<VueloInstancia> vuelosEjecutados) {
+        if (vuelosEjecutados == null || vuelosEjecutados.isEmpty()) {
+            return null;
+        }
+        final VueloInstancia ultimoVuelo = vuelosEjecutados.get(vuelosEjecutados.size() - 1);
+        if (ultimoVuelo == null || ultimoVuelo.getFechaLlegada() == null) {
+            return null;
+        }
+        return ultimoVuelo.getFechaLlegada().plusMinutes(MINUTOS_SALIDA_SISTEMA_DESTINO);
+    }
+
+    private static List<Maleta> construirMaletasReplanificables(
+            final List<Maleta> registradas,
+            final Map<String, EstadoMaletaTemporal> estadosPorMaleta,
+            final Map<String, Aeropuerto> indiceAeropuertos,
+            final LocalDateTime currentTime
+    ) {
+        final List<Maleta> maletasReplanificables = new ArrayList<>();
+        for (final Maleta maleta : registradas) {
+            if (maleta == null || maleta.getIdMaleta() == null) {
+                continue;
+            }
+            final EstadoMaletaTemporal estado = estadosPorMaleta.get(maleta.getIdMaleta());
+            if (estado == null || !estado.replanificable()) {
+                continue;
+            }
+            maletasReplanificables.add(clonarMaletaReplanificable(maleta, estado, indiceAeropuertos, currentTime));
+        }
+        return maletasReplanificables;
+    }
+
+    private static Maleta clonarMaletaReplanificable(final Maleta maleta,
+                                                     final EstadoMaletaTemporal estado,
+                                                     final Map<String, Aeropuerto> indiceAeropuertos,
+                                                     final LocalDateTime currentTime) {
+        final Pedido pedidoOriginal = maleta.getPedido();
+        final Aeropuerto origenActual = indiceAeropuertos.get(estado.aeropuertoActual());
+        final Pedido pedidoClonado = new Pedido(
+                pedidoOriginal != null ? pedidoOriginal.getIdPedido() : null,
+                origenActual,
+                pedidoOriginal != null ? pedidoOriginal.getAeropuertoDestino() : null,
+                currentTime,
+                pedidoOriginal != null ? pedidoOriginal.getFechaHoraPlazo() : null,
+                pedidoOriginal != null ? pedidoOriginal.getCantidadMaletas() : 1,
+                pedidoOriginal != null ? pedidoOriginal.getEstado() : null
+        );
+        return new Maleta(
+                maleta.getIdMaleta(),
+                pedidoClonado,
+                currentTime,
+                maleta.getFechaLlegada(),
+                maleta.getEstado()
+        );
+    }
+
+    private static void liberarCapacidadFuturaReplanificable(
+            final Map<String, EstadoMaletaTemporal> estadosPorMaleta,
+            final Map<String, RutaMaletaProgramada> rutasProgramadasPorMaleta
+    ) {
+        for (final Map.Entry<String, EstadoMaletaTemporal> entry : estadosPorMaleta.entrySet()) {
+            final EstadoMaletaTemporal estado = entry.getValue();
+            if (estado == null || !estado.replanificable()) {
+                continue;
+            }
+            final RutaMaletaProgramada rutaProgramada = rutasProgramadasPorMaleta.get(entry.getKey());
+            if (rutaProgramada == null) {
+                continue;
+            }
+            for (final VueloInstancia vueloInstancia : estado.vuelosFuturos()) {
+                liberarCapacidadVuelo(vueloInstancia);
+            }
+        }
+    }
+
+    private static void liberarCapacidadVuelo(final VueloInstancia vueloInstancia) {
+        if (vueloInstancia == null) {
+            return;
+        }
+        final int nuevaCapacidad = Math.min(
+                vueloInstancia.getCapacidadMaxima(),
+                vueloInstancia.getCapacidadDisponible() + 1
+        );
+        vueloInstancia.setCapacidadDisponible(nuevaCapacidad);
+    }
+
+    private static VentanaVuelos construirVentanaVuelos(final ArrayList<VueloInstancia> vuelosInstancia,
+                                                        final ArrayList<VueloProgramado> vuelosProgramados,
+                                                        final LocalDateTime currentTime,
+                                                        final int ventanaDias) {
+        final LocalDateTime ventanaFin = currentTime.plusDays(ventanaDias - 1L).with(LocalTime.MAX);
+        final ArrayList<VueloInstancia> vuelosVentana = new ArrayList<>();
+        final Set<String> idsProgramadosVentana = new HashSet<>();
+        for (final VueloInstancia vueloInstancia : vuelosInstancia) {
+            if (vueloInstancia.getFechaSalida() == null) {
+                continue;
+            }
+            final boolean vueloDentroVentana =
+                    !vueloInstancia.getFechaSalida().isBefore(currentTime)
+                    && !vueloInstancia.getFechaSalida().isAfter(ventanaFin);
+            if (!vueloDentroVentana) {
+                continue;
+            }
+            vuelosVentana.add(vueloInstancia);
+            if (vueloInstancia.getVueloProgramado() != null) {
+                idsProgramadosVentana.add(vueloInstancia.getVueloProgramado().getIdVueloProgramado());
+            }
+        }
+
+        final ArrayList<VueloProgramado> programadosVentana = new ArrayList<>();
+        for (final VueloProgramado vueloProgramado : vuelosProgramados) {
+            if (idsProgramadosVentana.contains(vueloProgramado.getIdVueloProgramado())) {
+                programadosVentana.add(vueloProgramado);
+            }
+        }
+        return new VentanaVuelos(vuelosVentana, programadosVentana);
+    }
+
+    private static Map<String, List<VueloInstancia>> extraerRutasConfirmadas(final Solucion solucion,
+                                                                             final Map<String, VueloInstancia> vuelosPorId) {
+        final Map<String, List<VueloInstancia>> rutasConfirmadas = new HashMap<>();
+        if (solucion == null || solucion.getSolucion() == null) {
+            return rutasConfirmadas;
+        }
+        for (final Ruta ruta : solucion.getSolucion()) {
+            final boolean rutaFallida = ruta == null
+                    || ruta.getEstado() == EstadoRuta.FALLIDA
+                    || ruta.getSubrutas().isEmpty();
+            if (rutaFallida) {
+                continue;
+            }
+            final List<VueloInstancia> vuelosConfirmados = new ArrayList<>();
+            for (final VueloInstancia vueloInstancia : ruta.getSubrutas()) {
+                final VueloInstancia vueloReal = obtenerVueloReal(vuelosPorId, vueloInstancia);
+                if (vueloReal == null) {
+                    continue;
+                }
+                vuelosConfirmados.add(vueloReal);
+            }
+            if (!vuelosConfirmados.isEmpty() && ruta.getIdMaleta() != null) {
+                rutasConfirmadas.put(ruta.getIdMaleta(), vuelosConfirmados);
+            }
+        }
+        return rutasConfirmadas;
+    }
+
+    private static void aplicarRutasReplanificadas(
+            final Map<String, EstadoMaletaTemporal> estadosPorMaleta,
+            final Map<String, RutaMaletaProgramada> rutasProgramadasPorMaleta,
+            final Map<String, List<VueloInstancia>> nuevasRutas,
+            final Set<String> maletasEnrutadas
+    ) {
+        for (final Map.Entry<String, EstadoMaletaTemporal> entry : estadosPorMaleta.entrySet()) {
+            final String idMaleta = entry.getKey();
+            final EstadoMaletaTemporal estado = entry.getValue();
+            if (estado == null || !estado.replanificable()) {
+                continue;
+            }
+            final List<VueloInstancia> nuevaRuta = nuevasRutas.get(idMaleta);
+            if (nuevaRuta == null || nuevaRuta.isEmpty()) {
+                actualizarRutaSinSolucion(rutasProgramadasPorMaleta, estado);
+                continue;
+            }
+            final List<VueloInstancia> rutaFusionada = new ArrayList<>(estado.vuelosEjecutados());
+            rutaFusionada.addAll(nuevaRuta);
+            rutasProgramadasPorMaleta.put(idMaleta, new RutaMaletaProgramada(rutaFusionada, null));
+            maletasEnrutadas.add(idMaleta);
+        }
+    }
+
+    private static void actualizarRutaSinSolucion(
+            final Map<String, RutaMaletaProgramada> rutasProgramadasPorMaleta,
+            final EstadoMaletaTemporal estado
+    ) {
+        if (estado.vuelosEjecutados().isEmpty()) {
+            if (estado.estado() == EstadoOperacionMaleta.ESPERANDO_CONEXION) {
+                rutasProgramadasPorMaleta.put(
+                        estado.idMaleta(),
+                        new RutaMaletaProgramada(List.of(), estado.aeropuertoActual())
+                );
+                return;
+            }
+            rutasProgramadasPorMaleta.remove(estado.idMaleta());
+            return;
+        }
+        rutasProgramadasPorMaleta.put(
+                estado.idMaleta(),
+                new RutaMaletaProgramada(new ArrayList<>(estado.vuelosEjecutados()), estado.aeropuertoActual())
+        );
+    }
+
+    private static void reservarCapacidadRutas(final Map<String, List<VueloInstancia>> nuevasRutas) {
+        for (final List<VueloInstancia> ruta : nuevasRutas.values()) {
+            for (final VueloInstancia vueloInstancia : ruta) {
+                if (vueloInstancia == null || vueloInstancia.getCapacidadDisponible() <= 0) {
+                    continue;
+                }
+                try {
+                    vueloInstancia.actualizarCapacidad(1);
+                } catch (final IllegalStateException ignored) {
+                    // no-op
+                }
+            }
+        }
+    }
+
+    private static int contarMaletasPendientesSinRuta(final Map<String, EstadoMaletaTemporal> estadosPorMaleta) {
+        int pendientes = 0;
+        for (final EstadoMaletaTemporal estado : estadosPorMaleta.values()) {
+            if (estado == null) {
+                continue;
+            }
+            if (estado.estado() == EstadoOperacionMaleta.FINALIZADA
+                    || estado.estado() == EstadoOperacionMaleta.EN_DESTINO_FINAL
+                    || estado.estado() == EstadoOperacionMaleta.EN_TRANSITO) {
+                continue;
+            }
+            if (!estado.vuelosFuturos().isEmpty()) {
+                continue;
+            }
+            pendientes++;
+        }
+        return pendientes;
+    }
+
+    private static DetalleColapso detectarDetalleColapso(final Map<String, EstadoMaletaTemporal> estadosPorMaleta,
+                                                         final ArrayList<Aeropuerto> aeropuertos,
+                                                         final ArrayList<VueloInstancia> vuelosInstancia,
+                                                         final LocalDateTime inicioCicloDatos,
+                                                         final LocalDateTime currentTime) {
+        final String colapsoCapacidadAeropuerto = detectarColapsoCapacidadAeropuertos(aeropuertos);
+        if (colapsoCapacidadAeropuerto != null) {
+            return new DetalleColapso(colapsoCapacidadAeropuerto, null, null);
+        }
+        final String colapsoCapacidadVuelo = detectarColapsoCapacidadVuelos(vuelosInstancia);
+        if (colapsoCapacidadVuelo != null) {
+            return new DetalleColapso(colapsoCapacidadVuelo, null, null);
+        }
+        for (final EstadoMaletaTemporal estado : estadosPorMaleta.values()) {
+            if (estado == null || estado.maleta() == null) {
+                continue;
+            }
+            if (estado.estado() == EstadoOperacionMaleta.FINALIZADA
+                    || estado.estado() == EstadoOperacionMaleta.EN_DESTINO_FINAL
+                    || estado.estado() == EstadoOperacionMaleta.EN_TRANSITO) {
+                continue;
+            }
+            if (!estado.vuelosFuturos().isEmpty()) {
+                continue;
+            }
+            final Pedido pedido = estado.maleta().getPedido();
+            final LocalDateTime plazo = pedido != null ? pedido.getFechaHoraPlazo() : null;
+            final boolean plazoVencidoAntesDelCiclo = plazo != null && !plazo.isAfter(inicioCicloDatos);
+            if (plazoVencidoAntesDelCiclo) {
+                return new DetalleColapso("plazo vencido para maleta " + estado.idMaleta(), estado, currentTime);
+            }
+        }
+        return null;
+    }
+
+    private static String detectarColapsoCapacidadAeropuertos(final ArrayList<Aeropuerto> aeropuertos) {
+        for (final Aeropuerto aeropuerto : aeropuertos) {
+            if (aeropuerto == null) {
+                continue;
+            }
+            final int capacidad = aeropuerto.getCapacidadAlmacen();
+            final int ocupacion = aeropuerto.getMaletasActuales();
+            final boolean excedeCapacidad = capacidad >= 0 && ocupacion > capacidad;
+            if (excedeCapacidad) {
+                return "capacidad de aeropuerto excedida en "
+                        + aeropuerto.getIdAeropuerto()
+                        + " (ocupacion=" + ocupacion + ", capacidad=" + capacidad + ")";
+            }
+        }
+        return null;
+    }
+
+    private static String detectarColapsoCapacidadVuelos(final ArrayList<VueloInstancia> vuelosInstancia) {
+        for (final VueloInstancia vueloInstancia : vuelosInstancia) {
+            if (vueloInstancia == null) {
+                continue;
+            }
+            final int capacidadDisponible = vueloInstancia.getCapacidadDisponible();
+            final int capacidadMaxima = vueloInstancia.getCapacidadMaxima();
+            final boolean capacidadInvalida = capacidadDisponible < 0 || capacidadDisponible > capacidadMaxima;
+            if (capacidadInvalida) {
+                return "capacidad de vuelo invalida en "
+                        + vueloInstancia.getIdVueloInstancia()
+                        + " (disponible=" + capacidadDisponible + ", maxima=" + capacidadMaxima + ")";
+            }
+        }
+        return null;
+    }
+
+    private static void reportarResumenCiclo(final String nombre,
+                                             final int numeroCiclo,
+                                             final LocalDateTime inicioCicloDatos,
+                                             final LocalDateTime finCicloDatos,
+                                             final int nuevasEnCiclo,
+                                             final int enrutadasEnCiclo,
+                                             final int pendientes,
+                                             final long taMs,
+                                             final long saMs) {
+        System.out.printf(
+                "[CICLO %s #%d] datos=%s -> %s nuevas=%d enrutadas=%d pendientes=%d TA=%d ms SA=%d ms%n",
+                nombre,
+                numeroCiclo,
+                inicioCicloDatos,
+                finCicloDatos,
+                nuevasEnCiclo,
+                enrutadasEnCiclo,
+                pendientes,
+                taMs,
+                saMs
+        );
+    }
+
+    private static void reportarCapacidadAeropuertosCiclo(final String nombre,
+                                                          final int numeroCiclo,
+                                                          final ArrayList<Aeropuerto> aeropuertos) {
+        System.out.printf("Capacidad aeropuertos despues del ciclo [%s #%d]:%n", nombre, numeroCiclo);
+        System.out.printf("  %-10s %10s %10s %12s%n",
+                "Aeropuerto", "Ocupacion", "Capacidad", "Porcentaje");
+        for (final Aeropuerto aeropuerto : aeropuertos) {
+            if (aeropuerto == null) {
+                continue;
+            }
+            final int ocupacionAeropuerto = aeropuerto.getMaletasActuales();
+            final int capacidad = aeropuerto.getCapacidadAlmacen();
+            final double porcentaje = capacidad > 0 ? 100.0 * ocupacionAeropuerto / capacidad : 0.0;
+            System.out.printf("  %-10s %10d %10d %11.1f%%%n",
+                    aeropuerto.getIdAeropuerto(),
+                    ocupacionAeropuerto,
+                    capacidad,
+                    porcentaje);
+        }
+    }
+
+    private static void reportarDiagnosticoColapso(final DetalleColapso detalleColapso) {
+        if (detalleColapso == null || detalleColapso.estadoMaleta() == null || detalleColapso.estadoMaleta().maleta() == null) {
+            return;
+        }
+        final EstadoMaletaTemporal estado = detalleColapso.estadoMaleta();
+        final Maleta maleta = estado.maleta();
+        final Pedido pedido = maleta.getPedido();
+        final String origen = pedido != null && pedido.getAeropuertoOrigen() != null
+                ? pedido.getAeropuertoOrigen().getIdAeropuerto()
+                : "-";
+        final String destino = pedido != null && pedido.getAeropuertoDestino() != null
+                ? pedido.getAeropuertoDestino().getIdAeropuerto()
+                : "-";
+        final LocalDateTime fechaRegistro = maleta.getFechaRegistro();
+        final LocalDateTime fechaHoraPlazo = pedido != null ? pedido.getFechaHoraPlazo() : null;
+
+        System.out.println("Diagnostico de maleta colapsada:");
+        System.out.printf("  Maleta: %s%n", maleta.getIdMaleta());
+        System.out.printf("  Origen: %s%n", origen);
+        System.out.printf("  Destino: %s%n", destino);
+        System.out.printf("  FechaRegistro: %s%n", fechaRegistro);
+        System.out.printf("  FechaHoraPlazo: %s%n", fechaHoraPlazo);
+        System.out.printf("  Aeropuerto actual: %s%n", estado.aeropuertoActual() != null ? estado.aeropuertoActual() : "-");
+        System.out.printf("  Estado temporal: %s%n", estado.estado());
+        System.out.printf("  Ruta parcial que tenia: %s%n", formatearRutaVuelos(estado.vuelosEjecutados()));
+        System.out.printf("  Vuelos futuros que intento usar: %s%n", formatearRutaVuelos(estado.vuelosFuturos()));
+        if (detalleColapso.momento() != null) {
+            System.out.printf("  Momento del colapso: %s%n", detalleColapso.momento());
+        }
+    }
+
+    private static String formatearRutaVuelos(final List<VueloInstancia> vuelos) {
+        if (vuelos == null || vuelos.isEmpty()) {
+            return "[]";
+        }
+        final List<String> segmentos = new ArrayList<>();
+        for (final VueloInstancia vuelo : vuelos) {
+            if (vuelo == null) {
+                continue;
+            }
+            final String codigo = vuelo.getCodigo() != null ? vuelo.getCodigo() : vuelo.getIdVueloInstancia();
+            final String origen = idAeropuerto(vuelo.getAeropuertoOrigen());
+            final String destino = idAeropuerto(vuelo.getAeropuertoDestino());
+            segmentos.add(String.format(
+                    "%s(%s->%s %s/%s)",
+                    codigo,
+                    origen != null ? origen : "-",
+                    destino != null ? destino : "-",
+                    vuelo.getFechaSalida(),
+                    vuelo.getFechaLlegada()
+            ));
+        }
+        return segmentos.toString();
+    }
+
+    private static void terminarPorTiempoExcedido(final long taMs, final long saMs) {
+        System.out.printf("[COLAPSO] TA excedio SA. TA=%d ms (%.3f s), SA=%d ms (%.3f s). Finalizando simulacion.%n",
+                taMs, taMs / 1000D, saMs, saMs / 1000D);
+        terminadorPrograma.run();
+    }
+
+    private static void dormirHastaSiguienteCiclo(final ConfiguracionProgramada configuracionProgramada,
+                                                  final long taMs) {
+        if (!configuracionProgramada.sleepHabilitado() || taMs >= configuracionProgramada.saMs()) {
+            return;
+        }
+        final long tiempoDormirMs = configuracionProgramada.saMs() - taMs;
+        try {
+            Thread.sleep(tiempoDormirMs);
+        } catch (final InterruptedException exception) {
+            Thread.currentThread().interrupt();
+            throw new IllegalStateException("La simulacion programada fue interrumpida", exception);
+        }
+    }
+
+    static void setTerminadorPrograma(final Runnable nuevoTerminador) {
+        terminadorPrograma = nuevoTerminador != null ? nuevoTerminador : () -> System.exit(0);
+    }
+
+    static void restaurarTerminadorPrograma() {
+        terminadorPrograma = () -> System.exit(0);
     }
 
     private static String icaoOrigen(final Maleta maleta) {
@@ -1049,6 +1700,40 @@ public final class SimulacionTemporalRunner {
                                      Map<String, Aeropuerto> indiceAeropuertos,
                                      ArrayList<VueloProgramado> todosVuelosProgramados,
                                      ArrayList<VueloInstancia> todosVuelosInstancia) {
+    }
+
+    private record ConfiguracionProgramada(long saMs, long k, Duration sc, boolean sleepHabilitado) {
+    }
+
+    private record VentanaVuelos(ArrayList<VueloInstancia> vuelosInstancia,
+                                 ArrayList<VueloProgramado> vuelosProgramados) {
+    }
+
+    private enum EstadoOperacionMaleta {
+        SIN_RUTA,
+        ESPERANDO_ORIGEN,
+        EN_TRANSITO,
+        ESPERANDO_CONEXION,
+        EN_DESTINO_FINAL,
+        FINALIZADA
+    }
+
+    private record RutaMaletaProgramada(List<VueloInstancia> vuelos, String aeropuertoEspera) {
+    }
+
+    private record EstadoMaletaTemporal(Maleta maleta,
+                                        String idMaleta,
+                                        EstadoOperacionMaleta estado,
+                                        String aeropuertoActual,
+                                        List<VueloInstancia> vuelosEjecutados,
+                                        List<VueloInstancia> vuelosFuturos,
+                                        boolean replanificable,
+                                        boolean enTransito) {
+    }
+
+    private record DetalleColapso(String motivo,
+                                  EstadoMaletaTemporal estadoMaleta,
+                                  LocalDateTime momento) {
     }
 
     private static final class ResultadoSimulacion {
