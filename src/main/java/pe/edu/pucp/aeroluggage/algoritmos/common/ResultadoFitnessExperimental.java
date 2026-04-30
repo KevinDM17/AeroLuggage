@@ -6,17 +6,23 @@ public class ResultadoFitnessExperimental {
     private final double usoCapacidadVuelos;
     private final double usoCapacidadAeropuertos;
     private final double duracionTotalHoras;
+    private final double maxPorcentajeLlenadoVuelos;
+    private final double maxPorcentajeLlenadoAeropuertos;
 
     public ResultadoFitnessExperimental(final double fitnessExperimental,
                                         final int maletasNoRuteadas,
                                         final double usoCapacidadVuelos,
                                         final double usoCapacidadAeropuertos,
-                                        final double duracionTotalHoras) {
+                                        final double duracionTotalHoras,
+                                        final double maxPorcentajeLlenadoVuelos,
+                                        final double maxPorcentajeLlenadoAeropuertos) {
         this.fitnessExperimental = fitnessExperimental;
         this.maletasNoRuteadas = maletasNoRuteadas;
         this.usoCapacidadVuelos = usoCapacidadVuelos;
         this.usoCapacidadAeropuertos = usoCapacidadAeropuertos;
         this.duracionTotalHoras = duracionTotalHoras;
+        this.maxPorcentajeLlenadoVuelos = maxPorcentajeLlenadoVuelos;
+        this.maxPorcentajeLlenadoAeropuertos = maxPorcentajeLlenadoAeropuertos;
     }
 
     public ResultadoFitnessExperimental sumar(final ResultadoFitnessExperimental otro) {
@@ -28,7 +34,9 @@ public class ResultadoFitnessExperimental {
                 maletasNoRuteadas + otro.maletasNoRuteadas,
                 usoCapacidadVuelos + otro.usoCapacidadVuelos,
                 usoCapacidadAeropuertos + otro.usoCapacidadAeropuertos,
-                duracionTotalHoras + otro.duracionTotalHoras
+                duracionTotalHoras + otro.duracionTotalHoras,
+                Math.max(maxPorcentajeLlenadoVuelos, otro.maxPorcentajeLlenadoVuelos),
+                Math.max(maxPorcentajeLlenadoAeropuertos, otro.maxPorcentajeLlenadoAeropuertos)
         );
     }
 
@@ -50,5 +58,13 @@ public class ResultadoFitnessExperimental {
 
     public double getDuracionTotalHoras() {
         return duracionTotalHoras;
+    }
+
+    public double getMaxPorcentajeLlenadoVuelos() {
+        return maxPorcentajeLlenadoVuelos;
+    }
+
+    public double getMaxPorcentajeLlenadoAeropuertos() {
+        return maxPorcentajeLlenadoAeropuertos;
     }
 }

@@ -373,7 +373,7 @@ public final class SimulacionTemporalRunner {
         final ConfiguracionProgramada configuracionProgramada = construirConfiguracionProgramada(contexto.params());
         final Set<String> maletasEnrutadas = new HashSet<>();
         final ResultadoSimulacion resultado = new ResultadoSimulacion();
-        ResultadoFitnessExperimental fitnessExperimental = new ResultadoFitnessExperimental(0D, 0, 0D, 0D, 0D);
+        ResultadoFitnessExperimental fitnessExperimental = new ResultadoFitnessExperimental(0D, 0, 0D, 0D, 0D, 0D, 0D);
 
         System.out.printf("%n=== SIMULACION PROGRAMADA [%s] %s -> %s ===%n",
                 nombre, contexto.fechaInicio(), contexto.fechaFin());
@@ -400,6 +400,7 @@ public final class SimulacionTemporalRunner {
         final LocalDateTime finSimulacion = contexto.fechaFin().atTime(LocalTime.MAX);
         int indicePedido = 0;
         int numeroCiclo = 0;
+        long maxTaMs = 0L;
 
         while (limiteProcesado.isBefore(finSimulacion)
                 && (indicePedido < contexto.pedidosOrdenados().size()
@@ -521,6 +522,9 @@ public final class SimulacionTemporalRunner {
             ));
 
             final long taMs = System.currentTimeMillis() - inicioCicloRealMs;
+            if (taMs > maxTaMs) {
+                maxTaMs = taMs;
+            }
             reportarResumenCiclo(
                     nombre,
                     numeroCiclo,
@@ -559,6 +563,7 @@ public final class SimulacionTemporalRunner {
         );
         resultado.historial = historial;
         resultado.tiempoEjecucionMs = System.currentTimeMillis() - inicioEjecucionMs;
+        resultado.maxTaMs = maxTaMs;
         resultado.fitnessExperimental = fitnessExperimental;
         reportarResumen(nombre, resultado);
         return resultado;
@@ -1484,6 +1489,10 @@ public final class SimulacionTemporalRunner {
                 resultado.tiempoEjecucionMs,
                 resultado.tiempoEjecucionMs / 1000D
         );
+        System.out.printf("TA maximo:       %d ms (%.3f s)%n",
+                resultado.maxTaMs,
+                resultado.maxTaMs / 1000D
+        );
         reportarFitnessExperimental(resultado.fitnessExperimental);
         System.out.println();
     }
@@ -1502,8 +1511,13 @@ public final class SimulacionTemporalRunner {
             final double avgMs = historial.stream()
                     .filter(r -> r.resGA() != null)
                     .mapToLong(r -> r.resGA().tiempoEjecucionMs).average().orElse(0);
+            final long maxTaGa = historial.stream()
+                    .filter(r -> r.resGA() != null)
+                    .mapToLong(r -> r.resGA().maxTaMs)
+                    .max().orElse(0L);
             System.out.printf("GA  — completadas: %d/%d (%.1f%%)  enr_prom: %.1f  t_prom: %.0f ms%n",
                     completadas, iteraciones, 100.0 * completadas / iteraciones, avgEnr, avgMs);
+            System.out.printf("GA  — TA maximo: %d ms (%.3f s)%n", maxTaGa, maxTaGa / 1000D);
         }
         if (conACO) {
             final long completadas = historial.stream()
@@ -1514,8 +1528,13 @@ public final class SimulacionTemporalRunner {
             final double avgMs = historial.stream()
                     .filter(r -> r.resACO() != null)
                     .mapToLong(r -> r.resACO().tiempoEjecucionMs).average().orElse(0);
+            final long maxTaAco = historial.stream()
+                    .filter(r -> r.resACO() != null)
+                    .mapToLong(r -> r.resACO().maxTaMs)
+                    .max().orElse(0L);
             System.out.printf("ACO — completadas: %d/%d (%.1f%%)  enr_prom: %.1f  t_prom: %.0f ms%n",
                     completadas, iteraciones, 100.0 * completadas / iteraciones, avgEnr, avgMs);
+            System.out.printf("ACO — TA maximo: %d ms (%.3f s)%n", maxTaAco, maxTaAco / 1000D);
         }
         System.out.println();
         System.out.printf("%-5s %-22s", "Iter", "Semilla");
@@ -1545,10 +1564,10 @@ public final class SimulacionTemporalRunner {
         }
         System.out.printf("Fitness experimental: %.3f%n", fitnessExperimental.getFitnessExperimental());
         System.out.printf("Maletas no ruteadas acumuladas: %d%n", fitnessExperimental.getMaletasNoRuteadas());
-        System.out.printf("Uso capacidad vuelos: %.3f%n", fitnessExperimental.getUsoCapacidadVuelos());
-        System.out.printf("Uso capacidad aeropuertos: %.3f%n",
-                fitnessExperimental.getUsoCapacidadAeropuertos()
-        );
+        System.out.printf("Porcentaje maximo llenado vuelos:      %.1f%%%n",
+                fitnessExperimental.getMaxPorcentajeLlenadoVuelos());
+        System.out.printf("Porcentaje maximo llenado aeropuertos: %.1f%%%n",
+                fitnessExperimental.getMaxPorcentajeLlenadoAeropuertos());
         System.out.printf("Duracion total horas: %.3f%n", fitnessExperimental.getDuracionTotalHoras());
     }
 
@@ -1742,6 +1761,7 @@ public final class SimulacionTemporalRunner {
         private int totalMaletasEnrutadas;
         private int totalMaletasPendientes;
         private long tiempoEjecucionMs;
+        private long maxTaMs;
         private ResultadoFitnessExperimental fitnessExperimental;
         private List<PasoSimulacion> historial = new ArrayList<>();
     }

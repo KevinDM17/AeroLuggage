@@ -30,7 +30,7 @@ public final class CalculadorFitnessExperimental {
     public static ResultadoFitnessExperimental calcular(final Solucion solucion,
                                                         final InstanciaProblema instancia) {
         if (instancia == null) {
-            return new ResultadoFitnessExperimental(0D, 0, 0D, 0D, 0D);
+            return new ResultadoFitnessExperimental(0D, 0, 0D, 0D, 0D, 0D, 0D);
         }
 
         final Map<String, Maleta> maletasPorId = indexarMaletas(instancia);
@@ -59,6 +59,11 @@ public final class CalculadorFitnessExperimental {
                 usoAeropuertos,
                 aeropuertosPorId
         );
+        final double maxPorcentajeLlenadoVuelos = calcularMaxPorcentajeVuelos(usoVuelos, vuelosPorId);
+        final double maxPorcentajeLlenadoAeropuertos = calcularMaxPorcentajeAeropuertos(
+                usoAeropuertos,
+                aeropuertosPorId
+        );
         final double fitnessExperimental = maletasNoRuteadas * PESO_MALETA_NO_RUTEADA
                 + usoCapacidadVuelos * PESO_USO_CAPACIDAD_VUELO
                 + usoCapacidadAeropuertos * PESO_USO_CAPACIDAD_AEROPUERTO
@@ -69,7 +74,9 @@ public final class CalculadorFitnessExperimental {
                 maletasNoRuteadas,
                 usoCapacidadVuelos,
                 usoCapacidadAeropuertos,
-                duracionTotalHoras
+                duracionTotalHoras,
+                maxPorcentajeLlenadoVuelos,
+                maxPorcentajeLlenadoAeropuertos
         );
     }
 
@@ -138,6 +145,38 @@ public final class CalculadorFitnessExperimental {
             usoCapacidad += entry.getValue() / (double) aeropuerto.getCapacidadAlmacen();
         }
         return usoCapacidad;
+    }
+
+    private static double calcularMaxPorcentajeVuelos(final Map<String, Integer> usoVuelos,
+                                                      final Map<String, VueloInstancia> vuelosPorId) {
+        double max = 0D;
+        for (final Map.Entry<String, Integer> entry : usoVuelos.entrySet()) {
+            final VueloInstancia vuelo = vuelosPorId.get(entry.getKey());
+            if (vuelo == null || vuelo.getCapacidadMaxima() <= 0) {
+                continue;
+            }
+            final double ratio = entry.getValue() / (double) vuelo.getCapacidadMaxima();
+            if (ratio > max) {
+                max = ratio;
+            }
+        }
+        return max * 100.0;
+    }
+
+    private static double calcularMaxPorcentajeAeropuertos(final Map<String, Integer> usoAeropuertos,
+                                                           final Map<String, Aeropuerto> aeropuertosPorId) {
+        double max = 0D;
+        for (final Map.Entry<String, Integer> entry : usoAeropuertos.entrySet()) {
+            final Aeropuerto aeropuerto = aeropuertosPorId.get(entry.getKey());
+            if (aeropuerto == null || aeropuerto.getCapacidadAlmacen() <= 0) {
+                continue;
+            }
+            final double ratio = entry.getValue() / (double) aeropuerto.getCapacidadAlmacen();
+            if (ratio > max) {
+                max = ratio;
+            }
+        }
+        return max * 100.0;
     }
 
     private static double calcularDuracionHoras(final List<VueloInstancia> vuelos) {
