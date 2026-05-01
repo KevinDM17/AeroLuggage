@@ -13,7 +13,6 @@ public class ParametrosGA {
     private double probTorneo = 0.85;
     private int elites = 4;
     private long semilla = 42L;
-    private long minutosConexion = 60L;
 
     private double w1MaletasIncumplidas = 10000.0;
     private double w2ExcesoHorasPlazo = 100.0;
@@ -24,6 +23,8 @@ public class ParametrosGA {
     private double penalizacionRutaVacia = 5000.0;
     private double penalizacionSinDestino = 8000.0;
     private double penalizacionRutaInvalida = 3000.0;
+
+    private long minutosConexion = 30L;
 
     private double pesoGreedySolomon = 0.6;
     private double pesoAleatorioSolomon = 0.4;
@@ -128,14 +129,6 @@ public class ParametrosGA {
         this.semilla = semilla;
     }
 
-    public long getMinutosConexion() {
-        return minutosConexion;
-    }
-
-    public void setMinutosConexion(final long minutosConexion) {
-        this.minutosConexion = minutosConexion;
-    }
-
     public double getW1MaletasIncumplidas() {
         return w1MaletasIncumplidas;
     }
@@ -198,6 +191,14 @@ public class ParametrosGA {
 
     public void setPenalizacionRutaInvalida(final double penalizacionRutaInvalida) {
         this.penalizacionRutaInvalida = penalizacionRutaInvalida;
+    }
+
+    public long getMinutosConexion() {
+        return minutosConexion;
+    }
+
+    public void setMinutosConexion(final long minutosConexion) {
+        this.minutosConexion = minutosConexion;
     }
 
     public double getPesoGreedySolomon() {

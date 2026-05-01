@@ -8,12 +8,12 @@ import java.time.LocalDate;
 import java.time.Duration;
 import java.time.LocalDateTime;
 import java.time.LocalTime;
+import java.time.temporal.ChronoUnit;
 import java.time.format.DateTimeFormatter;
 import java.util.Comparator;
 import java.util.ArrayList;
 import java.util.HashMap;
 import java.util.HashSet;
-import java.util.Iterator;
 import java.util.List;
 import java.util.Map;
 import java.util.Properties;
@@ -54,7 +54,7 @@ public final class SimulacionTemporalRunner {
     private static final DateTimeFormatter FMT = DateTimeFormatter.ISO_LOCAL_DATE;
     private static final long SEMILLA_ALEATORIA = -1L;
     private static final long MINUTOS_SALIDA_SISTEMA_DESTINO = 10L;
-    private static final long DEFAULT_SA_SEGUNDOS = 60L;
+    private static final long DEFAULT_SA_SEGUNDOS = 0L;
     private static final long DEFAULT_K = 70L;
     private static final boolean DEFAULT_SLEEP_HABILITADO = true;
     private static Runnable terminadorPrograma = () -> System.exit(0);
@@ -373,7 +373,7 @@ public final class SimulacionTemporalRunner {
         final ConfiguracionProgramada configuracionProgramada = construirConfiguracionProgramada(contexto.params());
         final Set<String> maletasEnrutadas = new HashSet<>();
         final ResultadoSimulacion resultado = new ResultadoSimulacion();
-        ResultadoFitnessExperimental fitnessExperimental = new ResultadoFitnessExperimental(0D, 0, 0D, 0D, 0D, 0D, 0D);
+        ResultadoFitnessExperimental fitnessExperimental = new ResultadoFitnessExperimental(0D, 0, 0D, 0D, 0D);
 
         System.out.printf("%n=== SIMULACION PROGRAMADA [%s] %s -> %s ===%n",
                 nombre, contexto.fechaInicio(), contexto.fechaFin());
@@ -401,6 +401,8 @@ public final class SimulacionTemporalRunner {
         int indicePedido = 0;
         int numeroCiclo = 0;
         long maxTaMs = 0L;
+        double maxOcupacionVuelos = 0.0;
+        double maxOcupacionAeropuertos = 0.0;
 
         while (limiteProcesado.isBefore(finSimulacion)
                 && (indicePedido < contexto.pedidosOrdenados().size()
@@ -464,6 +466,8 @@ public final class SimulacionTemporalRunner {
                 );
                 final ParametrosGA parametrosGa = construirParametrosGA(contexto.params());
                 instancia.construirGrafo();
+                instancia.setMinutosConexion(longParam(contexto.params(), "minutosConexion", 60L));
+                instancia.setTiempoRecojo(longParam(contexto.params(), "tiempoRecojo", 0L));
 
                 algoritmo.ejecutar(instancia);
                 solucion = obtenerSolucion(algoritmo);
@@ -498,7 +502,7 @@ public final class SimulacionTemporalRunner {
                     rutasProgramadasPorMaleta,
                     finCicloDatos
             );
-            final int pendientesSinRuta = contarMaletasPendientesSinRuta(estadosActualizados);
+            final int pendientesSinRuta = identificarNoRuteadas(estadosActualizados, finCicloDatos).size();
             final DetalleColapso detalleColapso = detectarDetalleColapso(
                     estadosActualizados,
                     contextoEjecucion.aeropuertos(),
@@ -525,6 +529,25 @@ public final class SimulacionTemporalRunner {
             if (taMs > maxTaMs) {
                 maxTaMs = taMs;
             }
+            for (final VueloInstancia vuelo : contextoEjecucion.todosVuelosInstancia()) {
+                if (vuelo == null || vuelo.getCapacidadMaxima() <= 0) {
+                    continue;
+                }
+                final double pct = 100.0 * (vuelo.getCapacidadMaxima() - vuelo.getCapacidadDisponible())
+                        / vuelo.getCapacidadMaxima();
+                if (pct > maxOcupacionVuelos) {
+                    maxOcupacionVuelos = pct;
+                }
+            }
+            for (final Aeropuerto aeropuerto : contextoEjecucion.aeropuertos()) {
+                if (aeropuerto == null || aeropuerto.getCapacidadAlmacen() <= 0) {
+                    continue;
+                }
+                final double pct = 100.0 * aeropuerto.getMaletasActuales() / aeropuerto.getCapacidadAlmacen();
+                if (pct > maxOcupacionAeropuertos) {
+                    maxOcupacionAeropuertos = pct;
+                }
+            }
             reportarResumenCiclo(
                     nombre,
                     numeroCiclo,
@@ -536,8 +559,8 @@ public final class SimulacionTemporalRunner {
                     taMs,
                     configuracionProgramada.saMs()
             );
-            reportarCapacidadAeropuertosCiclo(nombre, numeroCiclo, contextoEjecucion.aeropuertos());
-            if (taMs > configuracionProgramada.saMs()) {
+            //reportarCapacidadAeropuertosCiclo(nombre, numeroCiclo, contextoEjecucion.aeropuertos());
+            if (configuracionProgramada.saMs() > 0L && taMs > configuracionProgramada.saMs()) {
                 terminarPorTiempoExcedido(taMs, configuracionProgramada.saMs());
             }
 
@@ -558,12 +581,15 @@ public final class SimulacionTemporalRunner {
                 ? resultado.momentoColapso
                 : limiteProcesado;
         resultado.totalMaletasEnrutadas = maletasEnrutadas.size();
-        resultado.totalMaletasPendientes = contarMaletasPendientesSinRuta(
-                evaluarEstadosMaletas(registradas, rutasProgramadasPorMaleta, momentoFinal)
-        );
+        final Map<String, EstadoMaletaTemporal> estadosFinales =
+                evaluarEstadosMaletas(registradas, rutasProgramadasPorMaleta, momentoFinal);
+        resultado.detalleNoRuteadas = identificarNoRuteadas(estadosFinales, momentoFinal);
+        resultado.totalMaletasPendientes = resultado.detalleNoRuteadas.size();
         resultado.historial = historial;
         resultado.tiempoEjecucionMs = System.currentTimeMillis() - inicioEjecucionMs;
         resultado.maxTaMs = maxTaMs;
+        resultado.maxOcupacionVuelos = maxOcupacionVuelos;
+        resultado.maxOcupacionAeropuertos = maxOcupacionAeropuertos;
         resultado.fitnessExperimental = fitnessExperimental;
         reportarResumen(nombre, resultado);
         return resultado;
@@ -612,11 +638,12 @@ public final class SimulacionTemporalRunner {
         final boolean sleepHabilitado = Boolean.parseBoolean(
                 params.getProperty("simulacion.programada.sleep.habilitado", String.valueOf(DEFAULT_SLEEP_HABILITADO))
         );
-        if (saSegundos <= 0L) {
-            throw new IllegalStateException("simulacion.programada.sa.segundos debe ser mayor a 0");
-        }
         if (k <= 0L) {
             throw new IllegalStateException("simulacion.programada.k debe ser mayor a 0");
+        }
+        if (saSegundos <= 0L) {
+            final Duration sc = Duration.ofSeconds(k * 15L);
+            return new ConfiguracionProgramada(0L, k, sc, sleepHabilitado);
         }
         final long saMs = saSegundos * 1000L;
         final Duration sc = Duration.ofSeconds(saSegundos).multipliedBy(k);
@@ -1058,8 +1085,10 @@ public final class SimulacionTemporalRunner {
         }
     }
 
-    private static int contarMaletasPendientesSinRuta(final Map<String, EstadoMaletaTemporal> estadosPorMaleta) {
-        int pendientes = 0;
+    private static List<MaletaNoRuteada> identificarNoRuteadas(
+            final Map<String, EstadoMaletaTemporal> estadosPorMaleta,
+            final LocalDateTime momentoFinal) {
+        final List<MaletaNoRuteada> noRuteadas = new ArrayList<>();
         for (final EstadoMaletaTemporal estado : estadosPorMaleta.values()) {
             if (estado == null) {
                 continue;
@@ -1072,9 +1101,20 @@ public final class SimulacionTemporalRunner {
             if (!estado.vuelosFuturos().isEmpty()) {
                 continue;
             }
-            pendientes++;
+            final Pedido pedido = estado.maleta() != null ? estado.maleta().getPedido() : null;
+            final LocalDateTime plazo = pedido != null ? pedido.getFechaHoraPlazo() : null;
+            final String destino = pedido != null ? idAeropuerto(pedido.getAeropuertoDestino()) : null;
+            final MotivoNoRuteada motivo;
+            if (plazo != null && !plazo.isAfter(momentoFinal)) {
+                motivo = MotivoNoRuteada.PLAZO_VENCIDO;
+            } else if (!estado.vuelosEjecutados().isEmpty()) {
+                motivo = MotivoNoRuteada.RUTA_INCOMPLETA;
+            } else {
+                motivo = MotivoNoRuteada.SIN_RUTA;
+            }
+            noRuteadas.add(new MaletaNoRuteada(estado.idMaleta(), estado.aeropuertoActual(), destino, plazo, motivo));
         }
-        return pendientes;
+        return noRuteadas;
     }
 
     private static DetalleColapso detectarDetalleColapso(final Map<String, EstadoMaletaTemporal> estadosPorMaleta,
@@ -1159,8 +1199,8 @@ public final class SimulacionTemporalRunner {
                 "[CICLO %s #%d] datos=%s -> %s nuevas=%d enrutadas=%d pendientes=%d TA=%d ms SA=%d ms%n",
                 nombre,
                 numeroCiclo,
-                inicioCicloDatos,
-                finCicloDatos,
+                inicioCicloDatos.truncatedTo(ChronoUnit.SECONDS),
+                finCicloDatos.truncatedTo(ChronoUnit.SECONDS),
                 nuevasEnCiclo,
                 enrutadasEnCiclo,
                 pendientes,
@@ -1483,8 +1523,9 @@ public final class SimulacionTemporalRunner {
                 resultado.colapsada
                         ? "COLAPSADA (momento " + resultado.momentoColapso + ")"
                         : "COMPLETADA");
-        System.out.printf("Total enrutadas: %d%n", resultado.totalMaletasEnrutadas);
-        System.out.printf("Pendientes fin:  %d%n", resultado.totalMaletasPendientes);
+        System.out.printf("Total enrutadas:      %d%n", resultado.totalMaletasEnrutadas);
+        System.out.printf("No ruteadas al final: %d%n", resultado.totalMaletasPendientes);
+        reportarDetalleNoRuteadas(resultado.detalleNoRuteadas);
         System.out.printf("Tiempo ejecucion:%d ms (%.3f s)%n",
                 resultado.tiempoEjecucionMs,
                 resultado.tiempoEjecucionMs / 1000D
@@ -1493,6 +1534,8 @@ public final class SimulacionTemporalRunner {
                 resultado.maxTaMs,
                 resultado.maxTaMs / 1000D
         );
+        System.out.printf("Porcentaje maximo llenado vuelos:      %.1f%%%n", resultado.maxOcupacionVuelos);
+        System.out.printf("Porcentaje maximo llenado aeropuertos: %.1f%%%n", resultado.maxOcupacionAeropuertos);
         reportarFitnessExperimental(resultado.fitnessExperimental);
         System.out.println();
     }
@@ -1515,9 +1558,19 @@ public final class SimulacionTemporalRunner {
                     .filter(r -> r.resGA() != null)
                     .mapToLong(r -> r.resGA().maxTaMs)
                     .max().orElse(0L);
+            final double maxVuelosGa = historial.stream()
+                    .filter(r -> r.resGA() != null)
+                    .mapToDouble(r -> r.resGA().maxOcupacionVuelos)
+                    .max().orElse(0.0);
+            final double maxAeropuertosGa = historial.stream()
+                    .filter(r -> r.resGA() != null)
+                    .mapToDouble(r -> r.resGA().maxOcupacionAeropuertos)
+                    .max().orElse(0.0);
             System.out.printf("GA  — completadas: %d/%d (%.1f%%)  enr_prom: %.1f  t_prom: %.0f ms%n",
                     completadas, iteraciones, 100.0 * completadas / iteraciones, avgEnr, avgMs);
             System.out.printf("GA  — TA maximo: %d ms (%.3f s)%n", maxTaGa, maxTaGa / 1000D);
+            System.out.printf("GA  — Porcentaje maximo llenado vuelos: %.1f%%  aeropuertos: %.1f%%%n",
+                    maxVuelosGa, maxAeropuertosGa);
         }
         if (conACO) {
             final long completadas = historial.stream()
@@ -1532,9 +1585,19 @@ public final class SimulacionTemporalRunner {
                     .filter(r -> r.resACO() != null)
                     .mapToLong(r -> r.resACO().maxTaMs)
                     .max().orElse(0L);
+            final double maxVuelosAco = historial.stream()
+                    .filter(r -> r.resACO() != null)
+                    .mapToDouble(r -> r.resACO().maxOcupacionVuelos)
+                    .max().orElse(0.0);
+            final double maxAeropuertosAco = historial.stream()
+                    .filter(r -> r.resACO() != null)
+                    .mapToDouble(r -> r.resACO().maxOcupacionAeropuertos)
+                    .max().orElse(0.0);
             System.out.printf("ACO — completadas: %d/%d (%.1f%%)  enr_prom: %.1f  t_prom: %.0f ms%n",
                     completadas, iteraciones, 100.0 * completadas / iteraciones, avgEnr, avgMs);
             System.out.printf("ACO — TA maximo: %d ms (%.3f s)%n", maxTaAco, maxTaAco / 1000D);
+            System.out.printf("ACO — Porcentaje maximo llenado vuelos: %.1f%%  aeropuertos: %.1f%%%n",
+                    maxVuelosAco, maxAeropuertosAco);
         }
         System.out.println();
         System.out.printf("%-5s %-22s", "Iter", "Semilla");
@@ -1558,16 +1621,37 @@ public final class SimulacionTemporalRunner {
         System.out.println();
     }
 
+    private static void reportarDetalleNoRuteadas(final List<MaletaNoRuteada> noRuteadas) {
+        if (noRuteadas == null || noRuteadas.isEmpty()) {
+            return;
+        }
+        for (final MotivoNoRuteada motivo : MotivoNoRuteada.values()) {
+            final List<MaletaNoRuteada> grupo = new ArrayList<>();
+            for (final MaletaNoRuteada m : noRuteadas) {
+                if (m.motivo() == motivo) {
+                    grupo.add(m);
+                }
+            }
+            if (grupo.isEmpty()) {
+                continue;
+            }
+            System.out.printf("  %-18s (%d):%n", motivo, grupo.size());
+            for (final MaletaNoRuteada m : grupo) {
+                System.out.printf("    %-15s [%s -> %s, plazo: %s]%n",
+                        m.idMaleta() != null ? m.idMaleta() : "-",
+                        m.aeropuertoActual() != null ? m.aeropuertoActual() : "-",
+                        m.aeropuertoDestino() != null ? m.aeropuertoDestino() : "-",
+                        m.plazo() != null ? m.plazo().truncatedTo(ChronoUnit.MINUTES) : "-");
+            }
+        }
+    }
+
     private static void reportarFitnessExperimental(final ResultadoFitnessExperimental fitnessExperimental) {
         if (fitnessExperimental == null) {
             return;
         }
         System.out.printf("Fitness experimental: %.3f%n", fitnessExperimental.getFitnessExperimental());
         System.out.printf("Maletas no ruteadas acumuladas: %d%n", fitnessExperimental.getMaletasNoRuteadas());
-        System.out.printf("Porcentaje maximo llenado vuelos:      %.1f%%%n",
-                fitnessExperimental.getMaxPorcentajeLlenadoVuelos());
-        System.out.printf("Porcentaje maximo llenado aeropuertos: %.1f%%%n",
-                fitnessExperimental.getMaxPorcentajeLlenadoAeropuertos());
         System.out.printf("Duracion total horas: %.3f%n", fitnessExperimental.getDuracionTotalHoras());
     }
 
@@ -1627,7 +1711,6 @@ public final class SimulacionTemporalRunner {
         parametros.setProbTorneo(doubleParam(params, "ga.probTorneo", parametros.getProbTorneo()));
         parametros.setElites(intParam(params, "ga.elites", parametros.getElites()));
         parametros.setSemilla(longParam(params, "ga.semilla", parametros.getSemilla()));
-        parametros.setMinutosConexion(longParam(params, "ga.minutosConexion", parametros.getMinutosConexion()));
         parametros.setW1MaletasIncumplidas(
                 doubleParam(params, "ga.w1MaletasIncumplidas", parametros.getW1MaletasIncumplidas()));
         parametros.setW2ExcesoHorasPlazo(
@@ -1737,7 +1820,17 @@ public final class SimulacionTemporalRunner {
         FINALIZADA
     }
 
+    private enum MotivoNoRuteada {
+        SIN_RUTA,
+        RUTA_INCOMPLETA,
+        PLAZO_VENCIDO
+    }
+
     private record RutaMaletaProgramada(List<VueloInstancia> vuelos, String aeropuertoEspera) {
+    }
+
+    private record MaletaNoRuteada(String idMaleta, String aeropuertoActual, String aeropuertoDestino,
+                                   LocalDateTime plazo, MotivoNoRuteada motivo) {
     }
 
     private record EstadoMaletaTemporal(Maleta maleta,
@@ -1762,8 +1855,11 @@ public final class SimulacionTemporalRunner {
         private int totalMaletasPendientes;
         private long tiempoEjecucionMs;
         private long maxTaMs;
+        private double maxOcupacionVuelos;
+        private double maxOcupacionAeropuertos;
         private ResultadoFitnessExperimental fitnessExperimental;
         private List<PasoSimulacion> historial = new ArrayList<>();
+        private List<MaletaNoRuteada> detalleNoRuteadas = new ArrayList<>();
     }
 
     private static final class ExportadorFitnessExperimental {

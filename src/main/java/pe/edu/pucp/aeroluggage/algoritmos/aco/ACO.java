@@ -50,6 +50,8 @@ public class ACO extends Metaheuristico {
     @Override
     public void ejecutar(final InstanciaProblema instancia) {
         ultimaInstancia = instancia;
+        constructorSoluciones.setMinutosConexion(instancia.getMinutosConexion());
+        constructorSoluciones.setTiempoRecojo(instancia.getTiempoRecojo());
         ultimaSolucion = new Solucion();
         ultimoReporte = new ACOReporte();
         ultimoCosto = Double.POSITIVE_INFINITY;

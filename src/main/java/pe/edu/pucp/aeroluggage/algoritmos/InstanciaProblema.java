@@ -23,6 +23,8 @@ public class InstanciaProblema {
     private ArrayList<VueloInstancia> vuelosInstancia;
     private ArrayList<Aeropuerto> aeropuertos;
     private GrafoTiempoExpandido grafo;
+    private long minutosConexion = 60L;
+    private long tiempoRecojo = 0L;
 
     public InstanciaProblema() {
         this.maletas = new ArrayList<>();
@@ -147,6 +149,22 @@ public class InstanciaProblema {
 
     public void setGrafo(final GrafoTiempoExpandido grafo) {
         this.grafo = grafo;
+    }
+
+    public long getMinutosConexion() {
+        return minutosConexion;
+    }
+
+    public void setMinutosConexion(final long minutosConexion) {
+        this.minutosConexion = minutosConexion;
+    }
+
+    public long getTiempoRecojo() {
+        return tiempoRecojo;
+    }
+
+    public void setTiempoRecojo(final long tiempoRecojo) {
+        this.tiempoRecojo = tiempoRecojo;
     }
 
     public Pedido buscarPedido(final String idPedido) {

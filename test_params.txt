@@ -2,18 +2,22 @@
 ejecutar.ga=true
 ejecutar.aco=true
 
+# ---------- Parametros globales ----------
+minutosConexion=10
+tiempoRecojo=10
+
 # Rango de fechas de simulacion (yyyy-MM-dd)
 simulacion.fecha.inicio=2027-02-07
 simulacion.fecha.fin=2027-02-07
 simulacion.ventana.dias=3
 simulacion.iteraciones=1
-simulacion.programada.sa.segundos=15
-simulacion.programada.k=1800
+simulacion.programada.sa.segundos=0
+simulacion.programada.k=720
 simulacion.programada.sleep.habilitado=true
 
 # ---------- Parametros GA ----------
 ga.tamanioPoblacion=15
-ga.maxGeneraciones=100
+ga.maxGeneraciones=50
 ga.maxSinMejora=10
 ga.tiempoMaximoMs=60000
 ga.probCruce=0.7
@@ -22,7 +26,6 @@ ga.torneoK=3
 ga.probTorneo=0.8
 ga.elites=1
 ga.semilla=-1
-ga.minutosConexion=10
 ga.w1MaletasIncumplidas=10000
 ga.w2ExcesoHorasPlazo=100
 ga.w3OverflowVuelo=500

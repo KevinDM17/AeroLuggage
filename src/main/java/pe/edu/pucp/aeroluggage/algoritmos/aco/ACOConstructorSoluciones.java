@@ -36,10 +36,20 @@ final class ACOConstructorSoluciones {
 
     private final ACOConfiguracion configuracion;
     private final Random random;
+    private long minutosConexion = 0L;
+    private long tiempoRecojo = 0L;
 
     ACOConstructorSoluciones(final ACOConfiguracion configuracion) {
         this.configuracion = configuracion;
         this.random = new Random(configuracion.getSemilla());
+    }
+
+    void setMinutosConexion(final long minutosConexion) {
+        this.minutosConexion = minutosConexion;
+    }
+
+    void setTiempoRecojo(final long tiempoRecojo) {
+        this.tiempoRecojo = tiempoRecojo;
     }
 
     ArrayList<Solucion> generarPoblacionInicial(
@@ -261,7 +271,10 @@ final class ACOConstructorSoluciones {
 
         final Aeropuerto actual = origen;
         final LocalDateTime tiempoActual = obtenerTiempoDisponible(maleta, subproblema.getInicioIntervalo());
-        final LocalDateTime plazo = subproblema.getPlazoPorMaleta().get(maleta.getIdMaleta());
+        final LocalDateTime plazoBase = subproblema.getPlazoPorMaleta().get(maleta.getIdMaleta());
+        final LocalDateTime plazo = plazoBase != null && tiempoRecojo > 0
+                ? plazoBase.minusMinutes(tiempoRecojo)
+                : plazoBase;
         final Map<String, Integer> capacidadRestanteVueloTemporal = new HashMap<>(capacidadRestanteVuelo);
         final Map<String, Integer> capacidadRestanteAlmacenTemporal = new HashMap<>(capacidadRestanteAlmacen);
         final ArrayList<VueloInstancia> plan = construirPlanTemporal(
@@ -360,7 +373,7 @@ final class ACOConstructorSoluciones {
 
             final ArrayList<VueloInstancia> vuelos = subproblema.getVuelosDesde(estado.getIdAeropuerto());
             int vuelosEvaluados = 0;
-            for (int i = primerIndiceConSalidaNoAnterior(vuelos, estado.getTiempoActual()); i < vuelos.size(); i++) {
+            for (int i = primerIndiceConSalidaNoAnterior(vuelos, estado.getTiempoActual().plusMinutes(minutosConexion)); i < vuelos.size(); i++) {
                 if (vuelosEvaluados >= MAX_VUELOS_POR_EXPANSION) {
                     break;
                 }
@@ -407,7 +420,8 @@ final class ACOConstructorSoluciones {
         if (vuelo == null || vuelo.getFechaSalida() == null || vuelo.getFechaLlegada() == null) {
             return false;
         }
-        if (vuelo.getFechaSalida().isBefore(estado.getTiempoActual()) || vuelo.getFechaLlegada().isAfter(plazo)) {
+        if (vuelo.getFechaSalida().isBefore(estado.getTiempoActual().plusMinutes(minutosConexion))
+                || vuelo.getFechaLlegada().isAfter(plazo)) {
             return false;
         }
         if (capacidadRestanteVuelo.getOrDefault(vuelo.getIdVueloInstancia(), 0) < UNIDAD_MALETA) {
@@ -583,9 +597,10 @@ final class ACOConstructorSoluciones {
             return candidatos;
         }
 
-        for (int i = primerIndiceConSalidaNoAnterior(vuelos, tiempoActual); i < vuelos.size(); i++) {
+        final LocalDateTime tiempoMinSalida = tiempoActual.plusMinutes(minutosConexion);
+        for (int i = primerIndiceConSalidaNoAnterior(vuelos, tiempoMinSalida); i < vuelos.size(); i++) {
             final VueloInstancia vuelo = vuelos.get(i);
-            if (vuelo.getFechaSalida().isBefore(tiempoActual)) {
+            if (vuelo.getFechaSalida().isBefore(tiempoMinSalida)) {
                 continue;
             }
             if (plazo != null && vuelo.getFechaLlegada().isAfter(plazo)) {
@@ -735,7 +750,10 @@ final class ACOConstructorSoluciones {
         }
 
         final LocalDateTime tiempoDisponible = obtenerTiempoDisponible(maleta, subproblema.getInicioIntervalo());
-        final LocalDateTime plazo = subproblema.getPlazoPorMaleta().get(maleta.getIdMaleta());
+        final LocalDateTime plazoBaseDireto = subproblema.getPlazoPorMaleta().get(maleta.getIdMaleta());
+        final LocalDateTime plazo = plazoBaseDireto != null && tiempoRecojo > 0
+                ? plazoBaseDireto.minusMinutes(tiempoRecojo)
+                : plazoBaseDireto;
         VueloInstancia mejorVuelo = null;
         final ArrayList<VueloInstancia> vuelosOrigen = subproblema.getVuelosDesde(obtenerIdAeropuerto(origen));
 
@@ -861,7 +879,10 @@ final class ACOConstructorSoluciones {
     }
 
     private double calcularPlazoMaximoDias(final Maleta maleta, final SubproblemaACO subproblema) {
-        final LocalDateTime plazo = subproblema.getPlazoPorMaleta().get(maleta.getIdMaleta());
+        final LocalDateTime plazoBase = subproblema.getPlazoPorMaleta().get(maleta.getIdMaleta());
+        final LocalDateTime plazo = plazoBase != null && tiempoRecojo > 0
+                ? plazoBase.minusMinutes(tiempoRecojo)
+                : plazoBase;
         final LocalDateTime tiempoDisponible = obtenerTiempoDisponible(maleta, subproblema.getInicioIntervalo());
         if (plazo == null || tiempoDisponible == null || plazo.isBefore(tiempoDisponible)) {
             return Double.MAX_VALUE;

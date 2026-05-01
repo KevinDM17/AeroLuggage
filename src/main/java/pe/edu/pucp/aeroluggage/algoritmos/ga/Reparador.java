@@ -133,7 +133,8 @@ public final class Reparador {
             for (int i = 0; i < exceso && !usan.isEmpty(); i++) {
                 final Ruta victima = usan.get(usan.size() - 1 - i);
                 final Maleta maleta = maletas.get(victima.getIdMaleta());
-                rerutearBloqueando(victima, maleta, entry.getKey(), instancia.getGrafo(), params);
+                rerutearBloqueando(victima, maleta, entry.getKey(), instancia.getGrafo(),
+                        instancia.getMinutosConexion(), instancia.getTiempoRecojo());
             }
         }
     }
@@ -174,8 +175,9 @@ public final class Reparador {
             } else {
                 final List<VueloInstancia> camino = GARuteadorCache.rutear(
                         pedido.getAeropuertoOrigen(), pedido.getAeropuertoDestino(),
-                        pedido.getFechaRegistro(), pedido.getFechaHoraPlazo(),
-                        grafo, params.getMinutosConexion(), new HashSet<>());
+                        pedido.getFechaRegistro(),
+                        plazoEfectivo(pedido.getFechaHoraPlazo(), instancia.getTiempoRecojo()),
+                        grafo, instancia.getMinutosConexion(), new HashSet<>());
                 if (camino == null) {
                     ruta.setSubrutas(new ArrayList<>());
                     ruta.setEstado(EstadoRuta.FALLIDA);
@@ -214,7 +216,8 @@ public final class Reparador {
     }
 
     private static void rerutearBloqueando(final Ruta ruta, final Maleta maleta, final String idVueloBloqueado,
-                                           final GrafoTiempoExpandido grafo, final ParametrosGA params) {
+                                           final GrafoTiempoExpandido grafo,
+                                           final long minutosConexion, final long tiempoRecojo) {
         if (maleta == null || maleta.getPedido() == null) {
             ruta.setSubrutas(new ArrayList<>());
             ruta.setEstado(EstadoRuta.FALLIDA);
@@ -226,8 +229,8 @@ public final class Reparador {
         bloqueados.add(idVueloBloqueado);
         final List<VueloInstancia> nuevo = GARuteadorCache.rutear(
                 pedido.getAeropuertoOrigen(), pedido.getAeropuertoDestino(),
-                pedido.getFechaRegistro(), pedido.getFechaHoraPlazo(),
-                grafo, params.getMinutosConexion(), bloqueados);
+                pedido.getFechaRegistro(), plazoEfectivo(pedido.getFechaHoraPlazo(), tiempoRecojo),
+                grafo, minutosConexion, bloqueados);
         if (nuevo == null) {
             ruta.setSubrutas(new ArrayList<>());
             ruta.setEstado(EstadoRuta.FALLIDA);
@@ -295,6 +298,13 @@ public final class Reparador {
         return true;
     }
 
+    private static LocalDateTime plazoEfectivo(final LocalDateTime plazo, final long tiempoRecojo) {
+        if (plazo == null || tiempoRecojo <= 0) {
+            return plazo;
+        }
+        return plazo.minusMinutes(tiempoRecojo);
+    }
+
     private static double duracionHoras(final List<VueloInstancia> camino) {
         if (camino == null || camino.isEmpty()) {
             return 0.0;
@@ -313,7 +323,6 @@ public final class Reparador {
             return;
         }
         final Map<String, Integer> cargaPorAeropuerto = new HashMap<>();
-        final Map<String, Aeropuerto> indiceAeropuertos = new HashMap<>();
         final Map<String, Aeropuerto> aeropuertos = instancia.indexarAeropuertosPorIcao();
 
         for (final Ruta ruta : solucion.getSolucion()) {
@@ -379,7 +388,8 @@ public final class Reparador {
             for (int i = 0; i < exceso && !rutasEnAeropuerto.isEmpty(); i++) {
                 final Ruta victima = rutasEnAeropuerto.get(rutasEnAeropuerto.size() - 1 - i);
                 rerutearBloqueandoAeropuerto(victima, maletas.get(victima.getIdMaleta()),
-                        idAeropuerto, instancia.getGrafo(), params);
+                        idAeropuerto, instancia.getGrafo(),
+                        instancia.getMinutosConexion(), instancia.getTiempoRecojo());
             }
         }
     }
@@ -388,7 +398,8 @@ public final class Reparador {
                                                      final Maleta maleta,
                                                      final String idAeropuertoBloqueado,
                                                      final GrafoTiempoExpandido grafo,
-                                                     final ParametrosGA params) {
+                                                     final long minutosConexion,
+                                                     final long tiempoRecojo) {
         if (maleta == null || maleta.getPedido() == null) {
             ruta.setSubrutas(new ArrayList<>());
             ruta.setEstado(EstadoRuta.FALLIDA);
@@ -400,8 +411,8 @@ public final class Reparador {
         bloqueados.add(idAeropuertoBloqueado);
         final List<VueloInstancia> nuevo = GARuteadorCache.rutear(
                 pedido.getAeropuertoOrigen(), pedido.getAeropuertoDestino(),
-                pedido.getFechaRegistro(), pedido.getFechaHoraPlazo(),
-                grafo, params.getMinutosConexion(), bloqueados);
+                pedido.getFechaRegistro(), plazoEfectivo(pedido.getFechaHoraPlazo(), tiempoRecojo),
+                grafo, minutosConexion, bloqueados);
         if (nuevo == null) {
             ruta.setSubrutas(new ArrayList<>());
             ruta.setEstado(EstadoRuta.FALLIDA);
