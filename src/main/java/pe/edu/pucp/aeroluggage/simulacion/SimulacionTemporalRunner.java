@@ -473,6 +473,7 @@ public final class SimulacionTemporalRunner {
         resultado.historial = historial;
         resultado.tiempoEjecucionMs = System.currentTimeMillis() - inicioEjecucionMs;
         resultado.fitnessExperimental = fitnessExperimental;
+        reportarCapacidadAeropuertosFinal(nombre, contextoEjecucion.aeropuertos());
         reportarResumen(nombre, resultado);
         return resultado;
     }
@@ -687,6 +688,29 @@ public final class SimulacionTemporalRunner {
             System.out.printf("%-12s %8d %10d %10d %10s %18s%n",
                     paso.dia(), paso.nuevas(), paso.enrutadas(), paso.pendientes(),
                     semaforo, paso.aeropuertoMasCargado());
+        }
+        System.out.println();
+    }
+
+    private static void reportarCapacidadAeropuertosFinal(final String nombre,
+                                                          final ArrayList<Aeropuerto> aeropuertos) {
+        if (aeropuertos == null || aeropuertos.isEmpty()) {
+            return;
+        }
+        System.out.printf("%nCapacidad aeropuertos al final [%s]:%n", nombre);
+        System.out.printf("%-12s %10s %10s %12s%n", "Aeropuerto", "Ocupacion", "Capacidad", "Porcentaje");
+        for (final Aeropuerto aeropuerto : aeropuertos) {
+            if (aeropuerto == null) {
+                continue;
+            }
+            final int ocupacion = aeropuerto.getMaletasActuales();
+            final int capacidad = aeropuerto.getCapacidadAlmacen();
+            final double porcentaje = capacidad > 0 ? 100.0 * ocupacion / capacidad : 0.0;
+            System.out.printf("%-12s %10d %10d %11.1f%%%n",
+                    aeropuerto.getIdAeropuerto(),
+                    ocupacion,
+                    capacidad,
+                    porcentaje);
         }
         System.out.println();
     }
