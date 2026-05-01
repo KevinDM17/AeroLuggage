@@ -310,10 +310,7 @@ public final class Reparador {
     }
 
     private static LocalDateTime plazoEfectivo(final LocalDateTime plazo, final long tiempoRecojo) {
-        if (plazo == null || tiempoRecojo <= 0) {
-            return plazo;
-        }
-        return plazo.minusMinutes(tiempoRecojo);
+        return plazo;
     }
 
     private static List<VueloInstancia> rutearConCapacidadDisponible(final Pedido pedido,
@@ -344,11 +341,6 @@ public final class Reparador {
                 bloqueados.add(vueloSaturado);
                 continue;
             }
-            final String aeropuertoSaturado = encontrarAeropuertoSaturado(camino, consumoAeropuerto, aeropuertos);
-            if (aeropuertoSaturado != null) {
-                bloqueados.add(aeropuertoSaturado);
-                continue;
-            }
             return camino;
         }
         return GARuteadorCache.rutear(
@@ -372,36 +364,6 @@ public final class Reparador {
             final int usos = consumoVuelo.getOrDefault(vueloInstancia.getIdVueloInstancia(), 0);
             if (usos >= vueloInstancia.getCapacidadDisponible()) {
                 return vueloInstancia.getIdVueloInstancia();
-            }
-        }
-        return null;
-    }
-
-    private static String encontrarAeropuertoSaturado(final List<VueloInstancia> camino,
-                                                      final Map<String, Integer> consumoAeropuerto,
-                                                      final Map<String, Aeropuerto> aeropuertos) {
-        for (final VueloInstancia vueloInstancia : camino) {
-            if (vueloInstancia == null) {
-                continue;
-            }
-            final String idOrigen = vueloInstancia.getAeropuertoOrigen() != null
-                    ? vueloInstancia.getAeropuertoOrigen().getIdAeropuerto()
-                    : null;
-            final String idDestino = vueloInstancia.getAeropuertoDestino() != null
-                    ? vueloInstancia.getAeropuertoDestino().getIdAeropuerto()
-                    : null;
-            for (final String idAeropuerto : new String[]{idOrigen, idDestino}) {
-                if (idAeropuerto == null) {
-                    continue;
-                }
-                final Aeropuerto aeropuerto = aeropuertos.get(idAeropuerto);
-                if (aeropuerto == null || aeropuerto.getCapacidadAlmacen() <= 0) {
-                    continue;
-                }
-                final int carga = consumoAeropuerto.getOrDefault(idAeropuerto, 0);
-                if (carga >= aeropuerto.getCapacidadAlmacen()) {
-                    return idAeropuerto;
-                }
             }
         }
         return null;

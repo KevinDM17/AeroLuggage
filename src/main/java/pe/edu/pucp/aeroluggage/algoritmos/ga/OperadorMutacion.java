@@ -86,7 +86,7 @@ public final class OperadorMutacion {
         final List<VueloInstancia> nuevoCamino = GARuteadorCache.rutear(
                 pedido.getAeropuertoOrigen(), pedido.getAeropuertoDestino(),
                 pedido.getFechaRegistro(), pedido.getFechaHoraPlazo(),
-                instancia.getGrafo(), params.getMinutosConexion(), bloqueados);
+                instancia.getGrafo(), instancia.getMinutosConexion(), bloqueados);
         if (nuevoCamino == null) {
             return;
         }
@@ -164,7 +164,7 @@ public final class OperadorMutacion {
         final List<VueloInstancia> suffix = GARuteadorCache.rutear(
                 previo.getAeropuertoDestino(), pedido.getAeropuertoDestino(),
                 tDesde, pedido.getFechaHoraPlazo(),
-                grafo, params.getMinutosConexion(), bloqueados);
+                grafo, instancia.getMinutosConexion(), bloqueados);
         if (suffix == null) {
             return;
         }
@@ -216,7 +216,7 @@ public final class OperadorMutacion {
                 pedido.getFechaRegistro(),
                 pedido.getFechaHoraPlazo(),
                 instancia.getGrafo(),
-                params.getMinutosConexion(),
+                instancia.getMinutosConexion(),
                 new HashSet<>()
         );
         if (nuevoCamino == null || nuevoCamino.isEmpty()) {

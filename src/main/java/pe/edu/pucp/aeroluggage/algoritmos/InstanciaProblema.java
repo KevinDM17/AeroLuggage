@@ -23,8 +23,8 @@ public class InstanciaProblema {
     private ArrayList<VueloInstancia> vuelosInstancia;
     private ArrayList<Aeropuerto> aeropuertos;
     private GrafoTiempoExpandido grafo;
-    private long minutosConexion = 60L;
-    private long tiempoRecojo = 0L;
+    private long minutosConexion = 10L;
+    private long tiempoRecojo = 10L;
 
     public InstanciaProblema() {
         this.maletas = new ArrayList<>();

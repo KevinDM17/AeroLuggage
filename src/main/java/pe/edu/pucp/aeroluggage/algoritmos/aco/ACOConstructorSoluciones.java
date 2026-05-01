@@ -272,9 +272,7 @@ final class ACOConstructorSoluciones {
         final Aeropuerto actual = origen;
         final LocalDateTime tiempoActual = obtenerTiempoDisponible(maleta, subproblema.getInicioIntervalo());
         final LocalDateTime plazoBase = subproblema.getPlazoPorMaleta().get(maleta.getIdMaleta());
-        final LocalDateTime plazo = plazoBase != null && tiempoRecojo > 0
-                ? plazoBase.minusMinutes(tiempoRecojo)
-                : plazoBase;
+        final LocalDateTime plazo = plazoBase;
         final Map<String, Integer> capacidadRestanteVueloTemporal = new HashMap<>(capacidadRestanteVuelo);
         final Map<String, Integer> capacidadRestanteAlmacenTemporal = new HashMap<>(capacidadRestanteAlmacen);
         final ArrayList<VueloInstancia> plan = construirPlanTemporal(
@@ -751,9 +749,7 @@ final class ACOConstructorSoluciones {
 
         final LocalDateTime tiempoDisponible = obtenerTiempoDisponible(maleta, subproblema.getInicioIntervalo());
         final LocalDateTime plazoBaseDireto = subproblema.getPlazoPorMaleta().get(maleta.getIdMaleta());
-        final LocalDateTime plazo = plazoBaseDireto != null && tiempoRecojo > 0
-                ? plazoBaseDireto.minusMinutes(tiempoRecojo)
-                : plazoBaseDireto;
+        final LocalDateTime plazo = plazoBaseDireto;
         VueloInstancia mejorVuelo = null;
         final ArrayList<VueloInstancia> vuelosOrigen = subproblema.getVuelosDesde(obtenerIdAeropuerto(origen));
 
@@ -880,9 +876,7 @@ final class ACOConstructorSoluciones {
 
     private double calcularPlazoMaximoDias(final Maleta maleta, final SubproblemaACO subproblema) {
         final LocalDateTime plazoBase = subproblema.getPlazoPorMaleta().get(maleta.getIdMaleta());
-        final LocalDateTime plazo = plazoBase != null && tiempoRecojo > 0
-                ? plazoBase.minusMinutes(tiempoRecojo)
-                : plazoBase;
+        final LocalDateTime plazo = plazoBase;
         final LocalDateTime tiempoDisponible = obtenerTiempoDisponible(maleta, subproblema.getInicioIntervalo());
         if (plazo == null || tiempoDisponible == null || plazo.isBefore(tiempoDisponible)) {
             return Double.MAX_VALUE;

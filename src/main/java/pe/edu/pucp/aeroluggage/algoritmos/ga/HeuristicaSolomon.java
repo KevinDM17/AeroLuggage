@@ -197,42 +197,13 @@ public final class HeuristicaSolomon {
                 }
             }
             if (vueloSaturado == null) {
-                final String idAeropuertoSaturado = aeropuertoSaturado(camino, consumoAeropuerto, aeropuertos);
-                if (idAeropuertoSaturado == null) {
-                    return camino;
-                }
-                bloqueados.add(idAeropuertoSaturado);
-                continue;
+                return camino;
             }
             bloqueados.add(vueloSaturado);
         }
         return GARuteadorCache.rutear(
                 pedido.getAeropuertoOrigen(), pedido.getAeropuertoDestino(),
                 tListo, tLimite, grafo, params.getMinutosConexion(), bloqueados, consumo);
-    }
-
-    private static String aeropuertoSaturado(final List<VueloInstancia> camino,
-                                              final Map<String, Integer> consumoAeropuerto,
-                                              final Map<String, Aeropuerto> aeropuertos) {
-        for (final VueloInstancia v : camino) {
-            final String idOrigen = v.getAeropuertoOrigen() != null
-                    ? v.getAeropuertoOrigen().getIdAeropuerto() : null;
-            final String idDestino = v.getAeropuertoDestino() != null
-                    ? v.getAeropuertoDestino().getIdAeropuerto() : null;
-            for (final String id : new String[]{idOrigen, idDestino}) {
-                if (id == null) {
-                    continue;
-                }
-                final Aeropuerto ap = aeropuertos.get(id);
-                if (ap == null || ap.getCapacidadAlmacen() <= 0) {
-                    continue;
-                }
-                if (consumoAeropuerto.getOrDefault(id, 0) >= ap.getCapacidadAlmacen()) {
-                    return id;
-                }
-            }
-        }
-        return null;
     }
 
     private static int seleccionarIndice(final List<Maleta> pendientes, final double nivelAleatoriedad,

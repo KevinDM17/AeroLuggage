@@ -25,7 +25,8 @@ public class ParametrosGA {
     private double penalizacionRutaInvalida = 40000.0;
     private double penalizacionRutaParcial = 45000.0;
 
-    private long minutosConexion = 30L;
+    private long minutosConexion = 10L;
+    private long tiempoRecojo = 10L;
 
     private double pesoGreedySolomon = 0.8;
     private double pesoAleatorioSolomon = 0.2;
@@ -208,6 +209,14 @@ public class ParametrosGA {
 
     public void setMinutosConexion(final long minutosConexion) {
         this.minutosConexion = minutosConexion;
+    }
+
+    public long getTiempoRecojo() {
+        return tiempoRecojo;
+    }
+
+    public void setTiempoRecojo(final long tiempoRecojo) {
+        this.tiempoRecojo = tiempoRecojo;
     }
 
     public double getPesoGreedySolomon() {
