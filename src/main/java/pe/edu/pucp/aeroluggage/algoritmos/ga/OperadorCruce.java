@@ -11,6 +11,7 @@ import java.util.Set;
 import pe.edu.pucp.aeroluggage.algoritmos.Solucion;
 import pe.edu.pucp.aeroluggage.dominio.entidades.Ruta;
 import pe.edu.pucp.aeroluggage.dominio.entidades.VueloInstancia;
+import pe.edu.pucp.aeroluggage.dominio.enums.EstadoRuta;
 
 public final class OperadorCruce {
 
@@ -40,9 +41,13 @@ public final class OperadorCruce {
         final ArrayList<Ruta> rutasHijo = new ArrayList<>(claves.size());
         int secuencia = 1;
         for (final String idMaleta : claves) {
+            final Ruta rutaPadre1 = rutasPadre1.get(idMaleta);
+            final Ruta rutaPadre2 = rutasPadre2.get(idMaleta);
+            final Ruta fuentePreferida = seleccionarMejorRuta(rutaPadre1, rutaPadre2);
+            final Ruta fuenteAlterna = fuentePreferida == rutaPadre1 ? rutaPadre2 : rutaPadre1;
             final Ruta fuente = subsetDesdePadre1.contains(idMaleta)
-                    ? rutasPadre1.get(idMaleta)
-                    : rutasPadre2.getOrDefault(idMaleta, rutasPadre1.get(idMaleta));
+                    ? (fuentePreferida != null ? fuentePreferida : fuenteAlterna)
+                    : (fuenteAlterna != null ? fuenteAlterna : fuentePreferida);
             rutasHijo.add(clonar(fuente, secuencia++));
         }
 
@@ -107,5 +112,30 @@ public final class OperadorCruce {
                 copiaSubrutas,
                 original.getEstado());
         return copia;
+    }
+
+    private static Ruta seleccionarMejorRuta(final Ruta rutaA, final Ruta rutaB) {
+        if (rutaA == null) {
+            return rutaB;
+        }
+        if (rutaB == null) {
+            return rutaA;
+        }
+        final boolean validaA = esRutaValida(rutaA);
+        final boolean validaB = esRutaValida(rutaB);
+        if (validaA != validaB) {
+            return validaA ? rutaA : rutaB;
+        }
+        if (rutaA.getDuracion() != rutaB.getDuracion()) {
+            return rutaA.getDuracion() <= rutaB.getDuracion() ? rutaA : rutaB;
+        }
+        return rutaA;
+    }
+
+    private static boolean esRutaValida(final Ruta ruta) {
+        return ruta.getEstado() != null
+                && ruta.getEstado() != EstadoRuta.FALLIDA
+                && ruta.getSubrutas() != null
+                && !ruta.getSubrutas().isEmpty();
     }
 }

@@ -2,32 +2,33 @@ package pe.edu.pucp.aeroluggage.algoritmos.ga;
 
 public class ParametrosGA {
 
-    private int tamanioPoblacion = 80;
-    private int maxGeneraciones = 300;
-    private int maxSinMejora = 40;
+    private int tamanioPoblacion = 120;
+    private int maxGeneraciones = 400;
+    private int maxSinMejora = 60;
     private long tiempoMaximoMs = 90L * 60L * 1000L;
     private double probCruce = 0.85;
-    private double probMutacion = 0.15;
+    private double probMutacion = 0.20;
     private double probBusquedaLocal = 0.20;
-    private int torneoK = 3;
+    private int torneoK = 4;
     private double probTorneo = 0.85;
-    private int elites = 4;
+    private int elites = 6;
     private long semilla = 42L;
 
-    private double w1MaletasIncumplidas = 10000.0;
+    private double w1MaletasIncumplidas = 50000.0;
     private double w2ExcesoHorasPlazo = 100.0;
-    private double w3OverflowVuelo = 500.0;
-    private double w4OverflowAlmacen = 500.0;
+    private double w3OverflowVuelo = 2000.0;
+    private double w4OverflowAlmacen = 1500.0;
     private double w5TransitoPromedio = 1.0;
 
-    private double penalizacionRutaVacia = 5000.0;
-    private double penalizacionSinDestino = 8000.0;
-    private double penalizacionRutaInvalida = 3000.0;
+    private double penalizacionRutaVacia = 50000.0;
+    private double penalizacionSinDestino = 60000.0;
+    private double penalizacionRutaInvalida = 40000.0;
+    private double penalizacionRutaParcial = 45000.0;
 
     private long minutosConexion = 30L;
 
-    private double pesoGreedySolomon = 0.6;
-    private double pesoAleatorioSolomon = 0.4;
+    private double pesoGreedySolomon = 0.8;
+    private double pesoAleatorioSolomon = 0.2;
 
     private double umbralSemaforoVerde = 0.70;
     private double umbralSemaforoAmbar = 0.90;
@@ -191,6 +192,14 @@ public class ParametrosGA {
 
     public void setPenalizacionRutaInvalida(final double penalizacionRutaInvalida) {
         this.penalizacionRutaInvalida = penalizacionRutaInvalida;
+    }
+
+    public double getPenalizacionRutaParcial() {
+        return penalizacionRutaParcial;
+    }
+
+    public void setPenalizacionRutaParcial(final double penalizacionRutaParcial) {
+        this.penalizacionRutaParcial = penalizacionRutaParcial;
     }
 
     public long getMinutosConexion() {

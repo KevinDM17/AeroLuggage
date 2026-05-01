@@ -128,7 +128,7 @@ public class Solucion {
     }
 
     public ArrayList<Ruta> getSolucion() {
-        return new ArrayList<>(solucion);
+        return solucion;
     }
 
     public void setSolucion(final ArrayList<Ruta> solucion) {

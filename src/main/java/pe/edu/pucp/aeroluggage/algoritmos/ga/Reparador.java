@@ -38,6 +38,7 @@ public final class Reparador {
         repararCapacidad(solucion, instancia, params, random);
         repararCapacidadAlmacenes(solucion, instancia, params, random);
         insertarMaletasFaltantes(solucion, instancia, params, random);
+        rescatarRutasNoResueltas(solucion, instancia, params, random);
         recalcularCamposRuta(solucion);
         solucion.calcularMetricas();
     }
@@ -125,7 +126,8 @@ public final class Reparador {
                 continue;
             }
             final List<Ruta> usan = entry.getValue();
-            final int exceso = usan.size() - vuelo.getCapacidadMaxima();
+            final int capacidadDisponible = Math.max(0, vuelo.getCapacidadDisponible());
+            final int exceso = usan.size() - capacidadDisponible;
             if (exceso <= 0) {
                 continue;
             }
@@ -144,12 +146,16 @@ public final class Reparador {
         if (solucion == null || instancia == null || instancia.getMaletas() == null) {
             return;
         }
+        final Map<String, Integer> consumoVuelo = new HashMap<>();
+        final Map<String, Integer> consumoAeropuerto = new HashMap<>();
+        final Map<String, Aeropuerto> aeropuertos = instancia.indexarAeropuertosPorIcao();
         final Set<String> presentes = new HashSet<>();
         if (solucion.getSolucion() != null) {
             for (final Ruta ruta : solucion.getSolucion()) {
                 if (ruta != null && ruta.getIdMaleta() != null) {
                     presentes.add(ruta.getIdMaleta());
                 }
+                acumularConsumoRuta(ruta, consumoVuelo, consumoAeropuerto);
             }
         } else {
             solucion.setSolucion(new ArrayList<>());
@@ -173,11 +179,15 @@ public final class Reparador {
                 ruta.setEstado(EstadoRuta.FALLIDA);
                 ruta.setDuracion(0.0);
             } else {
-                final List<VueloInstancia> camino = GARuteadorCache.rutear(
-                        pedido.getAeropuertoOrigen(), pedido.getAeropuertoDestino(),
-                        pedido.getFechaRegistro(),
-                        plazoEfectivo(pedido.getFechaHoraPlazo(), instancia.getTiempoRecojo()),
-                        grafo, instancia.getMinutosConexion(), new HashSet<>());
+                final List<VueloInstancia> camino = rutearConCapacidadDisponible(
+                        pedido,
+                        grafo,
+                        instancia.getMinutosConexion(),
+                        instancia.getTiempoRecojo(),
+                        consumoVuelo,
+                        consumoAeropuerto,
+                        aeropuertos
+                );
                 if (camino == null) {
                     ruta.setSubrutas(new ArrayList<>());
                     ruta.setEstado(EstadoRuta.FALLIDA);
@@ -186,6 +196,7 @@ public final class Reparador {
                     ruta.setSubrutas(new ArrayList<>(camino));
                     ruta.setEstado(camino.isEmpty() ? EstadoRuta.FALLIDA : EstadoRuta.PLANIFICADA);
                     ruta.setDuracion(duracionHoras(camino));
+                    acumularConsumoRuta(ruta, consumoVuelo, consumoAeropuerto);
                 }
             }
             solucion.getSolucion().add(ruta);
@@ -303,6 +314,321 @@ public final class Reparador {
             return plazo;
         }
         return plazo.minusMinutes(tiempoRecojo);
+    }
+
+    private static List<VueloInstancia> rutearConCapacidadDisponible(final Pedido pedido,
+                                                                      final GrafoTiempoExpandido grafo,
+                                                                      final long minutosConexion,
+                                                                      final long tiempoRecojo,
+                                                                      final Map<String, Integer> consumoVuelo,
+                                                                      final Map<String, Integer> consumoAeropuerto,
+                                                                      final Map<String, Aeropuerto> aeropuertos) {
+        final Set<String> bloqueados = new HashSet<>();
+        final LocalDateTime tLimite = plazoEfectivo(pedido.getFechaHoraPlazo(), tiempoRecojo);
+        for (int intento = 0; intento < 4; intento++) {
+            final List<VueloInstancia> camino = GARuteadorCache.rutear(
+                    pedido.getAeropuertoOrigen(),
+                    pedido.getAeropuertoDestino(),
+                    pedido.getFechaRegistro(),
+                    tLimite,
+                    grafo,
+                    minutosConexion,
+                    bloqueados,
+                    consumoVuelo
+            );
+            if (camino == null) {
+                return null;
+            }
+            final String vueloSaturado = encontrarVueloSaturado(camino, consumoVuelo);
+            if (vueloSaturado != null) {
+                bloqueados.add(vueloSaturado);
+                continue;
+            }
+            final String aeropuertoSaturado = encontrarAeropuertoSaturado(camino, consumoAeropuerto, aeropuertos);
+            if (aeropuertoSaturado != null) {
+                bloqueados.add(aeropuertoSaturado);
+                continue;
+            }
+            return camino;
+        }
+        return GARuteadorCache.rutear(
+                pedido.getAeropuertoOrigen(),
+                pedido.getAeropuertoDestino(),
+                pedido.getFechaRegistro(),
+                tLimite,
+                grafo,
+                minutosConexion,
+                bloqueados,
+                consumoVuelo
+        );
+    }
+
+    private static String encontrarVueloSaturado(final List<VueloInstancia> camino,
+                                                 final Map<String, Integer> consumoVuelo) {
+        for (final VueloInstancia vueloInstancia : camino) {
+            if (vueloInstancia == null || vueloInstancia.getIdVueloInstancia() == null) {
+                continue;
+            }
+            final int usos = consumoVuelo.getOrDefault(vueloInstancia.getIdVueloInstancia(), 0);
+            if (usos >= vueloInstancia.getCapacidadDisponible()) {
+                return vueloInstancia.getIdVueloInstancia();
+            }
+        }
+        return null;
+    }
+
+    private static String encontrarAeropuertoSaturado(final List<VueloInstancia> camino,
+                                                      final Map<String, Integer> consumoAeropuerto,
+                                                      final Map<String, Aeropuerto> aeropuertos) {
+        for (final VueloInstancia vueloInstancia : camino) {
+            if (vueloInstancia == null) {
+                continue;
+            }
+            final String idOrigen = vueloInstancia.getAeropuertoOrigen() != null
+                    ? vueloInstancia.getAeropuertoOrigen().getIdAeropuerto()
+                    : null;
+            final String idDestino = vueloInstancia.getAeropuertoDestino() != null
+                    ? vueloInstancia.getAeropuertoDestino().getIdAeropuerto()
+                    : null;
+            for (final String idAeropuerto : new String[]{idOrigen, idDestino}) {
+                if (idAeropuerto == null) {
+                    continue;
+                }
+                final Aeropuerto aeropuerto = aeropuertos.get(idAeropuerto);
+                if (aeropuerto == null || aeropuerto.getCapacidadAlmacen() <= 0) {
+                    continue;
+                }
+                final int carga = consumoAeropuerto.getOrDefault(idAeropuerto, 0);
+                if (carga >= aeropuerto.getCapacidadAlmacen()) {
+                    return idAeropuerto;
+                }
+            }
+        }
+        return null;
+    }
+
+    private static void acumularConsumoRuta(final Ruta ruta,
+                                            final Map<String, Integer> consumoVuelo,
+                                            final Map<String, Integer> consumoAeropuerto) {
+        if (ruta == null || ruta.getSubrutas() == null || ruta.getSubrutas().isEmpty()) {
+            return;
+        }
+        for (final VueloInstancia vueloInstancia : ruta.getSubrutas()) {
+            if (vueloInstancia == null) {
+                continue;
+            }
+            if (vueloInstancia.getIdVueloInstancia() != null) {
+                consumoVuelo.merge(vueloInstancia.getIdVueloInstancia(), 1, Integer::sum);
+            }
+            if (vueloInstancia.getAeropuertoOrigen() != null
+                    && vueloInstancia.getAeropuertoOrigen().getIdAeropuerto() != null) {
+                consumoAeropuerto.merge(vueloInstancia.getAeropuertoOrigen().getIdAeropuerto(), 1, Integer::sum);
+            }
+            if (vueloInstancia.getAeropuertoDestino() != null
+                    && vueloInstancia.getAeropuertoDestino().getIdAeropuerto() != null) {
+                consumoAeropuerto.merge(vueloInstancia.getAeropuertoDestino().getIdAeropuerto(), 1, Integer::sum);
+            }
+        }
+    }
+
+    private static void rescatarRutasNoResueltas(final Solucion solucion, final InstanciaProblema instancia,
+                                                 final ParametrosGA params, final Random random) {
+        if (solucion == null || solucion.getSolucion() == null || solucion.getSolucion().isEmpty()
+                || instancia == null || instancia.getGrafo() == null) {
+            return;
+        }
+        final Map<String, Maleta> maletas = indexarMaletas(instancia);
+        final Map<String, Integer> consumoVuelo = new HashMap<>();
+        final Map<String, Integer> consumoAeropuerto = new HashMap<>();
+        final Map<String, Aeropuerto> aeropuertos = instancia.indexarAeropuertosPorIcao();
+
+        for (final Ruta ruta : solucion.getSolucion()) {
+            acumularConsumoRuta(ruta, consumoVuelo, consumoAeropuerto);
+        }
+
+        final List<Ruta> candidatas = new ArrayList<>();
+        for (final Ruta ruta : solucion.getSolucion()) {
+            if (ruta == null) {
+                continue;
+            }
+            final Maleta maleta = maletas.get(ruta.getIdMaleta());
+            if (requiereRescate(ruta, maleta)) {
+                candidatas.add(ruta);
+            }
+        }
+        candidatas.sort(Comparator.comparing(ruta -> claveUrgencia(maletas.get(ruta.getIdMaleta()))));
+
+        for (final Ruta ruta : candidatas) {
+            final Maleta maleta = maletas.get(ruta.getIdMaleta());
+            if (maleta == null || maleta.getPedido() == null) {
+                continue;
+            }
+            liberarConsumoRuta(ruta, consumoVuelo, consumoAeropuerto);
+            final List<VueloInstancia> mejorCamino = construirMejorRutaRescate(
+                    ruta,
+                    maleta,
+                    instancia,
+                    params,
+                    consumoVuelo,
+                    consumoAeropuerto,
+                    aeropuertos
+            );
+            if (mejorCamino == null || mejorCamino.isEmpty()) {
+                acumularConsumoRuta(ruta, consumoVuelo, consumoAeropuerto);
+                continue;
+            }
+            ruta.setSubrutas(new ArrayList<>(mejorCamino));
+            ruta.setEstado(EstadoRuta.PLANIFICADA);
+            ruta.setDuracion(duracionHoras(mejorCamino));
+            acumularConsumoRuta(ruta, consumoVuelo, consumoAeropuerto);
+        }
+    }
+
+    private static List<VueloInstancia> construirMejorRutaRescate(final Ruta ruta,
+                                                                  final Maleta maleta,
+                                                                  final InstanciaProblema instancia,
+                                                                  final ParametrosGA params,
+                                                                  final Map<String, Integer> consumoVuelo,
+                                                                  final Map<String, Integer> consumoAeropuerto,
+                                                                  final Map<String, Aeropuerto> aeropuertos) {
+        final Pedido pedido = maleta.getPedido();
+        final GrafoTiempoExpandido grafo = instancia.getGrafo();
+        final List<List<VueloInstancia>> candidatos = new ArrayList<>();
+        final List<VueloInstancia> rutaDesdeOrigen = rutearConCapacidadDisponible(
+                pedido,
+                grafo,
+                instancia.getMinutosConexion(),
+                instancia.getTiempoRecojo(),
+                consumoVuelo,
+                consumoAeropuerto,
+                aeropuertos
+        );
+        agregarCaminoSiCompleto(candidatos, rutaDesdeOrigen, pedido);
+
+        final List<VueloInstancia> subrutasActuales = ruta.getSubrutas();
+        if (subrutasActuales != null && !subrutasActuales.isEmpty()) {
+            for (int i = subrutasActuales.size() - 1; i >= 0; i--) {
+                final VueloInstancia ultimoTramoValido = subrutasActuales.get(i);
+                if (ultimoTramoValido == null || ultimoTramoValido.getAeropuertoDestino() == null
+                        || ultimoTramoValido.getFechaLlegada() == null) {
+                    continue;
+                }
+                final Pedido pedidoRescate = new Pedido(
+                        pedido.getIdPedido(),
+                        ultimoTramoValido.getAeropuertoDestino(),
+                        pedido.getAeropuertoDestino(),
+                        ultimoTramoValido.getFechaLlegada(),
+                        pedido.getFechaHoraPlazo(),
+                        pedido.getCantidadMaletas(),
+                        pedido.getEstado()
+                );
+                final List<VueloInstancia> sufijo = rutearConCapacidadDisponible(
+                        pedidoRescate,
+                        grafo,
+                        instancia.getMinutosConexion(),
+                        instancia.getTiempoRecojo(),
+                        consumoVuelo,
+                        consumoAeropuerto,
+                        aeropuertos
+                );
+                if (sufijo == null || sufijo.isEmpty()) {
+                    continue;
+                }
+                final List<VueloInstancia> combinado = new ArrayList<>(subrutasActuales.subList(0, i + 1));
+                combinado.addAll(sufijo);
+                agregarCaminoSiCompleto(candidatos, combinado, pedido);
+            }
+        }
+
+        List<VueloInstancia> mejorCamino = null;
+        double mejorDuracion = Double.MAX_VALUE;
+        for (final List<VueloInstancia> candidato : candidatos) {
+            final double duracion = duracionHoras(candidato);
+            if (duracion < mejorDuracion) {
+                mejorCamino = candidato;
+                mejorDuracion = duracion;
+            }
+        }
+        return mejorCamino;
+    }
+
+    private static void agregarCaminoSiCompleto(final List<List<VueloInstancia>> candidatos,
+                                                final List<VueloInstancia> camino,
+                                                final Pedido pedido) {
+        if (camino == null || camino.isEmpty() || pedido == null || pedido.getAeropuertoDestino() == null) {
+            return;
+        }
+        final VueloInstancia ultimoVuelo = camino.get(camino.size() - 1);
+        if (ultimoVuelo == null || ultimoVuelo.getAeropuertoDestino() == null) {
+            return;
+        }
+        final String destinoEsperado = pedido.getAeropuertoDestino().getIdAeropuerto();
+        final String destinoObtenido = ultimoVuelo.getAeropuertoDestino().getIdAeropuerto();
+        if (destinoEsperado == null || !destinoEsperado.equals(destinoObtenido)) {
+            return;
+        }
+        candidatos.add(new ArrayList<>(camino));
+    }
+
+    private static boolean requiereRescate(final Ruta ruta, final Maleta maleta) {
+        if (ruta == null || maleta == null || maleta.getPedido() == null) {
+            return false;
+        }
+        final List<VueloInstancia> subrutas = ruta.getSubrutas();
+        if (ruta.getEstado() == EstadoRuta.FALLIDA || subrutas == null || subrutas.isEmpty()) {
+            return true;
+        }
+        final VueloInstancia ultimoVuelo = subrutas.get(subrutas.size() - 1);
+        return ultimoVuelo == null
+                || ultimoVuelo.getAeropuertoDestino() == null
+                || maleta.getPedido().getAeropuertoDestino() == null
+                || maleta.getPedido().getAeropuertoDestino().getIdAeropuerto() == null
+                || !maleta.getPedido().getAeropuertoDestino().getIdAeropuerto()
+                .equals(ultimoVuelo.getAeropuertoDestino().getIdAeropuerto());
+    }
+
+    private static LocalDateTime claveUrgencia(final Maleta maleta) {
+        if (maleta == null || maleta.getPedido() == null) {
+            return LocalDateTime.MAX;
+        }
+        final LocalDateTime plazo = maleta.getPedido().getFechaHoraPlazo();
+        if (plazo != null) {
+            return plazo;
+        }
+        final LocalDateTime registro = maleta.getPedido().getFechaRegistro();
+        return registro != null ? registro : LocalDateTime.MAX;
+    }
+
+    private static void liberarConsumoRuta(final Ruta ruta,
+                                           final Map<String, Integer> consumoVuelo,
+                                           final Map<String, Integer> consumoAeropuerto) {
+        if (ruta == null || ruta.getSubrutas() == null || ruta.getSubrutas().isEmpty()) {
+            return;
+        }
+        for (final VueloInstancia vueloInstancia : ruta.getSubrutas()) {
+            if (vueloInstancia == null) {
+                continue;
+            }
+            decrementarConsumo(consumoVuelo, vueloInstancia.getIdVueloInstancia());
+            if (vueloInstancia.getAeropuertoOrigen() != null) {
+                decrementarConsumo(consumoAeropuerto, vueloInstancia.getAeropuertoOrigen().getIdAeropuerto());
+            }
+            if (vueloInstancia.getAeropuertoDestino() != null) {
+                decrementarConsumo(consumoAeropuerto, vueloInstancia.getAeropuertoDestino().getIdAeropuerto());
+            }
+        }
+    }
+
+    private static void decrementarConsumo(final Map<String, Integer> consumo, final String id) {
+        if (id == null || !consumo.containsKey(id)) {
+            return;
+        }
+        final int nuevoValor = consumo.get(id) - 1;
+        if (nuevoValor <= 0) {
+            consumo.remove(id);
+            return;
+        }
+        consumo.put(id, nuevoValor);
     }
 
     private static double duracionHoras(final List<VueloInstancia> camino) {

@@ -109,7 +109,7 @@ public class GA extends Metaheuristico {
 
             poblacion = siguiente;
             final Individuo mejorActual = poblacion.mejor();
-            if (mejorActual != null && (mejorGlobal == null || mejorActual.getFitness() > mejorGlobal.getFitness())) {
+            if (mejorActual != null && esMejorIndividuo(mejorActual, mejorGlobal)) {
                 mejorGlobal = mejorActual.clonarProfundo();
                 mejorSolucion = mejorGlobal.getSolucion();
                 generacionesSinMejora = 0;
@@ -139,8 +139,14 @@ public class GA extends Metaheuristico {
         final Poblacion poblacion = new Poblacion(tamanioPoblacion);
         final int greedy = Math.max(1, (int) Math.round(
                 tamanioPoblacion * parametros.getPesoGreedySolomon()));
+        final int especializados = Math.max(1, tamanioPoblacion / 6);
         for (int i = 0; i < greedy; i++) {
             final Solucion s = HeuristicaSolomon.construir(instancia, parametros, random);
+            Reparador.reparar(s, instancia, parametros, random);
+            poblacion.agregar(new Individuo(s));
+        }
+        for (int i = 0; i < especializados && poblacion.tamano() < tamanioPoblacion; i++) {
+            final Solucion s = HeuristicaSolomon.construirDificilesPrimero(instancia, parametros, random);
             Reparador.reparar(s, instancia, parametros, random);
             poblacion.agregar(new Individuo(s));
         }
@@ -208,6 +214,28 @@ public class GA extends Metaheuristico {
         return mejor != null ? mejor.clonarProfundo() : null;
     }
 
+    private boolean esMejorIndividuo(final Individuo candidato, final Individuo referencia) {
+        if (candidato == null) {
+            return false;
+        }
+        if (referencia == null) {
+            return true;
+        }
+        final Solucion solucionCandidata = candidato.getSolucion();
+        final Solucion solucionReferencia = referencia.getSolucion();
+        final int incumplidasCandidato = solucionCandidata != null ? solucionCandidata.getMaletasIncumplidas() : Integer.MAX_VALUE;
+        final int incumplidasReferencia = solucionReferencia != null ? solucionReferencia.getMaletasIncumplidas() : Integer.MAX_VALUE;
+        if (incumplidasCandidato != incumplidasReferencia) {
+            return incumplidasCandidato < incumplidasReferencia;
+        }
+        final double costoCandidato = solucionCandidata != null ? solucionCandidata.getCostoTotal() : Double.MAX_VALUE;
+        final double costoReferencia = solucionReferencia != null ? solucionReferencia.getCostoTotal() : Double.MAX_VALUE;
+        if (Math.abs(costoCandidato - costoReferencia) > 0.0001D) {
+            return costoCandidato < costoReferencia;
+        }
+        return candidato.getFitness() > referencia.getFitness();
+    }
+
     private void agregarElites(final Poblacion origen, final Poblacion destino) {
         final List<Individuo> elites = new ArrayList<>(origen.topK(parametros.getElites()));
         for (final Individuo elite : elites) {
@@ -222,7 +250,7 @@ public class GA extends Metaheuristico {
         for (int i = 0; i < k; i++) {
             final Individuo candidato = poblacion.get(random.nextInt(poblacion.tamano()));
             candidatos.add(candidato);
-            if (mejor == null || candidato.getFitness() > mejor.getFitness()) {
+            if (esMejorIndividuo(candidato, mejor)) {
                 mejor = candidato;
             }
         }

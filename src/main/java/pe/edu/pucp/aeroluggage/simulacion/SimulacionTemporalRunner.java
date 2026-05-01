@@ -193,14 +193,18 @@ public final class SimulacionTemporalRunner {
 
             System.out.printf("[ITER %2d] semilla=%-20d", i, semilla);
             if (resGA != null) {
-                System.out.printf("  GA: %-10s enr=%-5d t=%dms",
+                System.out.printf("  GA: %-10s enr=%-5d fit=%.3f t=%dms",
                         resGA.colapsada ? "COLAPSO" : "OK",
-                        resGA.totalMaletasEnrutadas, resGA.tiempoEjecucionMs);
+                        resGA.totalMaletasEnrutadas,
+                        fitnessExperimentalValor(resGA),
+                        resGA.tiempoEjecucionMs);
             }
             if (resACO != null) {
-                System.out.printf("  ACO: %-10s enr=%-5d t=%dms",
+                System.out.printf("  ACO: %-10s enr=%-5d fit=%.3f t=%dms",
                         resACO.colapsada ? "COLAPSO" : "OK",
-                        resACO.totalMaletasEnrutadas, resACO.tiempoEjecucionMs);
+                        resACO.totalMaletasEnrutadas,
+                        fitnessExperimentalValor(resACO),
+                        resACO.tiempoEjecucionMs);
             }
             System.out.println();
         }
@@ -441,6 +445,8 @@ public final class SimulacionTemporalRunner {
             int enrutadasEnCiclo = 0;
             final int nuevasEnCiclo = registradas.size() - registradasAntes;
             Solucion solucion = null;
+            double fitnessAlgoritmoCiclo = 0D;
+            ResultadoFitnessExperimental fitnessCiclo = new ResultadoFitnessExperimental(0D, 0, 0D, 0D, 0D);
             final List<Maleta> maletasReplanificables = construirMaletasReplanificables(
                     registradas,
                     estadosPorMaleta,
@@ -472,9 +478,9 @@ public final class SimulacionTemporalRunner {
                 algoritmo.ejecutar(instancia);
                 solucion = obtenerSolucion(algoritmo);
                 postprocesarSolucion(solucion, instancia, parametrosGa);
-                fitnessExperimental = fitnessExperimental.sumar(
-                        CalculadorFitnessExperimental.calcular(solucion, instancia)
-                );
+                fitnessAlgoritmoCiclo = solucion != null ? solucion.getFitness() : 0D;
+                fitnessCiclo = CalculadorFitnessExperimental.calcular(solucion, instancia);
+                fitnessExperimental = fitnessExperimental.sumar(fitnessCiclo);
 
                 final Map<String, List<VueloInstancia>> nuevasRutas = extraerRutasConfirmadas(
                         solucion,
@@ -556,6 +562,8 @@ public final class SimulacionTemporalRunner {
                     nuevasEnCiclo,
                     enrutadasEnCiclo,
                     pendientesSinRuta,
+                    fitnessAlgoritmoCiclo,
+                    fitnessCiclo.getFitnessExperimental(),
                     taMs,
                     configuracionProgramada.saMs()
             );
@@ -580,9 +588,9 @@ public final class SimulacionTemporalRunner {
         final LocalDateTime momentoFinal = resultado.colapsada && resultado.momentoColapso != null
                 ? resultado.momentoColapso
                 : limiteProcesado;
-        resultado.totalMaletasEnrutadas = maletasEnrutadas.size();
         final Map<String, EstadoMaletaTemporal> estadosFinales =
                 evaluarEstadosMaletas(registradas, rutasProgramadasPorMaleta, momentoFinal);
+        resultado.totalMaletasEnrutadas = contarMaletasRuteadasFinales(estadosFinales);
         resultado.detalleNoRuteadas = identificarNoRuteadas(estadosFinales, momentoFinal);
         resultado.totalMaletasPendientes = resultado.detalleNoRuteadas.size();
         resultado.historial = historial;
@@ -1117,6 +1125,27 @@ public final class SimulacionTemporalRunner {
         return noRuteadas;
     }
 
+    private static int contarMaletasRuteadasFinales(final Map<String, EstadoMaletaTemporal> estadosPorMaleta) {
+        if (estadosPorMaleta == null || estadosPorMaleta.isEmpty()) {
+            return 0;
+        }
+        int totalRuteadas = 0;
+        for (final EstadoMaletaTemporal estado : estadosPorMaleta.values()) {
+            if (estado == null) {
+                continue;
+            }
+            final boolean tieneRutaActivaOFinalizada = estado.estado() == EstadoOperacionMaleta.FINALIZADA
+                    || estado.estado() == EstadoOperacionMaleta.EN_DESTINO_FINAL
+                    || estado.estado() == EstadoOperacionMaleta.EN_TRANSITO
+                    || !estado.vuelosFuturos().isEmpty()
+                    || !estado.vuelosEjecutados().isEmpty();
+            if (tieneRutaActivaOFinalizada) {
+                totalRuteadas++;
+            }
+        }
+        return totalRuteadas;
+    }
+
     private static DetalleColapso detectarDetalleColapso(final Map<String, EstadoMaletaTemporal> estadosPorMaleta,
                                                          final ArrayList<Aeropuerto> aeropuertos,
                                                          final ArrayList<VueloInstancia> vuelosInstancia,
@@ -1193,10 +1222,12 @@ public final class SimulacionTemporalRunner {
                                              final int nuevasEnCiclo,
                                              final int enrutadasEnCiclo,
                                              final int pendientes,
+                                             final double fitnessAlgoritmoCiclo,
+                                             final double fitnessCiclo,
                                              final long taMs,
                                              final long saMs) {
         System.out.printf(
-                "[CICLO %s #%d] datos=%s -> %s nuevas=%d enrutadas=%d pendientes=%d TA=%d ms SA=%d ms%n",
+                "[CICLO %s #%d] datos=%s -> %s nuevas=%d enrutadas=%d pendientes=%d fitAlg=%.6f fitExp=%.3f TA=%d ms SA=%d ms%n",
                 nombre,
                 numeroCiclo,
                 inicioCicloDatos.truncatedTo(ChronoUnit.SECONDS),
@@ -1204,6 +1235,8 @@ public final class SimulacionTemporalRunner {
                 nuevasEnCiclo,
                 enrutadasEnCiclo,
                 pendientes,
+                fitnessAlgoritmoCiclo,
+                fitnessCiclo,
                 taMs,
                 saMs
         );
@@ -1619,6 +1652,13 @@ public final class SimulacionTemporalRunner {
             System.out.println();
         }
         System.out.println();
+    }
+
+    private static double fitnessExperimentalValor(final ResultadoSimulacion resultadoSimulacion) {
+        if (resultadoSimulacion == null || resultadoSimulacion.fitnessExperimental == null) {
+            return 0.0;
+        }
+        return resultadoSimulacion.fitnessExperimental.getFitnessExperimental();
     }
 
     private static void reportarDetalleNoRuteadas(final List<MaletaNoRuteada> noRuteadas) {

@@ -18,9 +18,9 @@ import pe.edu.pucp.aeroluggage.dominio.entidades.VueloInstancia;
 
 final class GARuteadorCache {
     private static final int MAX_ENTRADAS_CACHE = 20000;
-    private static final int MAX_ALTERNATIVAS_RUTA = 4;
-    private static final int MAX_INTENTOS_ALTERNATIVAS = 32;
-    private static final long PENALIZACION_USO_VUELO_MINUTOS = 180L;
+    private static final int MAX_ALTERNATIVAS_RUTA = 10;
+    private static final int MAX_INTENTOS_ALTERNATIVAS = 80;
+    private static final long PENALIZACION_USO_VUELO_MINUTOS = 420L;
     private static final Map<String, List<List<VueloInstancia>>> RUTAS = Collections.synchronizedMap(
             new LinkedHashMap<String, List<List<VueloInstancia>>>(MAX_ENTRADAS_CACHE, 0.75F, true) {
                 @Override
@@ -108,6 +108,25 @@ final class GARuteadorCache {
                         origen, destino, tListo, tLimite, grafo, minutosConexion, bloqueadosAlternativa);
                 agregarRutaSiEsNueva(rutas, firmas, alternativa);
             }
+            for (int i = 0; i < rutaBase.size() - 1; i++) {
+                if (rutas.size() >= MAX_ALTERNATIVAS_RUTA || intentos >= MAX_INTENTOS_ALTERNATIVAS) {
+                    break;
+                }
+                final VueloInstancia vueloActual = rutaBase.get(i);
+                final VueloInstancia vueloSiguiente = rutaBase.get(i + 1);
+                if (vueloActual == null || vueloSiguiente == null
+                        || vueloActual.getIdVueloInstancia() == null
+                        || vueloSiguiente.getIdVueloInstancia() == null) {
+                    continue;
+                }
+                intentos++;
+                final Set<String> bloqueadosAlternativa = new HashSet<>(bloqueadosBase);
+                bloqueadosAlternativa.add(vueloActual.getIdVueloInstancia());
+                bloqueadosAlternativa.add(vueloSiguiente.getIdVueloInstancia());
+                final List<VueloInstancia> alternativa = DijkstraRuteador.rutear(
+                        origen, destino, tListo, tLimite, grafo, minutosConexion, bloqueadosAlternativa);
+                agregarRutaSiEsNueva(rutas, firmas, alternativa);
+            }
             indiceRuta++;
         }
 
@@ -177,6 +196,9 @@ final class GARuteadorCache {
             }
             final int usos = consumoVuelo == null ? 0 : consumoVuelo.getOrDefault(vuelo.getIdVueloInstancia(), 0);
             penalizacionUso += usos * PENALIZACION_USO_VUELO_MINUTOS;
+            if (vuelo.getCapacidadDisponible() > 0 && usos >= vuelo.getCapacidadDisponible()) {
+                penalizacionUso += PENALIZACION_USO_VUELO_MINUTOS * 10L;
+            }
         }
         return tiempoRuta + penalizacionUso;
     }

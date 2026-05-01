@@ -33,6 +33,7 @@ public final class FuncionCosto {
         double costoRutas = 0.0;
         int incumplidas = 0;
         int aTiempo = 0;
+        int rutasParciales = 0;
         double sumaTransito = 0.0;
         int rutasContadas = 0;
 
@@ -60,7 +61,10 @@ public final class FuncionCosto {
                 cargaPorVuelo.merge(vuelo.getIdVueloInstancia(), 1, Integer::sum);
             }
 
-            if (cumplePlazo(ruta, maleta)) {
+            if (esRutaParcial(ruta, maleta)) {
+                rutasParciales++;
+                incumplidas++;
+            } else if (cumplePlazo(ruta, maleta)) {
                 aTiempo++;
             } else {
                 incumplidas++;
@@ -78,6 +82,7 @@ public final class FuncionCosto {
         final double costoTotal =
                 costoRutas
                 + params.getW1MaletasIncumplidas() * incumplidas
+                + params.getPenalizacionRutaParcial() * rutasParciales
                 + params.getW3OverflowVuelo() * overflowVuelos
                 + params.getW4OverflowAlmacen() * overflowAlmacenes
                 + params.getW5TransitoPromedio() * transitoPromedio;
@@ -140,6 +145,9 @@ public final class FuncionCosto {
         if (!conexionesCoherentes(subrutas)) {
             costo += params.getPenalizacionRutaInvalida();
         }
+        if (esRutaParcial(ruta, maleta)) {
+            costo += params.getPenalizacionRutaParcial();
+        }
 
         return costo;
     }
@@ -164,7 +172,21 @@ public final class FuncionCosto {
         if (ruta == null || ruta.getEstado() == EstadoRuta.FALLIDA) {
             return false;
         }
+        if (esRutaParcial(ruta, maleta)) {
+            return false;
+        }
         return calcularExcesoHoras(ruta, maleta) <= 0.0;
+    }
+
+    private static boolean esRutaParcial(final Ruta ruta, final Maleta maleta) {
+        if (ruta == null || maleta == null || maleta.getPedido() == null) {
+            return false;
+        }
+        final List<VueloInstancia> subrutas = ruta.getSubrutas();
+        if (subrutas == null || subrutas.isEmpty()) {
+            return false;
+        }
+        return !ultimoVueloCoherente(subrutas, maleta.getPedido().getAeropuertoDestino());
     }
 
     private static boolean primerVueloCoherente(final List<VueloInstancia> subrutas, final Aeropuerto origen) {
@@ -244,7 +266,8 @@ public final class FuncionCosto {
             if (vuelo == null) {
                 continue;
             }
-            final int exceso = entry.getValue() - vuelo.getCapacidadMaxima();
+            final int capacidadDisponible = Math.max(0, vuelo.getCapacidadDisponible());
+            final int exceso = entry.getValue() - capacidadDisponible;
             if (exceso > 0) {
                 overflow += exceso;
             }

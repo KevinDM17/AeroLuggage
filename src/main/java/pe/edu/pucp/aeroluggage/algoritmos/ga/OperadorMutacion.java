@@ -21,7 +21,7 @@ import pe.edu.pucp.aeroluggage.dominio.enums.EstadoRuta;
 public final class OperadorMutacion {
 
     public enum Tipo {
-        REROUTE_MALETA, SWAP_MALETAS, CAMBIO_TRAMO
+        REROUTE_MALETA, SWAP_MALETAS, CAMBIO_TRAMO, RESCATE_FALLIDA
     }
 
     private OperadorMutacion() {
@@ -38,6 +38,7 @@ public final class OperadorMutacion {
             case REROUTE_MALETA -> rerouteMaleta(original, instancia, params, random);
             case SWAP_MALETAS -> swapMaletas(original, random);
             case CAMBIO_TRAMO -> cambiarTramo(original, instancia, params, random);
+            case RESCATE_FALLIDA -> rescatarRutaFallida(original, instancia, params, random);
             default -> {
                 // no-op
             }
@@ -49,9 +50,12 @@ public final class OperadorMutacion {
     private static Tipo elegirTipo(final Random random) {
         final double p = random.nextDouble();
         if (p < 0.5) {
-            return Tipo.REROUTE_MALETA;
+            return Tipo.RESCATE_FALLIDA;
         }
         if (p < 0.8) {
+            return Tipo.REROUTE_MALETA;
+        }
+        if (p < 0.92) {
             return Tipo.CAMBIO_TRAMO;
         }
         return Tipo.SWAP_MALETAS;
@@ -63,7 +67,7 @@ public final class OperadorMutacion {
         if (rutas.isEmpty() || instancia.getGrafo() == null) {
             return;
         }
-        final Ruta ruta = rutas.get(random.nextInt(rutas.size()));
+        final Ruta ruta = seleccionarRutaDebil(rutas, random);
         if (ruta == null) {
             return;
         }
@@ -84,9 +88,12 @@ public final class OperadorMutacion {
                 pedido.getFechaRegistro(), pedido.getFechaHoraPlazo(),
                 instancia.getGrafo(), params.getMinutosConexion(), bloqueados);
         if (nuevoCamino == null) {
-            ruta.setSubrutas(new ArrayList<>());
-            ruta.setEstado(EstadoRuta.FALLIDA);
-            ruta.setDuracion(0.0);
+            return;
+        }
+        final boolean mejoraCobertura = ruta.getEstado() == EstadoRuta.FALLIDA
+                || ruta.getSubrutas() == null
+                || ruta.getSubrutas().isEmpty();
+        if (!mejoraCobertura && ruta.getDuracion() > 0.0 && duracionHoras(nuevoCamino) >= ruta.getDuracion()) {
             return;
         }
         ruta.setSubrutas(new ArrayList<>(nuevoCamino));
@@ -131,7 +138,7 @@ public final class OperadorMutacion {
         if (rutas.isEmpty() || instancia.getGrafo() == null) {
             return;
         }
-        final Ruta ruta = rutas.get(random.nextInt(rutas.size()));
+        final Ruta ruta = seleccionarRutaDebil(rutas, random);
         if (ruta == null || ruta.getSubrutas() == null || ruta.getSubrutas().size() < 2) {
             rerouteMaleta(solucion, instancia, params, random);
             return;
@@ -164,9 +171,102 @@ public final class OperadorMutacion {
         final List<VueloInstancia> nuevo = new ArrayList<>(idxCorte + suffix.size());
         nuevo.addAll(actual.subList(0, idxCorte));
         nuevo.addAll(suffix);
+        if (!terminaEnDestino(nuevo, pedido)) {
+            return;
+        }
+        if (ruta.getDuracion() > 0.0 && duracionHoras(nuevo) >= ruta.getDuracion() && ruta.getEstado() != EstadoRuta.FALLIDA) {
+            return;
+        }
         ruta.setSubrutas(nuevo);
         ruta.setEstado(nuevo.isEmpty() ? EstadoRuta.FALLIDA : EstadoRuta.PLANIFICADA);
         ruta.setDuracion(duracionHoras(nuevo));
+    }
+
+    private static void rescatarRutaFallida(final Solucion solucion, final InstanciaProblema instancia,
+                                            final ParametrosGA params, final Random random) {
+        final List<Ruta> rutas = solucion.getSolucion();
+        if (rutas.isEmpty() || instancia.getGrafo() == null) {
+            return;
+        }
+        final List<Ruta> candidatas = new ArrayList<>();
+        for (final Ruta ruta : rutas) {
+            if (ruta == null) {
+                continue;
+            }
+            final boolean sinCobertura = ruta.getEstado() == EstadoRuta.FALLIDA
+                    || ruta.getSubrutas() == null
+                    || ruta.getSubrutas().isEmpty();
+            if (sinCobertura) {
+                candidatas.add(ruta);
+            }
+        }
+        if (candidatas.isEmpty()) {
+            rerouteMaleta(solucion, instancia, params, random);
+            return;
+        }
+        final Ruta ruta = candidatas.get(random.nextInt(candidatas.size()));
+        final Maleta maleta = buscarMaleta(instancia, ruta.getIdMaleta());
+        if (maleta == null || maleta.getPedido() == null) {
+            return;
+        }
+        final Pedido pedido = maleta.getPedido();
+        final List<VueloInstancia> nuevoCamino = GARuteadorCache.rutear(
+                pedido.getAeropuertoOrigen(),
+                pedido.getAeropuertoDestino(),
+                pedido.getFechaRegistro(),
+                pedido.getFechaHoraPlazo(),
+                instancia.getGrafo(),
+                params.getMinutosConexion(),
+                new HashSet<>()
+        );
+        if (nuevoCamino == null || nuevoCamino.isEmpty()) {
+            return;
+        }
+        if (!terminaEnDestino(nuevoCamino, pedido)) {
+            return;
+        }
+        ruta.setSubrutas(new ArrayList<>(nuevoCamino));
+        ruta.setEstado(EstadoRuta.PLANIFICADA);
+        ruta.setDuracion(duracionHoras(nuevoCamino));
+    }
+
+    private static Ruta seleccionarRutaDebil(final List<Ruta> rutas, final Random random) {
+        final List<Ruta> debiles = new ArrayList<>();
+        final List<Ruta> largas = new ArrayList<>();
+        for (final Ruta ruta : rutas) {
+            if (ruta == null) {
+                continue;
+            }
+            final boolean fallida = ruta.getEstado() == EstadoRuta.FALLIDA
+                    || ruta.getSubrutas() == null
+                    || ruta.getSubrutas().isEmpty();
+            if (fallida) {
+                debiles.add(ruta);
+                continue;
+            }
+            if (ruta.getDuracion() > 0.75) {
+                largas.add(ruta);
+            }
+        }
+        if (!debiles.isEmpty()) {
+            return debiles.get(random.nextInt(debiles.size()));
+        }
+        if (!largas.isEmpty()) {
+            return largas.get(random.nextInt(largas.size()));
+        }
+        return rutas.get(random.nextInt(rutas.size()));
+    }
+
+    private static boolean terminaEnDestino(final List<VueloInstancia> vuelos, final Pedido pedido) {
+        if (vuelos == null || vuelos.isEmpty() || pedido == null || pedido.getAeropuertoDestino() == null) {
+            return false;
+        }
+        final VueloInstancia ultimoVuelo = vuelos.get(vuelos.size() - 1);
+        return ultimoVuelo != null
+                && ultimoVuelo.getAeropuertoDestino() != null
+                && pedido.getAeropuertoDestino().getIdAeropuerto() != null
+                && pedido.getAeropuertoDestino().getIdAeropuerto()
+                .equals(ultimoVuelo.getAeropuertoDestino().getIdAeropuerto());
     }
 
     private static Maleta buscarMaleta(final InstanciaProblema instancia, final String idMaleta) {

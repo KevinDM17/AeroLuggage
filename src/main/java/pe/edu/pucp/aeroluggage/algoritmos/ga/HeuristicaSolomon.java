@@ -36,6 +36,11 @@ public final class HeuristicaSolomon {
         return construir(instancia, params, random, 0.35);
     }
 
+    public static Solucion construirDificilesPrimero(final InstanciaProblema instancia, final ParametrosGA params,
+                                                     final Random random) {
+        return construirDificilesPrimero(instancia, params, random, 0.15);
+    }
+
     private static Solucion construir(final InstanciaProblema instancia, final ParametrosGA params,
                                       final Random random, final double nivelAleatoriedad) {
         if (instancia == null || instancia.getMaletas() == null || instancia.getMaletas().isEmpty()) {
@@ -100,6 +105,74 @@ public final class HeuristicaSolomon {
         return solucion;
     }
 
+    private static Solucion construirDificilesPrimero(final InstanciaProblema instancia, final ParametrosGA params,
+                                                      final Random random, final double nivelAleatoriedad) {
+        if (instancia == null || instancia.getMaletas() == null || instancia.getMaletas().isEmpty()) {
+            return new Solucion();
+        }
+        final GrafoTiempoExpandido grafo = instancia.getGrafo();
+        if (grafo == null) {
+            return new Solucion();
+        }
+
+        final List<Maleta> pendientes = new ArrayList<>(instancia.getMaletas());
+        pendientes.removeIf(m -> m == null || m.getPedido() == null);
+        pendientes.sort(Comparator.comparingDouble(HeuristicaSolomon::indiceDificultad).reversed());
+
+        final Map<String, Integer> consumoVuelo = new HashMap<>();
+        final Map<String, Integer> consumoAeropuerto = new HashMap<>();
+        final Map<String, Aeropuerto> aeropuertos = instancia.indexarAeropuertosPorIcao();
+        final ArrayList<Ruta> rutas = new ArrayList<>(pendientes.size());
+        int secuenciaRuta = 1;
+
+        while (!pendientes.isEmpty()) {
+            final int indice = seleccionarIndice(pendientes, nivelAleatoriedad, random);
+            final Maleta maleta = pendientes.remove(indice);
+            final Pedido pedido = maleta.getPedido();
+            final List<VueloInstancia> camino = rutearConCapacidad(
+                    pedido,
+                    pedido.getFechaRegistro(),
+                    pedido.getFechaHoraPlazo(),
+                    grafo,
+                    params,
+                    new HashSet<>(),
+                    consumoVuelo,
+                    consumoAeropuerto,
+                    aeropuertos
+            );
+
+            final Ruta ruta = new Ruta();
+            ruta.setIdRuta(String.format("R%08d", secuenciaRuta++));
+            ruta.setIdMaleta(maleta.getIdMaleta());
+            ruta.setPlazoMaximoDias(Ruta.calcularPlazo(pedido.getAeropuertoOrigen(), pedido.getAeropuertoDestino()));
+            if (camino == null) {
+                ruta.setSubrutas(new ArrayList<>());
+                ruta.setEstado(EstadoRuta.FALLIDA);
+                ruta.setDuracion(0.0);
+            } else {
+                ruta.setSubrutas(new ArrayList<>(camino));
+                ruta.setEstado(camino.isEmpty() ? EstadoRuta.FALLIDA : EstadoRuta.PLANIFICADA);
+                ruta.setDuracion(duracionHoras(camino));
+                for (final VueloInstancia vueloInstancia : camino) {
+                    consumoVuelo.merge(vueloInstancia.getIdVueloInstancia(), 1, Integer::sum);
+                    if (vueloInstancia.getAeropuertoOrigen() != null
+                            && vueloInstancia.getAeropuertoOrigen().getIdAeropuerto() != null) {
+                        consumoAeropuerto.merge(vueloInstancia.getAeropuertoOrigen().getIdAeropuerto(), 1, Integer::sum);
+                    }
+                    if (vueloInstancia.getAeropuertoDestino() != null
+                            && vueloInstancia.getAeropuertoDestino().getIdAeropuerto() != null) {
+                        consumoAeropuerto.merge(vueloInstancia.getAeropuertoDestino().getIdAeropuerto(), 1, Integer::sum);
+                    }
+                }
+            }
+            rutas.add(ruta);
+        }
+
+        final Solucion solucion = new Solucion(rutas);
+        solucion.calcularMetricas();
+        return solucion;
+    }
+
     private static List<VueloInstancia> rutearConCapacidad(final Pedido pedido, final LocalDateTime tListo,
                                                            final LocalDateTime tLimite,
                                                            final GrafoTiempoExpandido grafo,
@@ -108,7 +181,7 @@ public final class HeuristicaSolomon {
                                                            final Map<String, Integer> consumo,
                                                            final Map<String, Integer> consumoAeropuerto,
                                                            final Map<String, Aeropuerto> aeropuertos) {
-        for (int intento = 0; intento < 4; intento++) {
+        for (int intento = 0; intento < 12; intento++) {
             final List<VueloInstancia> camino = GARuteadorCache.rutear(
                     pedido.getAeropuertoOrigen(), pedido.getAeropuertoDestino(),
                     tListo, tLimite, grafo, params.getMinutosConexion(), bloqueados, consumo);
@@ -180,6 +253,26 @@ public final class HeuristicaSolomon {
             return pedido.getFechaRegistro();
         }
         return LocalDateTime.MAX;
+    }
+
+    private static double indiceDificultad(final Maleta maleta) {
+        if (maleta == null || maleta.getPedido() == null) {
+            return Double.NEGATIVE_INFINITY;
+        }
+        final Pedido pedido = maleta.getPedido();
+        double puntaje = 0.0;
+        final LocalDateTime fechaRegistro = pedido.getFechaRegistro();
+        final LocalDateTime plazo = pedido.getFechaHoraPlazo();
+        if (fechaRegistro != null && plazo != null) {
+            puntaje += 10_000D - Math.max(0L, java.time.Duration.between(fechaRegistro, plazo).toMinutes());
+        }
+        final Aeropuerto origen = pedido.getAeropuertoOrigen();
+        final Aeropuerto destino = pedido.getAeropuertoDestino();
+        if (origen != null && destino != null && origen.getCiudad() != null && destino.getCiudad() != null
+                && origen.getCiudad().getContinente() != destino.getCiudad().getContinente()) {
+            puntaje += 500D;
+        }
+        return puntaje;
     }
 
     private static double duracionHoras(final List<VueloInstancia> camino) {

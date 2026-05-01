@@ -7,16 +7,16 @@ minutosConexion=10
 tiempoRecojo=10
 
 # Rango de fechas de simulacion (yyyy-MM-dd)
-simulacion.fecha.inicio=2027-02-07
-simulacion.fecha.fin=2027-02-07
-simulacion.ventana.dias=3
+simulacion.fecha.inicio=2026-07-17
+simulacion.fecha.fin=2026-07-17
+simulacion.ventana.dias=4
 simulacion.iteraciones=1
 simulacion.programada.sa.segundos=0
 simulacion.programada.k=720
 simulacion.programada.sleep.habilitado=true
 
 # ---------- Parametros GA ----------
-ga.tamanioPoblacion=15
+ga.tamanioPoblacion=30
 ga.maxGeneraciones=50
 ga.maxSinMejora=10
 ga.tiempoMaximoMs=60000
