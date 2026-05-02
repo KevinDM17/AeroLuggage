@@ -486,6 +486,7 @@ public final class SimulacionTemporalRunner {
         final long inicioEjecucionMs = System.currentTimeMillis();
         final ConfiguracionProgramada configuracionProgramada = construirConfiguracionProgramada(contexto.params());
         final long tiempoRecojo = longParam(contexto.params(), "tiempoRecojo", DEFAULT_TIEMPO_RECOJO);
+        final boolean esGa = algoritmo instanceof GA;
         final Set<String> maletasEnrutadas = new HashSet<>();
         final ResultadoSimulacion resultado = new ResultadoSimulacion();
         ResultadoFitnessExperimental fitnessExperimental = new ResultadoFitnessExperimental(0D, 0, 0D, 0D, 0D);
@@ -565,15 +566,26 @@ public final class SimulacionTemporalRunner {
             Solucion solucion = null;
             double fitnessAlgoritmoCiclo = 0D;
             ResultadoFitnessExperimental fitnessCiclo = new ResultadoFitnessExperimental(0D, 0, 0D, 0D, 0D);
+            final LocalDateTime ventanaCompromisoGa = esGa
+                    ? finCicloDatos.plus(configuracionProgramada.sc())
+                    : null;
             final List<Maleta> maletasReplanificables = construirMaletasReplanificables(
                     registradas,
                     estadosPorMaleta,
                     contextoEjecucion.indiceAeropuertos(),
-                    finCicloDatos
+                    finCicloDatos,
+                    esGa,
+                    ventanaCompromisoGa
             );
 
             if (!maletasReplanificables.isEmpty()) {
-                liberarCapacidadFuturaReplanificable(estadosPorMaleta, rutasProgramadasPorMaleta);
+                liberarCapacidadFuturaReplanificable(
+                        estadosPorMaleta,
+                        rutasProgramadasPorMaleta,
+                        finCicloDatos,
+                        esGa,
+                        ventanaCompromisoGa
+                );
                 final VentanaVuelos ventana = construirVentanaVuelos(
                         contextoEjecucion.todosVuelosInstancia(),
                         contextoEjecucion.todosVuelosProgramados(),
@@ -608,7 +620,10 @@ public final class SimulacionTemporalRunner {
                         estadosPorMaleta,
                         rutasProgramadasPorMaleta,
                         nuevasRutas,
-                        maletasEnrutadas
+                        maletasEnrutadas,
+                        finCicloDatos,
+                        esGa,
+                        ventanaCompromisoGa
                 );
                 reservarCapacidadRutas(nuevasRutas);
                 recalcularOcupacionAeropuertos(
@@ -1055,7 +1070,9 @@ public final class SimulacionTemporalRunner {
             final List<Maleta> registradas,
             final Map<String, EstadoMaletaTemporal> estadosPorMaleta,
             final Map<String, Aeropuerto> indiceAeropuertos,
-            final LocalDateTime currentTime
+            final LocalDateTime currentTime,
+            final boolean esGa,
+            final LocalDateTime ventanaCompromisoGa
     ) {
         final List<Maleta> maletasReplanificables = new ArrayList<>();
         for (final Maleta maleta : registradas) {
@@ -1063,7 +1080,7 @@ public final class SimulacionTemporalRunner {
                 continue;
             }
             final EstadoMaletaTemporal estado = estadosPorMaleta.get(maleta.getIdMaleta());
-            if (estado == null || !estado.replanificable()) {
+            if (!esReplanificableSegunAlgoritmo(estado, currentTime, esGa, ventanaCompromisoGa)) {
                 continue;
             }
             maletasReplanificables.add(clonarMaletaReplanificable(maleta, estado, indiceAeropuertos, currentTime));
@@ -1097,11 +1114,14 @@ public final class SimulacionTemporalRunner {
 
     private static void liberarCapacidadFuturaReplanificable(
             final Map<String, EstadoMaletaTemporal> estadosPorMaleta,
-            final Map<String, RutaMaletaProgramada> rutasProgramadasPorMaleta
+            final Map<String, RutaMaletaProgramada> rutasProgramadasPorMaleta,
+            final LocalDateTime currentTime,
+            final boolean esGa,
+            final LocalDateTime ventanaCompromisoGa
     ) {
         for (final Map.Entry<String, EstadoMaletaTemporal> entry : estadosPorMaleta.entrySet()) {
             final EstadoMaletaTemporal estado = entry.getValue();
-            if (estado == null || !estado.replanificable()) {
+            if (!esReplanificableSegunAlgoritmo(estado, currentTime, esGa, ventanaCompromisoGa)) {
                 continue;
             }
             final RutaMaletaProgramada rutaProgramada = rutasProgramadasPorMaleta.get(entry.getKey());
@@ -1189,17 +1209,20 @@ public final class SimulacionTemporalRunner {
             final Map<String, EstadoMaletaTemporal> estadosPorMaleta,
             final Map<String, RutaMaletaProgramada> rutasProgramadasPorMaleta,
             final Map<String, List<VueloInstancia>> nuevasRutas,
-            final Set<String> maletasEnrutadas
+            final Set<String> maletasEnrutadas,
+            final LocalDateTime currentTime,
+            final boolean esGa,
+            final LocalDateTime ventanaCompromisoGa
     ) {
         for (final Map.Entry<String, EstadoMaletaTemporal> entry : estadosPorMaleta.entrySet()) {
             final String idMaleta = entry.getKey();
             final EstadoMaletaTemporal estado = entry.getValue();
-            if (estado == null || !estado.replanificable()) {
+            if (!esReplanificableSegunAlgoritmo(estado, currentTime, esGa, ventanaCompromisoGa)) {
                 continue;
             }
             final List<VueloInstancia> nuevaRuta = nuevasRutas.get(idMaleta);
             if (nuevaRuta == null || nuevaRuta.isEmpty()) {
-                actualizarRutaSinSolucion(rutasProgramadasPorMaleta, estado);
+                actualizarRutaSinSolucion(rutasProgramadasPorMaleta, estado, esGa);
                 continue;
             }
             final List<VueloInstancia> rutaFusionada = new ArrayList<>(estado.vuelosEjecutados());
@@ -1211,8 +1234,12 @@ public final class SimulacionTemporalRunner {
 
     private static void actualizarRutaSinSolucion(
             final Map<String, RutaMaletaProgramada> rutasProgramadasPorMaleta,
-            final EstadoMaletaTemporal estado
+            final EstadoMaletaTemporal estado,
+            final boolean esGa
     ) {
+        if (esGa && rutaProgramadaSigueSiendoCoherente(estado)) {
+            return;
+        }
         if (estado.vuelosEjecutados().isEmpty()) {
             if (estado.estado() == EstadoOperacionMaleta.ESPERANDO_CONEXION) {
                 rutasProgramadasPorMaleta.put(
@@ -1228,6 +1255,72 @@ public final class SimulacionTemporalRunner {
                 estado.idMaleta(),
                 new RutaMaletaProgramada(new ArrayList<>(estado.vuelosEjecutados()), estado.aeropuertoActual())
         );
+    }
+
+    private static boolean esReplanificableSegunAlgoritmo(final EstadoMaletaTemporal estado,
+                                                           final LocalDateTime currentTime,
+                                                           final boolean esGa,
+                                                           final LocalDateTime ventanaCompromisoGa) {
+        if (estado == null || !estado.replanificable()) {
+            return false;
+        }
+        if (!esGa) {
+            return true;
+        }
+        return !tieneRutaComprometidaGa(estado, currentTime, ventanaCompromisoGa);
+    }
+
+    private static boolean tieneRutaComprometidaGa(final EstadoMaletaTemporal estado,
+                                                   final LocalDateTime currentTime,
+                                                   final LocalDateTime ventanaCompromisoGa) {
+        if (estado == null || estado.vuelosFuturos() == null || estado.vuelosFuturos().isEmpty()) {
+            return false;
+        }
+        if (currentTime == null || ventanaCompromisoGa == null) {
+            return false;
+        }
+        final VueloInstancia siguienteVuelo = estado.vuelosFuturos().get(0);
+        if (siguienteVuelo == null || siguienteVuelo.getFechaSalida() == null) {
+            return false;
+        }
+        final LocalDateTime primeraSalida = siguienteVuelo.getFechaSalida();
+        return !primeraSalida.isBefore(currentTime) && !primeraSalida.isAfter(ventanaCompromisoGa);
+    }
+
+    private static boolean rutaProgramadaSigueSiendoCoherente(final EstadoMaletaTemporal estado) {
+        if (estado == null) {
+            return false;
+        }
+        final List<VueloInstancia> rutaCompleta = new ArrayList<>();
+        rutaCompleta.addAll(estado.vuelosEjecutados());
+        rutaCompleta.addAll(estado.vuelosFuturos());
+        if (rutaCompleta.isEmpty()) {
+            return false;
+        }
+        for (int i = 0; i < rutaCompleta.size(); i++) {
+            final VueloInstancia actual = rutaCompleta.get(i);
+            if (actual == null || actual.getEstado() == EstadoVuelo.CANCELADO) {
+                return false;
+            }
+            if (i == rutaCompleta.size() - 1) {
+                continue;
+            }
+            final VueloInstancia siguiente = rutaCompleta.get(i + 1);
+            if (siguiente == null || actual.getAeropuertoDestino() == null || siguiente.getAeropuertoOrigen() == null) {
+                return false;
+            }
+            final String destinoActual = actual.getAeropuertoDestino().getIdAeropuerto();
+            final String origenSiguiente = siguiente.getAeropuertoOrigen().getIdAeropuerto();
+            if (destinoActual == null || !destinoActual.equals(origenSiguiente)) {
+                return false;
+            }
+            if (actual.getFechaLlegada() != null
+                    && siguiente.getFechaSalida() != null
+                    && actual.getFechaLlegada().isAfter(siguiente.getFechaSalida())) {
+                return false;
+            }
+        }
+        return true;
     }
 
     private static boolean esMaletaSeguimiento(final String idMaleta) {
