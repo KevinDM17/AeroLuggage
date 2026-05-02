@@ -214,6 +214,106 @@ public final class SimulacionTemporalRunner {
         reportarExperimento(historial, iteraciones, ejecutarGa, ejecutarAco);
     }
 
+    public static void ejecutarDetallado() {
+        final ContextoSimulacion contexto = cargarContexto();
+        final boolean ejecutarGa = Boolean.parseBoolean(contexto.params().getProperty("ejecutar.ga", "true"));
+        final boolean ejecutarAco = Boolean.parseBoolean(contexto.params().getProperty("ejecutar.aco", "true"));
+        if (!ejecutarGa && !ejecutarAco) {
+            throw new IllegalStateException("No hay algoritmos habilitados en test_params.txt");
+        }
+        final int iteraciones = intParam(contexto.params(), "simulacion.iteraciones", 30);
+        final Random rng = new Random();
+        final List<ResultadoIteracion> historial = new ArrayList<>();
+        final ExportadorTrazabilidadDetallada exportadorDetallado = new ExportadorTrazabilidadDetallada(RESULTADOS_DIR);
+
+        try {
+            Files.createDirectories(RESULTADOS_DIR);
+            inicializarCsvFitnessExperimental();
+        } catch (final IOException exception) {
+            throw new IllegalStateException("No se pudo crear directorio de resultados", exception);
+        }
+
+        System.out.printf("%n=== DETALLADO: %d iteraciones [%s -> %s] ===%n",
+                iteraciones, contexto.fechaInicio(), contexto.fechaFin());
+
+        for (int i = 1; i <= iteraciones; i++) {
+            final long semilla = rng.nextLong();
+            System.out.printf("%n-- Iteracion detallada %d/%d  semilla=%d --%n", i, iteraciones, semilla);
+
+            ResultadoSimulacion resGA = null;
+            ResultadoSimulacion resACO = null;
+
+            final boolean ejecutarGaPrimero = i % 2 != 0;
+            if (ejecutarGaPrimero && ejecutarGa) {
+                final ParametrosGA pGA = construirParametrosGA(contexto.params());
+                pGA.setSemilla(semilla);
+                resGA = ejecutarSimulacion(
+                        new GA(pGA),
+                        crearContextoEjecucion(contexto),
+                        "GA-" + i,
+                        contexto,
+                        true
+                );
+                exportadorDetallado.exportar("GA", i, semilla, resGA, contexto);
+            }
+            if (ejecutarAco) {
+                final ACOConfiguracion cACO = construirConfiguracionACO(contexto.params());
+                cACO.setSemilla(semilla);
+                resACO = ejecutarSimulacion(
+                        new ACO(cACO),
+                        crearContextoEjecucion(contexto),
+                        "ACO-" + i,
+                        contexto,
+                        true
+                );
+                exportadorDetallado.exportar("ACO", i, semilla, resACO, contexto);
+            }
+            if (!ejecutarGaPrimero && ejecutarGa) {
+                final ParametrosGA pGA = construirParametrosGA(contexto.params());
+                pGA.setSemilla(semilla);
+                resGA = ejecutarSimulacion(
+                        new GA(pGA),
+                        crearContextoEjecucion(contexto),
+                        "GA-" + i,
+                        contexto,
+                        true
+                );
+                exportadorDetallado.exportar("GA", i, semilla, resGA, contexto);
+            }
+
+            final ExportadorFitnessExperimental exportador =
+                    new ExportadorFitnessExperimental(FITNESS_EXPERIMENTAL_CSV);
+            if (resGA != null) {
+                exportador.registrar("GA", semilla, resGA);
+            }
+            if (resACO != null) {
+                exportador.registrar("ACO", semilla, resACO);
+            }
+            exportador.reportarArchivo();
+
+            historial.add(new ResultadoIteracion(i, semilla, resGA, resACO));
+
+            System.out.printf("[ITER %2d] semilla=%-20d", i, semilla);
+            if (resGA != null) {
+                System.out.printf("  GA: %-10s enr=%-5d fit=%.3f t=%dms",
+                        resGA.colapsada ? "COLAPSO" : "OK",
+                        resGA.totalMaletasEnrutadas,
+                        fitnessExperimentalValor(resGA),
+                        resGA.tiempoEjecucionMs);
+            }
+            if (resACO != null) {
+                System.out.printf("  ACO: %-10s enr=%-5d fit=%.3f t=%dms",
+                        resACO.colapsada ? "COLAPSO" : "OK",
+                        resACO.totalMaletasEnrutadas,
+                        fitnessExperimentalValor(resACO),
+                        resACO.tiempoEjecucionMs);
+            }
+            System.out.println();
+        }
+
+        reportarExperimento(historial, iteraciones, ejecutarGa, ejecutarAco);
+    }
+
     private static ContextoSimulacion cargarContexto() {
         final long inicioCargaMs = System.currentTimeMillis();
         final Properties params = cargarParametros();
@@ -368,6 +468,14 @@ public final class SimulacionTemporalRunner {
                                                           final ContextoEjecucion contextoEjecucion,
                                                           final String nombre,
                                                           final ContextoSimulacion contexto) {
+        return ejecutarSimulacion(algoritmo, contextoEjecucion, nombre, contexto, false);
+    }
+
+    private static ResultadoSimulacion ejecutarSimulacion(final Metaheuristico algoritmo,
+                                                          final ContextoEjecucion contextoEjecucion,
+                                                          final String nombre,
+                                                          final ContextoSimulacion contexto,
+                                                          final boolean capturarTrazabilidad) {
         final List<Maleta> registradas = new ArrayList<>();
         final Map<String, Integer> ocupacion = new HashMap<>();
         final Map<String, RutaMaletaProgramada> rutasProgramadasPorMaleta = new HashMap<>();
@@ -452,7 +560,7 @@ public final class SimulacionTemporalRunner {
                     tiempoRecojo
             );
 
-            int enrutadasEnCiclo = 0;
+            int rutasConfirmadasEnCiclo = 0;
             final int nuevasEnCiclo = registradas.size() - registradasAntes;
             Solucion solucion = null;
             double fitnessAlgoritmoCiclo = 0D;
@@ -511,7 +619,7 @@ public final class SimulacionTemporalRunner {
                         finCicloDatos,
                         tiempoRecojo
                 );
-                enrutadasEnCiclo = nuevasRutas.size();
+                rutasConfirmadasEnCiclo = nuevasRutas.size();
             }
 
             final Map<String, EstadoMaletaTemporal> estadosActualizados = evaluarEstadosMaletas(
@@ -520,7 +628,9 @@ public final class SimulacionTemporalRunner {
                     finCicloDatos,
                     tiempoRecojo
             );
-            final int pendientesSinRuta = identificarNoRuteadas(estadosActualizados, finCicloDatos).size();
+            final List<MaletaNoRuteada> noRuteadasCiclo = identificarNoRuteadas(estadosActualizados, finCicloDatos);
+            final int pendientesSinRuta = noRuteadasCiclo.size();
+            final int enrutadasVigentes = Math.max(0, registradas.size() - pendientesSinRuta);
             final DetalleColapso detalleColapso = detectarDetalleColapso(
                     estadosActualizados,
                     contextoEjecucion.aeropuertos(),
@@ -537,11 +647,26 @@ public final class SimulacionTemporalRunner {
             historial.add(new PasoSimulacion(
                     finCicloDatos,
                     nuevasEnCiclo,
-                    enrutadasEnCiclo,
+                    enrutadasVigentes,
                     pendientesSinRuta,
                     solucion != null ? solucion.getSemaforo() : null,
                     aeropuertoMasCargado
             ));
+            if (capturarTrazabilidad) {
+                resultado.trazabilidadCiclos.add(construirTrazabilidadCiclo(
+                        numeroCiclo,
+                        inicioCicloDatos,
+                        finCicloDatos,
+                        nuevasEnCiclo,
+                        enrutadasVigentes,
+                        rutasConfirmadasEnCiclo,
+                        pendientesSinRuta,
+                        noRuteadasCiclo,
+                        estadosPorMaleta,
+                        estadosActualizados,
+                        rutasProgramadasPorMaleta
+                ));
+            }
 
             final long taMs = System.currentTimeMillis() - inicioCicloRealMs;
             if (taMs > maxTaMs) {
@@ -572,7 +697,8 @@ public final class SimulacionTemporalRunner {
                     inicioCicloDatos,
                     finCicloDatos,
                     nuevasEnCiclo,
-                    enrutadasEnCiclo,
+                    enrutadasVigentes,
+                    rutasConfirmadasEnCiclo,
                     pendientesSinRuta,
                     fitnessAlgoritmoCiclo,
                     fitnessCiclo.getFitnessExperimental(),
@@ -1185,6 +1311,119 @@ public final class SimulacionTemporalRunner {
         return noRuteadas;
     }
 
+    private static TrazabilidadCiclo construirTrazabilidadCiclo(final int numeroCiclo,
+                                                                final LocalDateTime inicioCicloDatos,
+                                                                final LocalDateTime finCicloDatos,
+                                                                final int nuevasEnCiclo,
+                                                                final int enrutadasVigentes,
+                                                                final int rutasConfirmadasEnCiclo,
+                                                                final int pendientesSinRuta,
+                                                                final List<MaletaNoRuteada> noRuteadasCiclo,
+                                                                final Map<String, EstadoMaletaTemporal> estadosAntes,
+                                                                final Map<String, EstadoMaletaTemporal> estadosDespues,
+                                                                final Map<String, RutaMaletaProgramada> rutasProgramadasPorMaleta) {
+        final List<TrazabilidadMaletaPendiente> maletas = new ArrayList<>(noRuteadasCiclo.size());
+        for (final MaletaNoRuteada noRuteada : noRuteadasCiclo) {
+            if (noRuteada == null || noRuteada.idMaleta() == null) {
+                continue;
+            }
+            final EstadoMaletaTemporal estadoAntes = estadosAntes.get(noRuteada.idMaleta());
+            final EstadoMaletaTemporal estadoDespues = estadosDespues.get(noRuteada.idMaleta());
+            final String rutaPrevia = estadoAntes != null
+                    ? combinarRutas(estadoAntes.vuelosEjecutados(), estadoAntes.vuelosFuturos())
+                    : "[]";
+            final String rutaFuturaPerdida = estadoAntes != null
+                    ? formatearRutaVuelos(estadoAntes.vuelosFuturos())
+                    : "[]";
+            final String rutaActual = estadoDespues != null
+                    ? combinarRutas(estadoDespues.vuelosEjecutados(), estadoDespues.vuelosFuturos())
+                    : "[]";
+            final String maletasBeneficiadas = identificarMaletasQueUsanRutaPrevia(
+                    noRuteada.idMaleta(),
+                    estadoAntes,
+                    rutasProgramadasPorMaleta
+            );
+            maletas.add(new TrazabilidadMaletaPendiente(
+                    noRuteada.idMaleta(),
+                    noRuteada.aeropuertoActual(),
+                    noRuteada.aeropuertoDestino(),
+                    noRuteada.plazo(),
+                    noRuteada.motivo(),
+                    estadoAntes != null ? estadoAntes.estado() : null,
+                    estadoDespues != null ? estadoDespues.estado() : null,
+                    rutaPrevia,
+                    rutaFuturaPerdida,
+                    rutaActual,
+                    maletasBeneficiadas
+            ));
+        }
+        return new TrazabilidadCiclo(
+                numeroCiclo,
+                inicioCicloDatos,
+                finCicloDatos,
+                nuevasEnCiclo,
+                enrutadasVigentes,
+                rutasConfirmadasEnCiclo,
+                pendientesSinRuta,
+                maletas
+        );
+    }
+
+    private static String combinarRutas(final List<VueloInstancia> ejecutados, final List<VueloInstancia> futuros) {
+        final List<VueloInstancia> ruta = new ArrayList<>();
+        if (ejecutados != null) {
+            ruta.addAll(ejecutados);
+        }
+        if (futuros != null) {
+            ruta.addAll(futuros);
+        }
+        return formatearRutaVuelos(ruta);
+    }
+
+    private static String identificarMaletasQueUsanRutaPrevia(final String idMaletaPendiente,
+                                                              final EstadoMaletaTemporal estadoAntes,
+                                                              final Map<String, RutaMaletaProgramada> rutasProgramadasPorMaleta) {
+        if (estadoAntes == null || estadoAntes.vuelosFuturos() == null || estadoAntes.vuelosFuturos().isEmpty()) {
+            return "sin ruta previa futura";
+        }
+        final Set<String> vuelosPrevios = new HashSet<>();
+        for (final VueloInstancia vueloInstancia : estadoAntes.vuelosFuturos()) {
+            if (vueloInstancia != null && vueloInstancia.getIdVueloInstancia() != null) {
+                vuelosPrevios.add(vueloInstancia.getIdVueloInstancia());
+            }
+        }
+        if (vuelosPrevios.isEmpty()) {
+            return "sin ruta previa futura";
+        }
+        final List<String> maletasBeneficiadas = new ArrayList<>();
+        for (final Map.Entry<String, RutaMaletaProgramada> entry : rutasProgramadasPorMaleta.entrySet()) {
+            if (entry.getKey() == null || entry.getKey().equals(idMaletaPendiente) || entry.getValue() == null) {
+                continue;
+            }
+            final List<VueloInstancia> vuelos = entry.getValue().vuelos();
+            if (vuelos == null || vuelos.isEmpty()) {
+                continue;
+            }
+            boolean comparteVuelo = false;
+            for (final VueloInstancia vueloInstancia : vuelos) {
+                if (vueloInstancia != null
+                        && vueloInstancia.getIdVueloInstancia() != null
+                        && vuelosPrevios.contains(vueloInstancia.getIdVueloInstancia())) {
+                    comparteVuelo = true;
+                    break;
+                }
+            }
+            if (comparteVuelo) {
+                maletasBeneficiadas.add(entry.getKey());
+            }
+        }
+        if (maletasBeneficiadas.isEmpty()) {
+            return "sin evidencia de ruta robada por otra maleta";
+        }
+        maletasBeneficiadas.sort(String::compareTo);
+        return String.join(", ", maletasBeneficiadas);
+    }
+
     private static int contarMaletasRuteadasFinales(final Map<String, EstadoMaletaTemporal> estadosPorMaleta) {
         if (estadosPorMaleta == null || estadosPorMaleta.isEmpty()) {
             return 0;
@@ -1280,20 +1519,22 @@ public final class SimulacionTemporalRunner {
                                              final LocalDateTime inicioCicloDatos,
                                              final LocalDateTime finCicloDatos,
                                              final int nuevasEnCiclo,
-                                             final int enrutadasEnCiclo,
+                                             final int enrutadasAcumuladas,
+                                             final int rutasConfirmadasEnCiclo,
                                              final int pendientes,
                                              final double fitnessAlgoritmoCiclo,
                                              final double fitnessCiclo,
                                              final long taMs,
                                              final long saMs) {
         System.out.printf(
-                "[CICLO %s #%d] datos=%s -> %s nuevas=%d enrutadas=%d pendientes=%d fitAlg=%.6f fitExp=%.3f TA=%d ms SA=%d ms%n",
+                "[CICLO %s #%d] datos=%s -> %s nuevas=%d enrutadas=%d rutasCiclo=%d pendientes=%d fitAlg=%.6f fitExp=%.3f TA=%d ms SA=%d ms%n",
                 nombre,
                 numeroCiclo,
                 inicioCicloDatos.truncatedTo(ChronoUnit.SECONDS),
                 finCicloDatos.truncatedTo(ChronoUnit.SECONDS),
                 nuevasEnCiclo,
-                enrutadasEnCiclo,
+                enrutadasAcumuladas,
+                rutasConfirmadasEnCiclo,
                 pendientes,
                 fitnessAlgoritmoCiclo,
                 fitnessCiclo,
@@ -1886,6 +2127,29 @@ public final class SimulacionTemporalRunner {
                                   Semaforo semaforo, String aeropuertoMasCargado) {
     }
 
+    private record TrazabilidadCiclo(int numeroCiclo,
+                                     LocalDateTime inicioCicloDatos,
+                                     LocalDateTime finCicloDatos,
+                                     int nuevasEnCiclo,
+                                     int enrutadasVigentes,
+                                     int rutasConfirmadasEnCiclo,
+                                     int pendientesSinRuta,
+                                     List<TrazabilidadMaletaPendiente> maletasPendientes) {
+    }
+
+    private record TrazabilidadMaletaPendiente(String idMaleta,
+                                               String aeropuertoActual,
+                                               String destino,
+                                               LocalDateTime plazo,
+                                               MotivoNoRuteada motivo,
+                                               EstadoOperacionMaleta estadoAntes,
+                                               EstadoOperacionMaleta estadoDespues,
+                                               String rutaPrevia,
+                                               String rutaFuturaPerdida,
+                                               String rutaActual,
+                                               String maletasBeneficiadas) {
+    }
+
     private record ResultadoIteracion(int iteracion, long semilla,
                                       ResultadoSimulacion resGA, ResultadoSimulacion resACO) {
     }
@@ -1962,6 +2226,7 @@ public final class SimulacionTemporalRunner {
         private ResultadoFitnessExperimental fitnessExperimental;
         private List<PasoSimulacion> historial = new ArrayList<>();
         private List<MaletaNoRuteada> detalleNoRuteadas = new ArrayList<>();
+        private List<TrazabilidadCiclo> trazabilidadCiclos = new ArrayList<>();
     }
 
     private static final class ExportadorFitnessExperimental {
@@ -2065,6 +2330,94 @@ public final class SimulacionTemporalRunner {
                 return "";
             }
             return String.valueOf(tiempoMs);
+        }
+    }
+
+    private static final class ExportadorTrazabilidadDetallada {
+        private final Path directorioBase;
+
+        private ExportadorTrazabilidadDetallada(final Path directorioBase) {
+            this.directorioBase = directorioBase;
+        }
+
+        private void exportar(final String algoritmo,
+                              final int iteracion,
+                              final long semilla,
+                              final ResultadoSimulacion resultado,
+                              final ContextoSimulacion contexto) {
+            if (resultado == null) {
+                return;
+            }
+            final String nombreArchivo = String.format(
+                    "trazabilidad-%s-iter-%02d-semilla-%d.txt",
+                    algoritmo.toLowerCase(java.util.Locale.ROOT),
+                    iteracion,
+                    Math.abs(semilla)
+            );
+            final Path archivo = directorioBase.resolve(nombreArchivo);
+            final List<String> lineas = new ArrayList<>();
+            lineas.add(String.format("TRAZABILIDAD DETALLADA - %s", algoritmo));
+            lineas.add(String.format("Iteracion: %d", iteracion));
+            lineas.add(String.format("Semilla: %d", semilla));
+            lineas.add(String.format("Rango fechas: %s -> %s", contexto.fechaInicio(), contexto.fechaFin()));
+            lineas.add(String.format("Total enrutadas final: %d", resultado.totalMaletasEnrutadas));
+            lineas.add(String.format("No ruteadas final: %d", resultado.totalMaletasPendientes));
+            lineas.add(String.format("Tiempo ejecucion ms: %d", resultado.tiempoEjecucionMs));
+            if (resultado.fitnessExperimental != null) {
+                lineas.add(String.format(
+                        java.util.Locale.US,
+                        "Fitness experimental: %.3f",
+                        resultado.fitnessExperimental.getFitnessExperimental()
+                ));
+            }
+            lineas.add("");
+
+            for (final TrazabilidadCiclo ciclo : resultado.trazabilidadCiclos) {
+                lineas.add(String.format(
+                        "=== CICLO #%d | datos=%s -> %s | nuevas=%d | enrutadas=%d | rutasCiclo=%d | pendientes=%d ===",
+                        ciclo.numeroCiclo(),
+                        ciclo.inicioCicloDatos().truncatedTo(ChronoUnit.SECONDS),
+                        ciclo.finCicloDatos().truncatedTo(ChronoUnit.SECONDS),
+                        ciclo.nuevasEnCiclo(),
+                        ciclo.enrutadasVigentes(),
+                        ciclo.rutasConfirmadasEnCiclo(),
+                        ciclo.pendientesSinRuta()
+                ));
+                if (ciclo.maletasPendientes().isEmpty()) {
+                    lineas.add("sin maletas pendientes en este ciclo");
+                    lineas.add("");
+                    continue;
+                }
+                for (final TrazabilidadMaletaPendiente maleta : ciclo.maletasPendientes()) {
+                    lineas.add(String.format(
+                            "maleta=%s destino=%s aeropuertoActual=%s plazo=%s motivo=%s estadoAntes=%s estadoDespues=%s",
+                            valorTexto(maleta.idMaleta()),
+                            valorTexto(maleta.destino()),
+                            valorTexto(maleta.aeropuertoActual()),
+                            maleta.plazo() != null ? maleta.plazo().truncatedTo(ChronoUnit.MINUTES) : "-",
+                            maleta.motivo(),
+                            maleta.estadoAntes(),
+                            maleta.estadoDespues()
+                    ));
+                    lineas.add("  rutaPrevia=" + maleta.rutaPrevia());
+                    lineas.add("  rutaFuturaPerdida=" + maleta.rutaFuturaPerdida());
+                    lineas.add("  rutaActual=" + maleta.rutaActual());
+                    lineas.add("  maletasQueUsanSuRutaPrevia=" + maleta.maletasBeneficiadas());
+                }
+                lineas.add("");
+            }
+
+            try {
+                Files.createDirectories(directorioBase);
+                Files.write(archivo, lineas);
+            } catch (final IOException exception) {
+                throw new IllegalStateException("No se pudo escribir trazabilidad detallada en TXT", exception);
+            }
+            System.out.printf("TXT trazabilidad detallada: %s%n", archivo.toAbsolutePath());
+        }
+
+        private String valorTexto(final String valor) {
+            return valor == null || valor.isBlank() ? "-" : valor;
         }
     }
 }
