@@ -29,7 +29,7 @@ public final class FuncionCosto {
             return params.getPenalizacionRutaVacia() * 10;
         }
 
-        final Map<String, Maleta> maletasPorId = indexarMaletas(instancia);
+        final Map<String, Maleta> maletasPorId = instancia.getMaletasPorId();
         double costoRutas = 0.0;
         int incumplidas = 0;
         int aTiempo = 0;
@@ -75,7 +75,9 @@ public final class FuncionCosto {
         }
 
         final double overflowVuelos = calcularOverflowVuelos(cargaPorVuelo, instancia);
-        final double overflowAlmacenes = calcularOcupacionAlmacenes(solucion, instancia);
+        final double[] metricasAlmacenes = calcularMetricasAlmacenes(solucion, instancia);
+        final double overflowAlmacenes = metricasAlmacenes[0];
+        final double ocupacionPromedioAlmacenes = metricasAlmacenes[1];
         final double transitoPromedio = rutasContadas > 0 ? sumaTransito / rutasContadas : 0.0;
         final double ocupacionPromedio = calcularOcupacionPromedio(cargaPorVuelo, instancia);
 
@@ -91,7 +93,7 @@ public final class FuncionCosto {
         solucion.setMaletasEntregadasATiempo(aTiempo);
         solucion.setMaletasIncumplidas(incumplidas);
         solucion.setOcupacionPromedioVuelos(ocupacionPromedio);
-        solucion.setOcupacionPromedioAlmacenes(calcularOcupacionPromedioAlmacenes(solucion, instancia));
+        solucion.setOcupacionPromedioAlmacenes(ocupacionPromedioAlmacenes);
         solucion.setOverflowAlmacenes(overflowAlmacenes);
         solucion.setFactible(incumplidas == 0 && overflowVuelos == 0.0 && overflowAlmacenes == 0.0);
         solucion.setSemaforo(CalculadorSemaforo.clasificarGlobal(solucion, instancia, params));
@@ -251,23 +253,17 @@ public final class FuncionCosto {
 
     private static double calcularOverflowVuelos(final Map<String, Integer> cargaPorVuelo,
                                                  final InstanciaProblema instancia) {
-        if (cargaPorVuelo.isEmpty() || instancia == null || instancia.getVueloInstancias() == null) {
+        if (cargaPorVuelo.isEmpty() || instancia == null) {
             return 0.0;
         }
-        final Map<String, VueloInstancia> vuelos = new HashMap<>();
-        for (final VueloInstancia v : instancia.getVueloInstancias()) {
-            if (v != null && v.getIdVueloInstancia() != null) {
-                vuelos.put(v.getIdVueloInstancia(), v);
-            }
-        }
+        final Map<String, VueloInstancia> vuelos = instancia.getVuelosPorId();
         double overflow = 0.0;
         for (final Map.Entry<String, Integer> entry : cargaPorVuelo.entrySet()) {
             final VueloInstancia vuelo = vuelos.get(entry.getKey());
             if (vuelo == null) {
                 continue;
             }
-            final int capacidadDisponible = Math.max(0, vuelo.getCapacidadDisponible());
-            final int exceso = entry.getValue() - capacidadDisponible;
+            final int exceso = entry.getValue() - Math.max(0, vuelo.getCapacidadDisponible());
             if (exceso > 0) {
                 overflow += exceso;
             }
@@ -275,23 +271,12 @@ public final class FuncionCosto {
         return overflow;
     }
 
-    private static Map<String, Maleta> indexarMaletas(final InstanciaProblema instancia) {
-        final Map<String, Maleta> indice = new HashMap<>();
-        if (instancia == null || instancia.getMaletas() == null) {
-            return indice;
-        }
-        for (final Maleta maleta : instancia.getMaletas()) {
-            if (maleta != null && maleta.getIdMaleta() != null) {
-                indice.put(maleta.getIdMaleta(), maleta);
-            }
-        }
-        return indice;
-    }
-
-    private static double calcularOcupacionAlmacenes(final Solucion solucion, final InstanciaProblema instancia) {
+    // Calcula overflow y ocupación promedio de almacenes en un único recorrido.
+    // Retorna [overflowAlmacenes, ocupacionPromedioAlmacenes].
+    private static double[] calcularMetricasAlmacenes(final Solucion solucion, final InstanciaProblema instancia) {
         if (solucion == null || solucion.getSolucion() == null || solucion.getSolucion().isEmpty()
                 || instancia == null || instancia.getAeropuertos() == null) {
-            return 0.0;
+            return new double[]{0.0, 0.0};
         }
         final Map<String, Integer> cargaPorAeropuerto = new HashMap<>();
         final Map<String, Aeropuerto> aeropuertos = instancia.indexarAeropuertosPorIcao();
@@ -300,8 +285,7 @@ public final class FuncionCosto {
             if (ruta == null || ruta.getSubrutas() == null || ruta.getSubrutas().isEmpty()) {
                 continue;
             }
-            final List<VueloInstancia> subrutas = ruta.getSubrutas();
-            for (final VueloInstancia vuelo : subrutas) {
+            for (final VueloInstancia vuelo : ruta.getSubrutas()) {
                 if (vuelo == null) {
                     continue;
                 }
@@ -314,7 +298,9 @@ public final class FuncionCosto {
             }
         }
 
-        double ocupacion = 0.0;
+        double overflow = 0.0;
+        double sumaPromedio = 0.0;
+        int cuentaPromedio = 0;
         for (final Map.Entry<String, Integer> entry : cargaPorAeropuerto.entrySet()) {
             final Aeropuerto aeropuerto = aeropuertos.get(entry.getKey());
             if (aeropuerto == null) {
@@ -322,56 +308,14 @@ public final class FuncionCosto {
             }
             final int capacidad = aeropuerto.getCapacidadAlmacen();
             if (capacidad <= 0) {
-                ocupacion += entry.getValue();
+                overflow += entry.getValue();
                 continue;
             }
-            ocupacion += (double) entry.getValue() / capacidad;
+            overflow += (double) entry.getValue() / capacidad;
+            sumaPromedio += Math.min(1.0, entry.getValue() / (double) capacidad);
+            cuentaPromedio++;
         }
-        return ocupacion;
-    }
-
-    private static double calcularOcupacionPromedioAlmacenes(final Solucion solucion,
-                                                            final InstanciaProblema instancia) {
-        if (solucion == null || solucion.getSolucion() == null || solucion.getSolucion().isEmpty()
-                || instancia == null || instancia.getAeropuertos() == null) {
-            return 0.0;
-        }
-        final Map<String, Integer> cargaPorAeropuerto = new HashMap<>();
-        final Map<String, Aeropuerto> aeropuertos = instancia.indexarAeropuertosPorIcao();
-
-        for (final Ruta ruta : solucion.getSolucion()) {
-            if (ruta == null || ruta.getSubrutas() == null || ruta.getSubrutas().isEmpty()) {
-                continue;
-            }
-            final List<VueloInstancia> subrutas = ruta.getSubrutas();
-            for (final VueloInstancia vuelo : subrutas) {
-                if (vuelo == null) {
-                    continue;
-                }
-                if (vuelo.getAeropuertoOrigen() != null && vuelo.getAeropuertoOrigen().getIdAeropuerto() != null) {
-                    cargaPorAeropuerto.merge(vuelo.getAeropuertoOrigen().getIdAeropuerto(), 1, Integer::sum);
-                }
-                if (vuelo.getAeropuertoDestino() != null && vuelo.getAeropuertoDestino().getIdAeropuerto() != null) {
-                    cargaPorAeropuerto.merge(vuelo.getAeropuertoDestino().getIdAeropuerto(), 1, Integer::sum);
-                }
-            }
-        }
-
-        double suma = 0.0;
-        int cuenta = 0;
-        for (final Map.Entry<String, Integer> entry : cargaPorAeropuerto.entrySet()) {
-            final Aeropuerto aeropuerto = aeropuertos.get(entry.getKey());
-            if (aeropuerto == null) {
-                continue;
-            }
-            final int capacidad = aeropuerto.getCapacidadAlmacen();
-            if (capacidad <= 0) {
-                continue;
-            }
-            suma += Math.min(1.0, entry.getValue() / (double) capacidad);
-            cuenta++;
-        }
-        return cuenta > 0 ? suma / cuenta : 0.0;
+        return new double[]{overflow, cuentaPromedio > 0 ? sumaPromedio / cuentaPromedio : 0.0};
     }
 
     public static double costoAFitness(final double costoTotal) {

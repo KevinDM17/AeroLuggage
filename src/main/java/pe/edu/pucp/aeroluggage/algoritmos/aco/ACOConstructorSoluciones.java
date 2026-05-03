@@ -3,6 +3,7 @@ package pe.edu.pucp.aeroluggage.algoritmos.aco;
 import java.time.Duration;
 import java.time.LocalDateTime;
 import java.util.ArrayList;
+import java.util.Collections;
 import java.util.Comparator;
 import java.util.HashMap;
 import java.util.HashSet;
@@ -352,7 +353,7 @@ final class ACOConstructorSoluciones {
         final Map<String, LocalDateTime> mejorLlegadaPorAeropuerto = new HashMap<>();
         final Set<String> visitadosIniciales = new HashSet<>();
         visitadosIniciales.add(idOrigen);
-        frontera.add(new EstadoPlanTemporal(idOrigen, tiempoActual, 0D, new ArrayList<>(), visitadosIniciales));
+        frontera.add(new EstadoPlanTemporal(idOrigen, tiempoActual, 0D, null, null, 0, visitadosIniciales));
         mejorLlegadaPorAeropuerto.put(idOrigen, tiempoActual);
 
         int estadosEvaluados = 0;
@@ -360,12 +361,12 @@ final class ACOConstructorSoluciones {
             estadosEvaluados++;
             final EstadoPlanTemporal estado = frontera.poll();
             if (estado.getIdAeropuerto().equals(idDestino)) {
-                final ArrayList<VueloInstancia> plan = estado.clonarCamino();
+                final ArrayList<VueloInstancia> plan = estado.reconstruirCamino();
                 aplicarConsumoPlan(plan, destino, capacidadRestanteVuelo, capacidadRestanteAlmacen);
                 reforzarFeromonaLocal(plan, maleta, feromonas);
                 return plan;
             }
-            if (estado.getCamino().size() >= MAX_ESCALAS_RUTA) {
+            if (estado.getProfundidad() >= MAX_ESCALAS_RUTA) {
                 continue;
             }
 
@@ -778,9 +779,16 @@ final class ACOConstructorSoluciones {
                                    final Maleta maleta, final Aeropuerto destinoFinal,
                                    final LocalDateTime tiempoActual, final LocalDateTime plazo,
                                    final SubproblemaACO subproblema) {
+        final Map<String, Double> puntajes = new HashMap<>(candidatos.size() * 2);
+        for (final VueloInstancia candidato : candidatos) {
+            puntajes.put(
+                    candidato.getIdVueloInstancia(),
+                    puntajeCandidato(candidato, feromonas, maleta, destinoFinal, tiempoActual, plazo, subproblema)
+            );
+        }
         candidatos.sort((primero, segundo) -> Double.compare(
-                puntajeCandidato(segundo, feromonas, maleta, destinoFinal, tiempoActual, plazo, subproblema),
-                puntajeCandidato(primero, feromonas, maleta, destinoFinal, tiempoActual, plazo, subproblema)
+                puntajes.get(segundo.getIdVueloInstancia()),
+                puntajes.get(primero.getIdVueloInstancia())
         ));
     }
 
@@ -967,37 +975,52 @@ final class ACOConstructorSoluciones {
         private final String idAeropuerto;
         private final LocalDateTime tiempoActual;
         private final double costo;
-        private final ArrayList<VueloInstancia> camino;
+        private final EstadoPlanTemporal padre;
+        private final VueloInstancia vueloTomado;
+        private final int profundidad;
         private final Set<String> visitados;
 
         private EstadoPlanTemporal(final String idAeropuerto,
                                    final LocalDateTime tiempoActual,
                                    final double costo,
-                                   final ArrayList<VueloInstancia> camino,
+                                   final EstadoPlanTemporal padre,
+                                   final VueloInstancia vueloTomado,
+                                   final int profundidad,
                                    final Set<String> visitados) {
             this.idAeropuerto = idAeropuerto;
             this.tiempoActual = tiempoActual;
             this.costo = costo;
-            this.camino = camino;
+            this.padre = padre;
+            this.vueloTomado = vueloTomado;
+            this.profundidad = profundidad;
             this.visitados = visitados;
         }
 
         private EstadoPlanTemporal avanzar(final String idSiguiente,
                                            final VueloInstancia vuelo,
                                            final double costoTramo) {
-            final ArrayList<VueloInstancia> nuevoCamino = new ArrayList<>(camino.size() + 1);
-            nuevoCamino.addAll(camino);
-            nuevoCamino.add(vuelo);
-
             final Set<String> nuevosVisitados = new HashSet<>(visitados);
             nuevosVisitados.add(idSiguiente);
             return new EstadoPlanTemporal(
                     idSiguiente,
                     vuelo.getFechaLlegada(),
                     costo + costoTramo,
-                    nuevoCamino,
+                    this,
+                    vuelo,
+                    profundidad + 1,
                     nuevosVisitados
             );
+        }
+
+        private ArrayList<VueloInstancia> reconstruirCamino() {
+            final ArrayList<VueloInstancia> camino = new ArrayList<>(profundidad);
+            EstadoPlanTemporal cursor = this;
+            while (cursor.vueloTomado != null) {
+                camino.add(cursor.vueloTomado);
+                cursor = cursor.padre;
+            }
+            Collections.reverse(camino);
+            return camino;
         }
 
         private String getIdAeropuerto() {
@@ -1012,16 +1035,12 @@ final class ACOConstructorSoluciones {
             return costo;
         }
 
-        private ArrayList<VueloInstancia> getCamino() {
-            return camino;
+        private int getProfundidad() {
+            return profundidad;
         }
 
         private Set<String> getVisitados() {
             return visitados;
-        }
-
-        private ArrayList<VueloInstancia> clonarCamino() {
-            return new ArrayList<>(camino);
         }
     }
 }

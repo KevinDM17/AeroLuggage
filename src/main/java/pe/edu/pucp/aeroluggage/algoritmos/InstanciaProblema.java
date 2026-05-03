@@ -26,6 +26,10 @@ public class InstanciaProblema {
     private long minutosConexion = 10L;
     private long tiempoRecojo = 10L;
 
+    private Map<String, Aeropuerto> indiceAeropuertos;
+    private Map<String, Maleta> indiceMaletas;
+    private Map<String, VueloInstancia> indiceVuelos;
+
     public InstanciaProblema() {
         this.maletas = new ArrayList<>();
         this.pedidos = new ArrayList<>();
@@ -63,14 +67,43 @@ public class InstanciaProblema {
     }
 
     public Map<String, Aeropuerto> indexarAeropuertosPorIcao() {
-        final Map<String, Aeropuerto> indice = new HashMap<>();
-        for (final Aeropuerto aeropuerto : aeropuertos) {
-            if (aeropuerto == null || aeropuerto.getIdAeropuerto() == null) {
-                continue;
+        if (indiceAeropuertos == null) {
+            final Map<String, Aeropuerto> indice = new HashMap<>();
+            for (final Aeropuerto aeropuerto : aeropuertos) {
+                if (aeropuerto == null || aeropuerto.getIdAeropuerto() == null) {
+                    continue;
+                }
+                indice.put(aeropuerto.getIdAeropuerto(), aeropuerto);
             }
-            indice.put(aeropuerto.getIdAeropuerto(), aeropuerto);
+            indiceAeropuertos = indice;
         }
-        return indice;
+        return indiceAeropuertos;
+    }
+
+    public Map<String, Maleta> getMaletasPorId() {
+        if (indiceMaletas == null) {
+            final Map<String, Maleta> indice = new HashMap<>();
+            for (final Maleta maleta : maletas) {
+                if (maleta != null && maleta.getIdMaleta() != null) {
+                    indice.put(maleta.getIdMaleta(), maleta);
+                }
+            }
+            indiceMaletas = indice;
+        }
+        return indiceMaletas;
+    }
+
+    public Map<String, VueloInstancia> getVuelosPorId() {
+        if (indiceVuelos == null) {
+            final Map<String, VueloInstancia> indice = new HashMap<>();
+            for (final VueloInstancia vuelo : vuelosInstancia) {
+                if (vuelo != null && vuelo.getIdVueloInstancia() != null) {
+                    indice.put(vuelo.getIdVueloInstancia(), vuelo);
+                }
+            }
+            indiceVuelos = indice;
+        }
+        return indiceVuelos;
     }
 
     public String getIdInstanciaProblema() {
@@ -87,6 +120,7 @@ public class InstanciaProblema {
 
     public void setMaletas(final ArrayList<Maleta> maletas) {
         this.maletas = maletas == null ? new ArrayList<>() : new ArrayList<>(maletas);
+        this.indiceMaletas = null;
         reconstruirPedidosDesdeMaletas();
     }
 
@@ -125,6 +159,7 @@ public class InstanciaProblema {
 
     public void setVuelosInstancia(final ArrayList<VueloInstancia> vuelosInstancia) {
         this.vuelosInstancia = vuelosInstancia == null ? new ArrayList<>() : new ArrayList<>(vuelosInstancia);
+        this.indiceVuelos = null;
     }
 
     public ArrayList<VueloInstancia> getVueloInstancias() {
@@ -141,6 +176,7 @@ public class InstanciaProblema {
 
     public void setAeropuertos(final ArrayList<Aeropuerto> aeropuertos) {
         this.aeropuertos = aeropuertos == null ? new ArrayList<>() : new ArrayList<>(aeropuertos);
+        this.indiceAeropuertos = null;
     }
 
     public GrafoTiempoExpandido getGrafo() {

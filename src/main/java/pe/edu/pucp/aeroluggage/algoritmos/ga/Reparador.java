@@ -70,7 +70,7 @@ public final class Reparador {
         if (solucion == null || solucion.getSolucion() == null) {
             return;
         }
-        final Map<String, Maleta> maletas = indexarMaletas(instancia);
+        final Map<String, Maleta> maletas = instancia.getMaletasPorId();
         for (final Ruta ruta : solucion.getSolucion()) {
             if (ruta == null) {
                 continue;
@@ -117,8 +117,8 @@ public final class Reparador {
                 rutasPorVuelo.computeIfAbsent(v.getIdVueloInstancia(), k -> new ArrayList<>()).add(ruta);
             }
         }
-        final Map<String, VueloInstancia> vuelos = indexarVuelos(instancia);
-        final Map<String, Maleta> maletas = indexarMaletas(instancia);
+        final Map<String, VueloInstancia> vuelos = instancia.getVuelosPorId();
+        final Map<String, Maleta> maletas = instancia.getMaletasPorId();
 
         for (final Map.Entry<String, List<Ruta>> entry : rutasPorVuelo.entrySet()) {
             final VueloInstancia vuelo = vuelos.get(entry.getKey());
@@ -399,7 +399,7 @@ public final class Reparador {
                 || instancia == null || instancia.getGrafo() == null) {
             return;
         }
-        final Map<String, Maleta> maletas = indexarMaletas(instancia);
+        final Map<String, Maleta> maletas = instancia.getMaletasPorId();
         final Map<String, Integer> consumoVuelo = new HashMap<>();
         final Map<String, Integer> consumoAeropuerto = new HashMap<>();
         final Map<String, Aeropuerto> aeropuertos = instancia.indexarAeropuertosPorIcao();
@@ -652,7 +652,7 @@ public final class Reparador {
             }
         }
 
-        final Map<String, Maleta> maletas = indexarMaletas(instancia);
+        final Map<String, Maleta> maletas = instancia.getMaletasPorId();
         for (final Map.Entry<String, Integer> entry : cargaPorAeropuerto.entrySet()) {
             final String idAeropuerto = entry.getKey();
             final Aeropuerto aeropuerto = aeropuertos.get(idAeropuerto);
@@ -712,29 +712,4 @@ public final class Reparador {
         ruta.setDuracion(duracionHoras(nuevo));
     }
 
-    private static Map<String, Maleta> indexarMaletas(final InstanciaProblema instancia) {
-        final Map<String, Maleta> indice = new HashMap<>();
-        if (instancia == null || instancia.getMaletas() == null) {
-            return indice;
-        }
-        for (final Maleta m : instancia.getMaletas()) {
-            if (m != null && m.getIdMaleta() != null) {
-                indice.put(m.getIdMaleta(), m);
-            }
-        }
-        return indice;
-    }
-
-    private static Map<String, VueloInstancia> indexarVuelos(final InstanciaProblema instancia) {
-        final Map<String, VueloInstancia> indice = new HashMap<>();
-        if (instancia == null || instancia.getVueloInstancias() == null) {
-            return indice;
-        }
-        for (final VueloInstancia v : instancia.getVueloInstancias()) {
-            if (v != null && v.getIdVueloInstancia() != null) {
-                indice.put(v.getIdVueloInstancia(), v);
-            }
-        }
-        return indice;
-    }
 }
