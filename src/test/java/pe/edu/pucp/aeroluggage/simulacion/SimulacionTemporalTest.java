@@ -31,6 +31,7 @@ import pe.edu.pucp.aeroluggage.algoritmos.Solucion;
 import pe.edu.pucp.aeroluggage.algoritmos.aco.ACO;
 import pe.edu.pucp.aeroluggage.algoritmos.aco.ACOConfiguracion;
 import pe.edu.pucp.aeroluggage.algoritmos.common.CalculadorFitnessExperimental;
+import pe.edu.pucp.aeroluggage.algoritmos.common.ConfigFitnessExperimental;
 import pe.edu.pucp.aeroluggage.algoritmos.common.ResultadoFitnessExperimental;
 import pe.edu.pucp.aeroluggage.algoritmos.ga.FuncionCosto;
 import pe.edu.pucp.aeroluggage.algoritmos.ga.GA;
@@ -192,7 +193,7 @@ class SimulacionTemporalTest {
         final long inicioEjecucionMs = System.currentTimeMillis();
         int totalEnrutadas = 0;
         final ResultadoSimulacion resultado = new ResultadoSimulacion();
-        ResultadoFitnessExperimental fitnessExperimental = new ResultadoFitnessExperimental(0D, 0, 0D, 0D, 0D);
+        ResultadoFitnessExperimental fitnessExperimental = new ResultadoFitnessExperimental(0D, 0, 0, 0, 0, 0D, 0D, 0D);
 
         System.out.printf("%n=== SIMULACION TEMPORAL [%s] %s → %s ===%n", nombre, fechaInicio, fechaFin);
 
@@ -277,7 +278,8 @@ class SimulacionTemporalTest {
             algoritmo.ejecutar(instancia);
             final Solucion sol = obtenerSolucion(algoritmo);
             fitnessExperimental = fitnessExperimental.sumar(
-                    CalculadorFitnessExperimental.calcular(sol, instancia));
+                    CalculadorFitnessExperimental.calcular(sol, instancia,
+                            ConfigFitnessExperimental.desdeProperties(params)));
             FuncionCosto.calcularCostoSolucion(sol, instancia, construirParametrosGA());
 
             // 6. Reducir capacidades y remover maletas enrutadas
@@ -559,12 +561,13 @@ class SimulacionTemporalTest {
             return;
         }
         System.out.printf("Fitness experimental: %.3f%n", fitnessExperimental.getFitnessExperimental());
-        System.out.printf("Maletas no ruteadas acumuladas: %d%n", fitnessExperimental.getMaletasNoRuteadas());
-        System.out.printf("Uso capacidad vuelos: %.3f%n", fitnessExperimental.getUsoCapacidadVuelos());
-        System.out.printf("Uso capacidad aeropuertos: %.3f%n",
-                fitnessExperimental.getUsoCapacidadAeropuertos()
-        );
-        System.out.printf("Duracion total horas: %.3f%n", fitnessExperimental.getDuracionTotalHoras());
+        System.out.printf("No enrutadas acumuladas: %d%n", fitnessExperimental.getNoEnrutadas());
+        System.out.printf("Destino mal acumuladas: %d%n", fitnessExperimental.getDestinoMal());
+        System.out.printf("Overflow vuelos: %d%n", fitnessExperimental.getOverflowVuelos());
+        System.out.printf("Overflow almacen: %d%n", fitnessExperimental.getOverflowAlmacen());
+        System.out.printf("Duracion norm acumulada: %.4f%n", fitnessExperimental.getDuracionNorm());
+        System.out.printf("Escalas norm acumulada: %.4f%n", fitnessExperimental.getEscalasNorm());
+        System.out.printf("Espera norm acumulada: %.4f%n", fitnessExperimental.getEsperaNorm());
     }
 
     // ---- parameter helpers (identical to AlgoritmosDesdeArchivoTest) ----
@@ -582,14 +585,9 @@ class SimulacionTemporalTest {
         p.setElites(intParam("ga.elites", p.getElites()));
         p.setSemilla(longParam("ga.semilla", p.getSemilla()));
         p.setMinutosConexion(longParam("ga.minutosConexion", p.getMinutosConexion()));
-        p.setW1MaletasIncumplidas(doubleParam("ga.w1MaletasIncumplidas", p.getW1MaletasIncumplidas()));
-        p.setW2ExcesoHorasPlazo(doubleParam("ga.w2ExcesoHorasPlazo", p.getW2ExcesoHorasPlazo()));
-        p.setW3OverflowVuelo(doubleParam("ga.w3OverflowVuelo", p.getW3OverflowVuelo()));
-        p.setW4OverflowAlmacen(doubleParam("ga.w4OverflowAlmacen", p.getW4OverflowAlmacen()));
-        p.setW5TransitoPromedio(doubleParam("ga.w5TransitoPromedio", p.getW5TransitoPromedio()));
-        p.setPenalizacionRutaVacia(doubleParam("ga.penalizacionRutaVacia", p.getPenalizacionRutaVacia()));
-        p.setPenalizacionSinDestino(doubleParam("ga.penalizacionSinDestino", p.getPenalizacionSinDestino()));
-        p.setPenalizacionRutaInvalida(doubleParam("ga.penalizacionRutaInvalida", p.getPenalizacionRutaInvalida()));
+        p.setPesoNoEnrutadas(doubleParam("ga.pesoNoEnrutadas", p.getPesoNoEnrutadas()));
+        p.setPesoVuelosOverflow(doubleParam("ga.pesoVuelosOverflow", p.getPesoVuelosOverflow()));
+        p.setPesoAeropuertosOverflow(doubleParam("ga.pesoAeropuertosOverflow", p.getPesoAeropuertosOverflow()));
         p.setPesoGreedySolomon(doubleParam("ga.pesoGreedySolomon", p.getPesoGreedySolomon()));
         return p;
     }

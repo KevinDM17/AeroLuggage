@@ -14,16 +14,9 @@ public class ParametrosGA {
     private int elites = 6;
     private long semilla = 42L;
 
-    private double w1MaletasIncumplidas = 50000.0;
-    private double w2ExcesoHorasPlazo = 100.0;
-    private double w3OverflowVuelo = 2000.0;
-    private double w4OverflowAlmacen = 1500.0;
-    private double w5TransitoPromedio = 1.0;
-
-    private double penalizacionRutaVacia = 50000.0;
-    private double penalizacionSinDestino = 60000.0;
-    private double penalizacionRutaInvalida = 40000.0;
-    private double penalizacionRutaParcial = 45000.0;
+    private double pesoNoEnrutadas = 50000.0;
+    private double pesoVuelosOverflow = 2000.0;
+    private double pesoAeropuertosOverflow = 1500.0;
 
     private long minutosConexion = 10L;
     private long tiempoRecojo = 10L;
@@ -131,76 +124,28 @@ public class ParametrosGA {
         this.semilla = semilla;
     }
 
-    public double getW1MaletasIncumplidas() {
-        return w1MaletasIncumplidas;
+    public double getPesoNoEnrutadas() {
+        return pesoNoEnrutadas;
     }
 
-    public void setW1MaletasIncumplidas(final double w1MaletasIncumplidas) {
-        this.w1MaletasIncumplidas = w1MaletasIncumplidas;
+    public void setPesoNoEnrutadas(final double pesoNoEnrutadas) {
+        this.pesoNoEnrutadas = pesoNoEnrutadas;
     }
 
-    public double getW2ExcesoHorasPlazo() {
-        return w2ExcesoHorasPlazo;
+    public double getPesoVuelosOverflow() {
+        return pesoVuelosOverflow;
     }
 
-    public void setW2ExcesoHorasPlazo(final double w2ExcesoHorasPlazo) {
-        this.w2ExcesoHorasPlazo = w2ExcesoHorasPlazo;
+    public void setPesoVuelosOverflow(final double pesoVuelosOverflow) {
+        this.pesoVuelosOverflow = pesoVuelosOverflow;
     }
 
-    public double getW3OverflowVuelo() {
-        return w3OverflowVuelo;
+    public double getPesoAeropuertosOverflow() {
+        return pesoAeropuertosOverflow;
     }
 
-    public void setW3OverflowVuelo(final double w3OverflowVuelo) {
-        this.w3OverflowVuelo = w3OverflowVuelo;
-    }
-
-    public double getW4OverflowAlmacen() {
-        return w4OverflowAlmacen;
-    }
-
-    public void setW4OverflowAlmacen(final double w4OverflowAlmacen) {
-        this.w4OverflowAlmacen = w4OverflowAlmacen;
-    }
-
-    public double getW5TransitoPromedio() {
-        return w5TransitoPromedio;
-    }
-
-    public void setW5TransitoPromedio(final double w5TransitoPromedio) {
-        this.w5TransitoPromedio = w5TransitoPromedio;
-    }
-
-    public double getPenalizacionRutaVacia() {
-        return penalizacionRutaVacia;
-    }
-
-    public void setPenalizacionRutaVacia(final double penalizacionRutaVacia) {
-        this.penalizacionRutaVacia = penalizacionRutaVacia;
-    }
-
-    public double getPenalizacionSinDestino() {
-        return penalizacionSinDestino;
-    }
-
-    public void setPenalizacionSinDestino(final double penalizacionSinDestino) {
-        this.penalizacionSinDestino = penalizacionSinDestino;
-    }
-
-    public double getPenalizacionRutaInvalida() {
-        return penalizacionRutaInvalida;
-    }
-
-    public void setPenalizacionRutaInvalida(final double penalizacionRutaInvalida) {
-        this.penalizacionRutaInvalida = penalizacionRutaInvalida;
-    }
-
-    public double getPenalizacionRutaParcial() {
-        return penalizacionRutaParcial;
-    }
-
-    public void setPenalizacionRutaParcial(final double penalizacionRutaParcial) {
-        this.penalizacionRutaParcial = penalizacionRutaParcial;
+    public void setPesoAeropuertosOverflow(final double pesoAeropuertosOverflow) {
+        this.pesoAeropuertosOverflow = pesoAeropuertosOverflow;
     }
 
     public long getMinutosConexion() {

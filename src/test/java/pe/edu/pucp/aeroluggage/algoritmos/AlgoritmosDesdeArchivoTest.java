@@ -128,14 +128,9 @@ class AlgoritmosDesdeArchivoTest {
         p.setElites(intParam("ga.elites", p.getElites()));
         p.setSemilla(longParam("ga.semilla", p.getSemilla()));
         p.setMinutosConexion(longParam("ga.minutosConexion", p.getMinutosConexion()));
-        p.setW1MaletasIncumplidas(doubleParam("ga.w1MaletasIncumplidas", p.getW1MaletasIncumplidas()));
-        p.setW2ExcesoHorasPlazo(doubleParam("ga.w2ExcesoHorasPlazo", p.getW2ExcesoHorasPlazo()));
-        p.setW3OverflowVuelo(doubleParam("ga.w3OverflowVuelo", p.getW3OverflowVuelo()));
-        p.setW4OverflowAlmacen(doubleParam("ga.w4OverflowAlmacen", p.getW4OverflowAlmacen()));
-        p.setW5TransitoPromedio(doubleParam("ga.w5TransitoPromedio", p.getW5TransitoPromedio()));
-        p.setPenalizacionRutaVacia(doubleParam("ga.penalizacionRutaVacia", p.getPenalizacionRutaVacia()));
-        p.setPenalizacionSinDestino(doubleParam("ga.penalizacionSinDestino", p.getPenalizacionSinDestino()));
-        p.setPenalizacionRutaInvalida(doubleParam("ga.penalizacionRutaInvalida", p.getPenalizacionRutaInvalida()));
+        p.setPesoNoEnrutadas(doubleParam("ga.pesoNoEnrutadas", p.getPesoNoEnrutadas()));
+        p.setPesoVuelosOverflow(doubleParam("ga.pesoVuelosOverflow", p.getPesoVuelosOverflow()));
+        p.setPesoAeropuertosOverflow(doubleParam("ga.pesoAeropuertosOverflow", p.getPesoAeropuertosOverflow()));
         p.setPesoGreedySolomon(doubleParam("ga.pesoGreedySolomon", p.getPesoGreedySolomon()));
         return p;
     }

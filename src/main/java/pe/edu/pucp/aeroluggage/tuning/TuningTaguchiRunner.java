@@ -86,14 +86,14 @@ public final class TuningTaguchiRunner {
                         : res.getFitnessExperimental();
                 sumaCuadrados += yi * yi;
 
-                System.out.printf("  rep %2d/%d — fitness = %12.2f  noRuteadas = %3d  tiempo = %5d ms%n",
+                System.out.printf("  rep %2d/%d — fitness = %12.2f  noEnrutadas = %3d  tiempo = %5d ms%n",
                         r + 1, REPLICAS_POR_FILA, res.getFitnessExperimental(),
-                        res.getMaletasNoRuteadas(), tiempoMs);
+                        res.getNoEnrutadas(), tiempoMs);
 
                 resultados.add(new FilaResultado(f + 1, r + 1, config.semilla + r, valoresFila,
-                        res.getFitnessExperimental(), res.getMaletasNoRuteadas(),
-                        res.getUsoCapacidadVuelos(), res.getUsoCapacidadAeropuertos(),
-                        res.getDuracionTotalHoras(), tiempoMs));
+                        res.getFitnessExperimental(), res.getNoEnrutadas(), res.getDestinoMal(),
+                        res.getOverflowVuelos(), res.getOverflowAlmacen(),
+                        res.getDuracionNorm(), res.getEscalasNorm(), res.getEsperaNorm(), tiempoMs));
             }
 
             snPorFila[f] = -10.0 * Math.log10(sumaCuadrados / REPLICAS_POR_FILA);
@@ -147,14 +147,14 @@ public final class TuningTaguchiRunner {
                         : res.getFitnessExperimental();
                 sumaCuadrados += yi * yi;
 
-                System.out.printf("  rep %2d/%d — fitness = %12.2f  noRuteadas = %3d  tiempo = %5d ms%n",
+                System.out.printf("  rep %2d/%d — fitness = %12.2f  noEnrutadas = %3d  tiempo = %5d ms%n",
                         r + 1, REPLICAS_POR_FILA, res.getFitnessExperimental(),
-                        res.getMaletasNoRuteadas(), tiempoMs);
+                        res.getNoEnrutadas(), tiempoMs);
 
                 resultados.add(new FilaResultado(f + 1, r + 1, config.semilla + r, valoresFila,
-                        res.getFitnessExperimental(), res.getMaletasNoRuteadas(),
-                        res.getUsoCapacidadVuelos(), res.getUsoCapacidadAeropuertos(),
-                        res.getDuracionTotalHoras(), tiempoMs));
+                        res.getFitnessExperimental(), res.getNoEnrutadas(), res.getDestinoMal(),
+                        res.getOverflowVuelos(), res.getOverflowAlmacen(),
+                        res.getDuracionNorm(), res.getEscalasNorm(), res.getEsperaNorm(), tiempoMs));
             }
 
             snPorFila[f] = -10.0 * Math.log10(sumaCuadrados / REPLICAS_POR_FILA);
@@ -406,16 +406,17 @@ public final class TuningTaguchiRunner {
             for (final String col : columnas) {
                 w.write("," + col);
             }
-            w.write(",fitnessExp,maletasNoRuteadas,usoVuelos,usoAeropuertos,duracionHoras,tiempoMs");
+            w.write(",fitnessExp,noEnrutadas,destinoMal,overflowVuelos,overflowAlmacen,duracionNorm,escalasNorm,esperaNorm,tiempoMs");
             w.newLine();
             for (final FilaResultado r : resultados) {
                 w.write(r.fila + "," + r.replica + "," + r.semilla);
                 for (final double val : r.valoresFila) {
                     w.write("," + formatearNivel(val));
                 }
-                w.write(String.format(",%f,%d,%f,%f,%f,%d",
-                        r.fitnessExp, r.maletasNoRuteadas, r.usoVuelos,
-                        r.usoAeropuertos, r.duracionHoras, r.tiempoMs));
+                w.write(String.format(",%f,%d,%d,%d,%d,%f,%f,%f,%d",
+                        r.fitnessExp, r.noEnrutadas, r.destinoMal,
+                        r.overflowVuelos, r.overflowAlmacen,
+                        r.duracionNorm, r.escalasNorm, r.esperaNorm, r.tiempoMs));
                 w.newLine();
             }
         }
@@ -446,25 +447,33 @@ public final class TuningTaguchiRunner {
         final long semilla;
         final double[] valoresFila;
         final double fitnessExp;
-        final int maletasNoRuteadas;
-        final double usoVuelos;
-        final double usoAeropuertos;
-        final double duracionHoras;
+        final int noEnrutadas;
+        final int destinoMal;
+        final int overflowVuelos;
+        final int overflowAlmacen;
+        final double duracionNorm;
+        final double escalasNorm;
+        final double esperaNorm;
         final long tiempoMs;
 
         FilaResultado(final int fila, final int replica, final long semilla,
-                final double[] valoresFila, final double fitnessExp, final int maletasNoRuteadas,
-                final double usoVuelos, final double usoAeropuertos,
-                final double duracionHoras, final long tiempoMs) {
+                final double[] valoresFila, final double fitnessExp,
+                final int noEnrutadas, final int destinoMal,
+                final int overflowVuelos, final int overflowAlmacen,
+                final double duracionNorm, final double escalasNorm,
+                final double esperaNorm, final long tiempoMs) {
             this.fila = fila;
             this.replica = replica;
             this.semilla = semilla;
             this.valoresFila = valoresFila;
             this.fitnessExp = fitnessExp;
-            this.maletasNoRuteadas = maletasNoRuteadas;
-            this.usoVuelos = usoVuelos;
-            this.usoAeropuertos = usoAeropuertos;
-            this.duracionHoras = duracionHoras;
+            this.noEnrutadas = noEnrutadas;
+            this.destinoMal = destinoMal;
+            this.overflowVuelos = overflowVuelos;
+            this.overflowAlmacen = overflowAlmacen;
+            this.duracionNorm = duracionNorm;
+            this.escalasNorm = escalasNorm;
+            this.esperaNorm = esperaNorm;
             this.tiempoMs = tiempoMs;
         }
     }

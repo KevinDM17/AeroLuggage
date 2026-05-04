@@ -5,12 +5,19 @@ ejecutar.aco=true
 # ---------- Parametros globales ----------
 minutosConexion=10
 tiempoRecojo=10
+exp.w1NoEnrutadas=10000
+exp.w2DestinMal=10000
+exp.w3OverflowVuelos=1000
+exp.w4OverflowAlmacen=1000
+exp.w5Duracion=30
+exp.w6Escalas=20
+exp.w7Espera=10
 
 # Rango de fechas de simulacion (yyyy-MM-dd)
 simulacion.fecha.inicio=2027-02-07
 simulacion.fecha.fin=2027-02-07
 simulacion.ventana.dias=4
-simulacion.iteraciones=5
+simulacion.iteraciones=30
 simulacion.programada.sa.segundos=0
 simulacion.programada.k=720
 simulacion.programada.sleep.habilitado=true
@@ -31,9 +38,9 @@ ga.w2ExcesoHorasPlazo=10000
 ga.w3OverflowVuelo=10000
 ga.w4OverflowAlmacen=10000
 ga.w5TransitoPromedio=1
-ga.penalizacionRutaVacia=5000
-ga.penalizacionSinDestino=8000
-ga.penalizacionRutaInvalida=3000
+ga.penalizacionRutaVacia=500
+ga.penalizacionSinDestino=800
+ga.penalizacionRutaInvalida=300
 ga.pesoGreedySolomon=0.4
 
 # ---------- Parametros ACO ----------

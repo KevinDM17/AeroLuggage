@@ -27,6 +27,7 @@ import pe.edu.pucp.aeroluggage.algoritmos.aco.ACO;
 import pe.edu.pucp.aeroluggage.algoritmos.aco.ACOConfiguracion;
 import pe.edu.pucp.aeroluggage.algoritmos.common.CalculadorFitnessExperimental;
 import pe.edu.pucp.aeroluggage.algoritmos.common.CalculadorSemaforo;
+import pe.edu.pucp.aeroluggage.algoritmos.common.ConfigFitnessExperimental;
 import pe.edu.pucp.aeroluggage.algoritmos.common.ResultadoFitnessExperimental;
 import pe.edu.pucp.aeroluggage.algoritmos.ga.FuncionCosto;
 import pe.edu.pucp.aeroluggage.algoritmos.ga.GA;
@@ -50,7 +51,7 @@ public final class SimulacionTemporalRunner {
     private static final Path RESULTADOS_DIR = Path.of("target", "resultados-experimentales");
     private static final Path FITNESS_EXPERIMENTAL_CSV = RESULTADOS_DIR.resolve("fitness-experimental.csv");
     private static final String FITNESS_EXPERIMENTAL_CABECERA =
-            "Muestra,ACO,ACO Tiempo Ms,Algoritmo Genetico,Algoritmo Genetico Tiempo Ms";
+            "Simulacion,ejecucion,Fitness HGA,tiempo HGA,Fitness ACO,tiempo ACO";
     private static final DateTimeFormatter FMT = DateTimeFormatter.ISO_LOCAL_DATE;
     private static final String PREFIJO_DIAGNOSTICO_MALETA = "MAL-SPIM-000010930-";
     private static final long SEMILLA_ALEATORIA = -1L;
@@ -84,7 +85,7 @@ public final class SimulacionTemporalRunner {
                     "GA",
                     contexto
             );
-            exportador.registrar("GA", parametrosGa.getSemilla(), resultado);
+            exportador.registrar("GA", resultado);
         }
         if (ejecutarAco) {
             final ACOConfiguracion configuracionAco = construirConfiguracionACO(contexto.params());
@@ -97,7 +98,7 @@ public final class SimulacionTemporalRunner {
                     "ACO",
                     contexto
             );
-            exportador.registrar("ACO", configuracionAco.getSemilla(), resultado);
+            exportador.registrar("ACO", resultado);
         }
         exportador.reportarArchivo();
     }
@@ -115,7 +116,7 @@ public final class SimulacionTemporalRunner {
                 "GA",
                 contexto
         );
-        exportador.registrar("GA", parametrosGa.getSemilla(), resultado);
+        exportador.registrar("GA", resultado);
         exportador.reportarArchivo();
     }
 
@@ -132,7 +133,7 @@ public final class SimulacionTemporalRunner {
                 "ACO",
                 contexto
         );
-        exportador.registrar("ACO", configuracionAco.getSemilla(), resultado);
+        exportador.registrar("ACO", resultado);
         exportador.reportarArchivo();
     }
 
@@ -182,12 +183,12 @@ public final class SimulacionTemporalRunner {
             }
 
             final ExportadorFitnessExperimental exportador =
-                    new ExportadorFitnessExperimental(FITNESS_EXPERIMENTAL_CSV);
+                    new ExportadorFitnessExperimental(FITNESS_EXPERIMENTAL_CSV, i);
             if (resGA != null) {
-                exportador.registrar("GA", semilla, resGA);
+                exportador.registrar("GA", resGA);
             }
             if (resACO != null) {
-                exportador.registrar("ACO", semilla, resACO);
+                exportador.registrar("ACO", resACO);
             }
             exportador.reportarArchivo();
 
@@ -282,12 +283,12 @@ public final class SimulacionTemporalRunner {
             }
 
             final ExportadorFitnessExperimental exportador =
-                    new ExportadorFitnessExperimental(FITNESS_EXPERIMENTAL_CSV);
+                    new ExportadorFitnessExperimental(FITNESS_EXPERIMENTAL_CSV, i);
             if (resGA != null) {
-                exportador.registrar("GA", semilla, resGA);
+                exportador.registrar("GA", resGA);
             }
             if (resACO != null) {
-                exportador.registrar("ACO", semilla, resACO);
+                exportador.registrar("ACO", resACO);
             }
             exportador.reportarArchivo();
 
@@ -489,7 +490,7 @@ public final class SimulacionTemporalRunner {
         final boolean esGa = algoritmo instanceof GA;
         final Set<String> maletasEnrutadas = new HashSet<>();
         final ResultadoSimulacion resultado = new ResultadoSimulacion();
-        ResultadoFitnessExperimental fitnessExperimental = new ResultadoFitnessExperimental(0D, 0, 0D, 0D, 0D);
+        ResultadoFitnessExperimental fitnessExperimental = new ResultadoFitnessExperimental(0D, 0, 0, 0, 0, 0D, 0D, 0D);
 
         System.out.printf("%n=== SIMULACION PROGRAMADA [%s] %s -> %s ===%n",
                 nombre, contexto.fechaInicio(), contexto.fechaFin());
@@ -565,7 +566,7 @@ public final class SimulacionTemporalRunner {
             final int nuevasEnCiclo = registradas.size() - registradasAntes;
             Solucion solucion = null;
             double fitnessAlgoritmoCiclo = 0D;
-            ResultadoFitnessExperimental fitnessCiclo = new ResultadoFitnessExperimental(0D, 0, 0D, 0D, 0D);
+            ResultadoFitnessExperimental fitnessCiclo = new ResultadoFitnessExperimental(0D, 0, 0, 0, 0, 0D, 0D, 0D);
             final LocalDateTime ventanaCompromisoGa = esGa
                     ? finCicloDatos.plus(configuracionProgramada.sc())
                     : null;
@@ -609,8 +610,12 @@ public final class SimulacionTemporalRunner {
                 solucion = obtenerSolucion(algoritmo);
                 postprocesarSolucion(solucion, instancia, parametrosGa);
                 fitnessAlgoritmoCiclo = solucion != null ? solucion.getFitness() : 0D;
-                fitnessCiclo = CalculadorFitnessExperimental.calcular(solucion, instancia);
+                fitnessCiclo = CalculadorFitnessExperimental.calcular(solucion, instancia,
+                        ConfigFitnessExperimental.desdeProperties(contexto.params()));
                 fitnessExperimental = fitnessExperimental.sumar(fitnessCiclo);
+                resultado.ciclos.add(new ResultadoCicloAlgoritmo(
+                        fitnessCiclo.getFitnessExperimental(),
+                        System.currentTimeMillis() - inicioCicloRealMs));
 
                 final Map<String, List<VueloInstancia>> nuevasRutas = extraerRutasConfirmadas(
                         solucion,
@@ -2052,15 +2057,20 @@ public final class SimulacionTemporalRunner {
             return;
         }
         System.out.printf("Fitness experimental: %.3f%n", fitnessExperimental.getFitnessExperimental());
-        System.out.printf("Maletas no ruteadas acumuladas: %d%n", fitnessExperimental.getMaletasNoRuteadas());
-        System.out.printf("Duracion total horas: %.3f%n", fitnessExperimental.getDuracionTotalHoras());
+        System.out.printf("No enrutadas acumuladas: %d%n", fitnessExperimental.getNoEnrutadas());
+        System.out.printf("Destino mal acumuladas: %d%n", fitnessExperimental.getDestinoMal());
+        System.out.printf("Overflow vuelos: %d%n", fitnessExperimental.getOverflowVuelos());
+        System.out.printf("Overflow almacen: %d%n", fitnessExperimental.getOverflowAlmacen());
+        System.out.printf("Duracion norm acumulada: %.4f%n", fitnessExperimental.getDuracionNorm());
+        System.out.printf("Escalas norm acumulada: %.4f%n", fitnessExperimental.getEscalasNorm());
+        System.out.printf("Espera norm acumulada: %.4f%n", fitnessExperimental.getEsperaNorm());
     }
 
     private static ExportadorFitnessExperimental crearExportadorFitnessExperimental(final ContextoSimulacion contexto) {
         try {
             Files.createDirectories(RESULTADOS_DIR);
             inicializarCsvFitnessExperimental();
-            return new ExportadorFitnessExperimental(FITNESS_EXPERIMENTAL_CSV);
+            return new ExportadorFitnessExperimental(FITNESS_EXPERIMENTAL_CSV, 1);
         } catch (final IOException exception) {
             throw new IllegalStateException("No se pudo crear archivo CSV de fitness experimental", exception);
         }
@@ -2112,21 +2122,12 @@ public final class SimulacionTemporalRunner {
         parametros.setProbTorneo(doubleParam(params, "ga.probTorneo", parametros.getProbTorneo()));
         parametros.setElites(intParam(params, "ga.elites", parametros.getElites()));
         parametros.setSemilla(longParam(params, "ga.semilla", parametros.getSemilla()));
-        parametros.setW1MaletasIncumplidas(
-                doubleParam(params, "ga.w1MaletasIncumplidas", parametros.getW1MaletasIncumplidas()));
-        parametros.setW2ExcesoHorasPlazo(
-                doubleParam(params, "ga.w2ExcesoHorasPlazo", parametros.getW2ExcesoHorasPlazo()));
-        parametros.setW3OverflowVuelo(doubleParam(params, "ga.w3OverflowVuelo", parametros.getW3OverflowVuelo()));
-        parametros.setW4OverflowAlmacen(
-                doubleParam(params, "ga.w4OverflowAlmacen", parametros.getW4OverflowAlmacen()));
-        parametros.setW5TransitoPromedio(
-                doubleParam(params, "ga.w5TransitoPromedio", parametros.getW5TransitoPromedio()));
-        parametros.setPenalizacionRutaVacia(
-                doubleParam(params, "ga.penalizacionRutaVacia", parametros.getPenalizacionRutaVacia()));
-        parametros.setPenalizacionSinDestino(
-                doubleParam(params, "ga.penalizacionSinDestino", parametros.getPenalizacionSinDestino()));
-        parametros.setPenalizacionRutaInvalida(
-                doubleParam(params, "ga.penalizacionRutaInvalida", parametros.getPenalizacionRutaInvalida()));
+        parametros.setPesoNoEnrutadas(
+                doubleParam(params, "ga.pesoNoEnrutadas", parametros.getPesoNoEnrutadas()));
+        parametros.setPesoVuelosOverflow(
+                doubleParam(params, "ga.pesoVuelosOverflow", parametros.getPesoVuelosOverflow()));
+        parametros.setPesoAeropuertosOverflow(
+                doubleParam(params, "ga.pesoAeropuertosOverflow", parametros.getPesoAeropuertosOverflow()));
         parametros.setPesoGreedySolomon(
                 doubleParam(params, "ga.pesoGreedySolomon", parametros.getPesoGreedySolomon()));
         parametros.setMinutosConexion(longParam(params, "minutosConexion", parametros.getMinutosConexion()));
@@ -2274,6 +2275,8 @@ public final class SimulacionTemporalRunner {
                                   LocalDateTime momento) {
     }
 
+    private record ResultadoCicloAlgoritmo(double fitnessExp, long tiempoMs) {}
+
     private static final class ResultadoSimulacion {
         private boolean colapsada;
         private LocalDateTime momentoColapso;
@@ -2284,6 +2287,7 @@ public final class SimulacionTemporalRunner {
         private double maxOcupacionVuelos;
         private double maxOcupacionAeropuertos;
         private ResultadoFitnessExperimental fitnessExperimental;
+        private List<ResultadoCicloAlgoritmo> ciclos = new ArrayList<>();
         private List<PasoSimulacion> historial = new ArrayList<>();
         private List<MaletaNoRuteada> detalleNoRuteadas = new ArrayList<>();
         private List<TrazabilidadCiclo> trazabilidadCiclos = new ArrayList<>();
@@ -2291,27 +2295,23 @@ public final class SimulacionTemporalRunner {
 
     private static final class ExportadorFitnessExperimental {
         private final Path archivo;
-        private Double fitnessAco;
-        private Long tiempoAcoMs;
-        private Double fitnessGa;
-        private Long tiempoGaMs;
+        private final int simulacion;
+        private List<ResultadoCicloAlgoritmo> ciclosHga = new ArrayList<>();
+        private List<ResultadoCicloAlgoritmo> ciclosAco = new ArrayList<>();
 
-        private ExportadorFitnessExperimental(final Path archivo) {
+        private ExportadorFitnessExperimental(final Path archivo, final int simulacion) {
             this.archivo = archivo;
+            this.simulacion = simulacion;
         }
 
-        private void registrar(final String algoritmo, final long semilla, final ResultadoSimulacion resultado) {
-            if (resultado == null || resultado.fitnessExperimental == null) {
-                return;
-            }
-            if ("ACO".equals(algoritmo)) {
-                fitnessAco = resultado.fitnessExperimental.getFitnessExperimental();
-                tiempoAcoMs = resultado.tiempoEjecucionMs;
+        private void registrar(final String algoritmo, final ResultadoSimulacion resultado) {
+            if (resultado == null) {
                 return;
             }
             if ("GA".equals(algoritmo)) {
-                fitnessGa = resultado.fitnessExperimental.getFitnessExperimental();
-                tiempoGaMs = resultado.tiempoEjecucionMs;
+                ciclosHga = resultado.ciclos;
+            } else if ("ACO".equals(algoritmo)) {
+                ciclosAco = resultado.ciclos;
             }
         }
 
@@ -2325,70 +2325,31 @@ public final class SimulacionTemporalRunner {
         }
 
         private void escribirMuestra() throws IOException {
-            if (fitnessAco == null && fitnessGa == null) {
+            final int n = Math.max(ciclosHga.size(), ciclosAco.size());
+            if (n == 0) {
                 return;
             }
             final List<String> lineas = new ArrayList<>(Files.readAllLines(archivo));
-            final boolean registroUnicoAco = fitnessAco != null && fitnessGa == null;
-            final boolean registroUnicoGa = fitnessAco == null && fitnessGa != null;
-            if (registroUnicoAco && completarMuestraPendiente(lineas, true)) {
-                Files.write(archivo, lineas);
-                return;
+            for (int e = 0; e < n; e++) {
+                final String fitHga = e < ciclosHga.size()
+                        ? formatearFitness(ciclosHga.get(e).fitnessExp()) : "";
+                final String tHga   = e < ciclosHga.size()
+                        ? formatearTiempo(ciclosHga.get(e).tiempoMs())    : "";
+                final String fitAco = e < ciclosAco.size()
+                        ? formatearFitness(ciclosAco.get(e).fitnessExp()) : "";
+                final String tAco   = e < ciclosAco.size()
+                        ? formatearTiempo(ciclosAco.get(e).tiempoMs())    : "";
+                lineas.add(String.format(java.util.Locale.US, "%d,%d,%s,%s,%s,%s",
+                        simulacion, e + 1, fitHga, tHga, fitAco, tAco));
             }
-            if (registroUnicoGa && completarMuestraPendiente(lineas, false)) {
-                Files.write(archivo, lineas);
-                return;
-            }
-
-            final int muestra = Math.max(1, lineas.size());
-            final String linea = String.format(
-                    java.util.Locale.US,
-                    "%d,%s,%s,%s,%s",
-                    muestra,
-                    formatearFitness(fitnessAco),
-                    formatearTiempo(tiempoAcoMs),
-                    formatearFitness(fitnessGa),
-                    formatearTiempo(tiempoGaMs)
-            );
-            lineas.add(linea);
             Files.write(archivo, lineas);
         }
 
-        private boolean completarMuestraPendiente(final List<String> lineas, final boolean completarAco) {
-            for (int i = 1; i < lineas.size(); i++) {
-                final String[] columnas = lineas.get(i).split(",", -1);
-                if (columnas.length != 5) {
-                    continue;
-                }
-                final boolean columnaAcoVacia = columnas[1].isBlank();
-                final boolean columnaGaVacia = columnas[3].isBlank();
-                if (completarAco && columnaAcoVacia && !columnaGaVacia) {
-                    columnas[1] = formatearFitness(fitnessAco);
-                    columnas[2] = formatearTiempo(tiempoAcoMs);
-                    lineas.set(i, String.join(",", columnas));
-                    return true;
-                }
-                if (!completarAco && columnaGaVacia && !columnaAcoVacia) {
-                    columnas[3] = formatearFitness(fitnessGa);
-                    columnas[4] = formatearTiempo(tiempoGaMs);
-                    lineas.set(i, String.join(",", columnas));
-                    return true;
-                }
-            }
-            return false;
-        }
-
-        private String formatearFitness(final Double fitness) {
-            if (fitness == null) {
-                return "";
-            }
+        private static String formatearFitness(final double fitness) {
             return String.format(java.util.Locale.US, "%.3f", fitness);
         }
 
-        private String formatearTiempo(final Long tiempoMs) {
-            if (tiempoMs == null) {
-                return "";
-            }
+        private static String formatearTiempo(final long tiempoMs) {
             return String.valueOf(tiempoMs);
         }
     }

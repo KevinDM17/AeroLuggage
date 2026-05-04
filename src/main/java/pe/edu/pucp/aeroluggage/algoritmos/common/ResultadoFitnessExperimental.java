@@ -1,22 +1,32 @@
 package pe.edu.pucp.aeroluggage.algoritmos.common;
 
 public class ResultadoFitnessExperimental {
+
     private final double fitnessExperimental;
-    private final int maletasNoRuteadas;
-    private final double usoCapacidadVuelos;
-    private final double usoCapacidadAeropuertos;
-    private final double duracionTotalHoras;
+    private final int noEnrutadas;
+    private final int destinoMal;
+    private final int overflowVuelos;
+    private final int overflowAlmacen;
+    private final double duracionNorm;
+    private final double escalasNorm;
+    private final double esperaNorm;
 
     public ResultadoFitnessExperimental(final double fitnessExperimental,
-                                        final int maletasNoRuteadas,
-                                        final double usoCapacidadVuelos,
-                                        final double usoCapacidadAeropuertos,
-                                        final double duracionTotalHoras) {
+                                        final int noEnrutadas,
+                                        final int destinoMal,
+                                        final int overflowVuelos,
+                                        final int overflowAlmacen,
+                                        final double duracionNorm,
+                                        final double escalasNorm,
+                                        final double esperaNorm) {
         this.fitnessExperimental = fitnessExperimental;
-        this.maletasNoRuteadas = maletasNoRuteadas;
-        this.usoCapacidadVuelos = usoCapacidadVuelos;
-        this.usoCapacidadAeropuertos = usoCapacidadAeropuertos;
-        this.duracionTotalHoras = duracionTotalHoras;
+        this.noEnrutadas = noEnrutadas;
+        this.destinoMal = destinoMal;
+        this.overflowVuelos = overflowVuelos;
+        this.overflowAlmacen = overflowAlmacen;
+        this.duracionNorm = duracionNorm;
+        this.escalasNorm = escalasNorm;
+        this.esperaNorm = esperaNorm;
     }
 
     public ResultadoFitnessExperimental sumar(final ResultadoFitnessExperimental otro) {
@@ -25,10 +35,13 @@ public class ResultadoFitnessExperimental {
         }
         return new ResultadoFitnessExperimental(
                 fitnessExperimental + otro.fitnessExperimental,
-                maletasNoRuteadas + otro.maletasNoRuteadas,
-                usoCapacidadVuelos + otro.usoCapacidadVuelos,
-                usoCapacidadAeropuertos + otro.usoCapacidadAeropuertos,
-                duracionTotalHoras + otro.duracionTotalHoras
+                noEnrutadas + otro.noEnrutadas,
+                destinoMal + otro.destinoMal,
+                overflowVuelos + otro.overflowVuelos,
+                overflowAlmacen + otro.overflowAlmacen,
+                duracionNorm + otro.duracionNorm,
+                escalasNorm + otro.escalasNorm,
+                esperaNorm + otro.esperaNorm
         );
     }
 
@@ -36,19 +49,31 @@ public class ResultadoFitnessExperimental {
         return fitnessExperimental;
     }
 
-    public int getMaletasNoRuteadas() {
-        return maletasNoRuteadas;
+    public int getNoEnrutadas() {
+        return noEnrutadas;
     }
 
-    public double getUsoCapacidadVuelos() {
-        return usoCapacidadVuelos;
+    public int getDestinoMal() {
+        return destinoMal;
     }
 
-    public double getUsoCapacidadAeropuertos() {
-        return usoCapacidadAeropuertos;
+    public int getOverflowVuelos() {
+        return overflowVuelos;
     }
 
-    public double getDuracionTotalHoras() {
-        return duracionTotalHoras;
+    public int getOverflowAlmacen() {
+        return overflowAlmacen;
+    }
+
+    public double getDuracionNorm() {
+        return duracionNorm;
+    }
+
+    public double getEscalasNorm() {
+        return escalasNorm;
+    }
+
+    public double getEsperaNorm() {
+        return esperaNorm;
     }
 }

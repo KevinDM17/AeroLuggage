@@ -2,26 +2,23 @@ package pe.edu.pucp.aeroluggage.algoritmos.common;
 
 import java.time.Duration;
 import java.time.LocalDateTime;
+import java.time.ZoneOffset;
+import java.util.ArrayList;
+import java.util.Comparator;
 import java.util.HashMap;
-import java.util.HashSet;
 import java.util.List;
 import java.util.Map;
-import java.util.Set;
 
 import pe.edu.pucp.aeroluggage.algoritmos.InstanciaProblema;
 import pe.edu.pucp.aeroluggage.algoritmos.Solucion;
 import pe.edu.pucp.aeroluggage.dominio.entidades.Aeropuerto;
 import pe.edu.pucp.aeroluggage.dominio.entidades.Maleta;
+import pe.edu.pucp.aeroluggage.dominio.entidades.Pedido;
 import pe.edu.pucp.aeroluggage.dominio.entidades.Ruta;
 import pe.edu.pucp.aeroluggage.dominio.entidades.VueloInstancia;
 import pe.edu.pucp.aeroluggage.dominio.enums.EstadoRuta;
 
 public final class CalculadorFitnessExperimental {
-    private static final double PESO_MALETA_NO_RUTEADA = 1_000_000D;
-    private static final double PESO_USO_CAPACIDAD_VUELO = 1_000D;
-    private static final double PESO_USO_CAPACIDAD_AEROPUERTO = 1_000D;
-    private static final double PESO_DURACION_HORAS = 10D;
-    private static final double PENALIZACION_CAPACIDAD_INVALIDA = 1_000D;
 
     private CalculadorFitnessExperimental() {
         throw new UnsupportedOperationException("This class should never be instantiated");
@@ -29,52 +26,160 @@ public final class CalculadorFitnessExperimental {
 
     public static ResultadoFitnessExperimental calcular(final Solucion solucion,
                                                         final InstanciaProblema instancia) {
+        return calcular(solucion, instancia, new ConfigFitnessExperimental());
+    }
+
+    public static ResultadoFitnessExperimental calcular(final Solucion solucion,
+                                                        final InstanciaProblema instancia,
+                                                        final ConfigFitnessExperimental config) {
         if (instancia == null) {
-            return new ResultadoFitnessExperimental(0D, 0, 0D, 0D, 0D);
+            return new ResultadoFitnessExperimental(0D, 0, 0, 0, 0, 0D, 0D, 0D);
         }
 
-        final Map<String, Maleta> maletasPorId = indexarMaletas(instancia);
-        final Map<String, VueloInstancia> vuelosPorId = indexarVuelos(instancia);
+        final Map<String, Maleta> maletasPorId = instancia.getMaletasPorId();
+        final Map<String, VueloInstancia> vuelosPorId = instancia.getVuelosPorId();
         final Map<String, Aeropuerto> aeropuertosPorId = instancia.indexarAeropuertosPorIcao();
         final Map<String, Integer> usoVuelos = new HashMap<>();
-        final Map<String, Integer> usoAeropuertos = new HashMap<>();
-        final Set<String> maletasRuteadas = new HashSet<>();
-        double duracionTotalHoras = 0D;
+        // airportId -> list of [epochSecond, +1 arrival / -1 departure]
+        final Map<String, List<long[]>> eventosAeropuerto = new HashMap<>();
+
+        int noEnrutadas = 0;
+        int destinoMal = 0;
+        int sumaEscalas = 0;
+        double duracionTotal = 0D;
+        double tiempoEsperaTotal = 0D;
 
         if (solucion != null && solucion.getSolucion() != null) {
             for (final Ruta ruta : solucion.getSolucion()) {
-                if (!esRutaValida(ruta, maletasPorId)) {
+                final Maleta maleta = ruta != null ? maletasPorId.get(ruta.getIdMaleta()) : null;
+                if (!esRutaValida(ruta, maleta)) {
+                    noEnrutadas++;
                     continue;
                 }
-                maletasRuteadas.add(ruta.getIdMaleta());
-                acumularUsoVuelos(ruta.getSubrutas(), usoVuelos);
-                acumularUsoAeropuertos(ruta.getSubrutas(), usoAeropuertos);
-                duracionTotalHoras += calcularDuracionHoras(ruta.getSubrutas());
+
+                final List<VueloInstancia> subrutas = ruta.getSubrutas();
+                for (int i = 0; i < subrutas.size(); i++) {
+                    final VueloInstancia v = subrutas.get(i);
+                    if (v == null) {
+                        continue;
+                    }
+
+                    if (v.getFechaSalida() != null && v.getFechaLlegada() != null) {
+                        duracionTotal += Duration.between(v.getFechaSalida(), v.getFechaLlegada())
+                                .toMinutes() / 60.0;
+                    }
+
+                    if (v.getIdVueloInstancia() != null) {
+                        usoVuelos.merge(v.getIdVueloInstancia(), 1, Integer::sum);
+                    }
+
+                    // origin airport: bag is stored from registration until this flight departs
+                    if (i == 0 && v.getAeropuertoOrigen() != null
+                            && v.getAeropuertoOrigen().getIdAeropuerto() != null
+                            && v.getFechaSalida() != null) {
+                        final LocalDateTime llegadaAOrigen = maleta.getFechaRegistro() != null
+                                ? maleta.getFechaRegistro() : v.getFechaSalida();
+                        registrarEvento(eventosAeropuerto, v.getAeropuertoOrigen().getIdAeropuerto(),
+                                llegadaAOrigen, v.getFechaSalida());
+                    }
+
+                    // destination airport: bag arrives on landing, leaves on next flight's departure (or stays)
+                    if (v.getAeropuertoDestino() != null
+                            && v.getAeropuertoDestino().getIdAeropuerto() != null
+                            && v.getFechaLlegada() != null) {
+                        final VueloInstancia siguiente = (i + 1 < subrutas.size()) ? subrutas.get(i + 1) : null;
+                        final LocalDateTime salidaSiguiente = siguiente != null ? siguiente.getFechaSalida() : null;
+                        registrarEvento(eventosAeropuerto, v.getAeropuertoDestino().getIdAeropuerto(),
+                                v.getFechaLlegada(), salidaSiguiente);
+                    }
+
+                    if (i > 0) {
+                        final VueloInstancia prev = subrutas.get(i - 1);
+                        if (prev != null && prev.getFechaLlegada() != null && v.getFechaSalida() != null
+                                && v.getFechaSalida().isAfter(prev.getFechaLlegada())) {
+                            tiempoEsperaTotal += Duration.between(prev.getFechaLlegada(), v.getFechaSalida())
+                                    .toMinutes() / 60.0;
+                        }
+                    }
+                }
+
+                sumaEscalas += subrutas.size() - 1;
+
+                final VueloInstancia ultimo = subrutas.get(subrutas.size() - 1);
+                if (ultimo != null && !mismoDestino(ultimo.getAeropuertoDestino(), maleta)) {
+                    destinoMal++;
+                }
             }
         }
 
-        final int maletasNoRuteadas = Math.max(0, maletasPorId.size() - maletasRuteadas.size());
-        final double usoCapacidadVuelos = calcularUsoCapacidadVuelos(usoVuelos, vuelosPorId);
-        final double usoCapacidadAeropuertos = calcularUsoCapacidadAeropuertos(
-                usoAeropuertos,
-                aeropuertosPorId
-        );
-        final double fitnessExperimental = maletasNoRuteadas * PESO_MALETA_NO_RUTEADA
-                + usoCapacidadVuelos * PESO_USO_CAPACIDAD_VUELO
-                + usoCapacidadAeropuertos * PESO_USO_CAPACIDAD_AEROPUERTO
-                + duracionTotalHoras * PESO_DURACION_HORAS;
+        int overflowVuelos = 0;
+        for (final Map.Entry<String, Integer> e : usoVuelos.entrySet()) {
+            final VueloInstancia v = vuelosPorId.get(e.getKey());
+            if (v != null && v.getCapacidadMaxima() > 0 && e.getValue() > v.getCapacidadMaxima()) {
+                overflowVuelos++;
+            }
+        }
+
+        int overflowAlmacen = 0;
+        for (final Map.Entry<String, List<long[]>> entry : eventosAeropuerto.entrySet()) {
+            final Aeropuerto a = aeropuertosPorId.get(entry.getKey());
+            if (a != null && a.getCapacidadAlmacen() > 0
+                    && calcularMaxOcupacion(entry.getValue()) > a.getCapacidadAlmacen()) {
+                overflowAlmacen++;
+            }
+        }
+
+        final int n = Math.max(1, maletasPorId.size());
+        final int totalVuelos = Math.max(1, instancia.getVueloInstancias().size());
+        final int totalAeropuertos = Math.max(1, instancia.getAeropuertos().size());
+
+        final double duracionNorm = duracionTotal     / (n * 48.0);
+        final double escalasNorm  = sumaEscalas       / (n * 5.0);
+        final double esperaNorm   = tiempoEsperaTotal / (n * 24.0);
+
+        final double fitness =
+                config.getW1NoEnrutadas()     * (noEnrutadas    / (double) n)
+              + config.getW2DestinMal()       * (destinoMal     / (double) n)
+              + config.getW3OverflowVuelos()  * (overflowVuelos  / (double) totalVuelos)
+              + config.getW4OverflowAlmacen() * (overflowAlmacen / (double) totalAeropuertos)
+              + config.getW5Duracion()        * duracionNorm
+              + config.getW6Escalas()         * escalasNorm
+              + config.getW7Espera()          * esperaNorm;
 
         return new ResultadoFitnessExperimental(
-                fitnessExperimental,
-                maletasNoRuteadas,
-                usoCapacidadVuelos,
-                usoCapacidadAeropuertos,
-                duracionTotalHoras
-        );
+                fitness, noEnrutadas, destinoMal,
+                overflowVuelos, overflowAlmacen,
+                duracionNorm, escalasNorm, esperaNorm);
     }
 
-    private static boolean esRutaValida(final Ruta ruta, final Map<String, Maleta> maletasPorId) {
-        if (ruta == null || ruta.getIdMaleta() == null || !maletasPorId.containsKey(ruta.getIdMaleta())) {
+    private static void registrarEvento(final Map<String, List<long[]>> eventos,
+                                        final String idAeropuerto,
+                                        final LocalDateTime llegada,
+                                        final LocalDateTime salida) {
+        final List<long[]> lista = eventos.computeIfAbsent(idAeropuerto, k -> new ArrayList<>());
+        lista.add(new long[]{llegada.toEpochSecond(ZoneOffset.UTC), +1});
+        if (salida != null) {
+            lista.add(new long[]{salida.toEpochSecond(ZoneOffset.UTC), -1});
+        }
+    }
+
+    // sweep-line: find peak concurrent occupancy
+    private static int calcularMaxOcupacion(final List<long[]> eventos) {
+        // sort by time; at same time, process arrivals (+1) before departures (-1)
+        eventos.sort(Comparator.comparingLong((long[] e) -> e[0]).thenComparingLong(e -> -e[1]));
+        int actual = 0;
+        int max = 0;
+        for (final long[] e : eventos) {
+            actual += (int) e[1];
+            if (actual > max) {
+                max = actual;
+            }
+        }
+        return max;
+    }
+
+    private static boolean esRutaValida(final Ruta ruta, final Maleta maleta) {
+        if (ruta == null || maleta == null) {
             return false;
         }
         return ruta.getEstado() != EstadoRuta.FALLIDA
@@ -82,97 +187,14 @@ public final class CalculadorFitnessExperimental {
                 && !ruta.getSubrutas().isEmpty();
     }
 
-    private static void acumularUsoVuelos(final List<VueloInstancia> vuelos,
-                                          final Map<String, Integer> usoVuelos) {
-        for (final VueloInstancia vuelo : vuelos) {
-            if (vuelo == null || vuelo.getIdVueloInstancia() == null) {
-                continue;
-            }
-            usoVuelos.merge(vuelo.getIdVueloInstancia(), 1, Integer::sum);
+    private static boolean mismoDestino(final Aeropuerto destinoVuelo, final Maleta maleta) {
+        if (destinoVuelo == null || destinoVuelo.getIdAeropuerto() == null) {
+            return false;
         }
-    }
-
-    private static void acumularUsoAeropuertos(final List<VueloInstancia> vuelos,
-                                               final Map<String, Integer> usoAeropuertos) {
-        if (vuelos.isEmpty()) {
-            return;
+        final Pedido pedido = maleta.getPedido();
+        if (pedido == null || pedido.getAeropuertoDestino() == null) {
+            return false;
         }
-        final VueloInstancia primerVuelo = vuelos.get(0);
-        acumularAeropuerto(primerVuelo == null ? null : primerVuelo.getAeropuertoOrigen(), usoAeropuertos);
-        for (final VueloInstancia vuelo : vuelos) {
-            acumularAeropuerto(vuelo == null ? null : vuelo.getAeropuertoDestino(), usoAeropuertos);
-        }
-    }
-
-    private static void acumularAeropuerto(final Aeropuerto aeropuerto,
-                                           final Map<String, Integer> usoAeropuertos) {
-        if (aeropuerto == null || aeropuerto.getIdAeropuerto() == null) {
-            return;
-        }
-        usoAeropuertos.merge(aeropuerto.getIdAeropuerto(), 1, Integer::sum);
-    }
-
-    private static double calcularUsoCapacidadVuelos(final Map<String, Integer> usoVuelos,
-                                                     final Map<String, VueloInstancia> vuelosPorId) {
-        double usoCapacidad = 0D;
-        for (final Map.Entry<String, Integer> entry : usoVuelos.entrySet()) {
-            final VueloInstancia vuelo = vuelosPorId.get(entry.getKey());
-            if (vuelo == null || vuelo.getCapacidadMaxima() <= 0) {
-                usoCapacidad += entry.getValue() * PENALIZACION_CAPACIDAD_INVALIDA;
-                continue;
-            }
-            usoCapacidad += entry.getValue() / (double) vuelo.getCapacidadMaxima();
-        }
-        return usoCapacidad;
-    }
-
-    private static double calcularUsoCapacidadAeropuertos(final Map<String, Integer> usoAeropuertos,
-                                                          final Map<String, Aeropuerto> aeropuertosPorId) {
-        double usoCapacidad = 0D;
-        for (final Map.Entry<String, Integer> entry : usoAeropuertos.entrySet()) {
-            final Aeropuerto aeropuerto = aeropuertosPorId.get(entry.getKey());
-            if (aeropuerto == null || aeropuerto.getCapacidadAlmacen() <= 0) {
-                usoCapacidad += entry.getValue() * PENALIZACION_CAPACIDAD_INVALIDA;
-                continue;
-            }
-            usoCapacidad += entry.getValue() / (double) aeropuerto.getCapacidadAlmacen();
-        }
-        return usoCapacidad;
-    }
-
-    private static double calcularDuracionHoras(final List<VueloInstancia> vuelos) {
-        if (vuelos == null || vuelos.isEmpty()) {
-            return 0D;
-        }
-        final VueloInstancia primerVuelo = vuelos.get(0);
-        final VueloInstancia ultimoVuelo = vuelos.get(vuelos.size() - 1);
-        final LocalDateTime salida = primerVuelo == null ? null : primerVuelo.getFechaSalida();
-        final LocalDateTime llegada = ultimoVuelo == null ? null : ultimoVuelo.getFechaLlegada();
-        if (salida == null || llegada == null || llegada.isBefore(salida)) {
-            return 0D;
-        }
-        return Duration.between(salida, llegada).toMinutes() / 60D;
-    }
-
-    private static Map<String, Maleta> indexarMaletas(final InstanciaProblema instancia) {
-        final Map<String, Maleta> indice = new HashMap<>();
-        for (final Maleta maleta : instancia.getMaletas()) {
-            if (maleta == null || maleta.getIdMaleta() == null) {
-                continue;
-            }
-            indice.put(maleta.getIdMaleta(), maleta);
-        }
-        return indice;
-    }
-
-    private static Map<String, VueloInstancia> indexarVuelos(final InstanciaProblema instancia) {
-        final Map<String, VueloInstancia> indice = new HashMap<>();
-        for (final VueloInstancia vuelo : instancia.getVueloInstancias()) {
-            if (vuelo == null || vuelo.getIdVueloInstancia() == null) {
-                continue;
-            }
-            indice.put(vuelo.getIdVueloInstancia(), vuelo);
-        }
-        return indice;
+        return destinoVuelo.getIdAeropuerto().equals(pedido.getAeropuertoDestino().getIdAeropuerto());
     }
 }

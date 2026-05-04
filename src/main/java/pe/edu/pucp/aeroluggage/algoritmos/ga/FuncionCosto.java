@@ -1,7 +1,6 @@
 package pe.edu.pucp.aeroluggage.algoritmos.ga;
 
 import java.time.Duration;
-import java.time.LocalDateTime;
 import java.util.HashMap;
 import java.util.List;
 import java.util.Map;
@@ -11,11 +10,9 @@ import pe.edu.pucp.aeroluggage.algoritmos.Solucion;
 import pe.edu.pucp.aeroluggage.algoritmos.common.CalculadorSemaforo;
 import pe.edu.pucp.aeroluggage.dominio.entidades.Aeropuerto;
 import pe.edu.pucp.aeroluggage.dominio.entidades.Maleta;
-import pe.edu.pucp.aeroluggage.dominio.entidades.Pedido;
 import pe.edu.pucp.aeroluggage.dominio.entidades.Ruta;
 import pe.edu.pucp.aeroluggage.dominio.entidades.VueloInstancia;
 import pe.edu.pucp.aeroluggage.dominio.enums.EstadoRuta;
-import pe.edu.pucp.aeroluggage.dominio.enums.EstadoVuelo;
 
 public final class FuncionCosto {
 
@@ -26,31 +23,29 @@ public final class FuncionCosto {
     public static double calcularCostoSolucion(final Solucion solucion, final InstanciaProblema instancia,
                                                final ParametrosGA params) {
         if (solucion == null || solucion.getSolucion() == null || solucion.getSolucion().isEmpty()) {
-            return params.getPenalizacionRutaVacia() * 10;
+            return params.getPesoNoEnrutadas() * 10;
         }
 
         final Map<String, Maleta> maletasPorId = instancia.getMaletasPorId();
-        double costoRutas = 0.0;
-        int incumplidas = 0;
-        int aTiempo = 0;
-        int rutasParciales = 0;
-        double sumaTransito = 0.0;
-        int rutasContadas = 0;
-
+        int maletasNoEnrutadas = 0;
+        double duracionTotalHoras = 0.0;
+        double sumaEscalas = 0.0;
+        int rutasValidas = 0;
         final Map<String, Integer> cargaPorVuelo = new HashMap<>();
+        final Map<String, Integer> cargaPorAeropuerto = new HashMap<>();
 
         for (final Ruta ruta : solucion.getSolucion()) {
             if (ruta == null) {
-                incumplidas++;
+                maletasNoEnrutadas++;
                 continue;
             }
             final Maleta maleta = maletasPorId.get(ruta.getIdMaleta());
-            final double costoRuta = calcularCostoRuta(ruta, maleta, params);
-            costoRutas += costoRuta;
-
             final List<VueloInstancia> subrutas = ruta.getSubrutas();
-            if (subrutas == null || subrutas.isEmpty()) {
-                incumplidas++;
+
+            if (subrutas == null || subrutas.isEmpty()
+                    || ruta.getEstado() == EstadoRuta.FALLIDA
+                    || esRutaParcial(ruta, maleta)) {
+                maletasNoEnrutadas++;
                 continue;
             }
 
@@ -58,126 +53,53 @@ public final class FuncionCosto {
                 if (vuelo == null || vuelo.getIdVueloInstancia() == null) {
                     continue;
                 }
+                if (vuelo.getFechaSalida() != null && vuelo.getFechaLlegada() != null) {
+                    duracionTotalHoras += Duration.between(
+                            vuelo.getFechaSalida(), vuelo.getFechaLlegada()).toMinutes() / 60.0;
+                }
                 cargaPorVuelo.merge(vuelo.getIdVueloInstancia(), 1, Integer::sum);
+                final String idOrigen = vuelo.getAeropuertoOrigen() != null
+                        ? vuelo.getAeropuertoOrigen().getIdAeropuerto() : null;
+                final String idDestino = vuelo.getAeropuertoDestino() != null
+                        ? vuelo.getAeropuertoDestino().getIdAeropuerto() : null;
+                if (idOrigen != null) {
+                    cargaPorAeropuerto.merge(idOrigen, 1, Integer::sum);
+                }
+                if (idDestino != null) {
+                    cargaPorAeropuerto.merge(idDestino, 1, Integer::sum);
+                }
             }
-
-            if (esRutaParcial(ruta, maleta)) {
-                rutasParciales++;
-                incumplidas++;
-            } else if (cumplePlazo(ruta, maleta)) {
-                aTiempo++;
-            } else {
-                incumplidas++;
-            }
-
-            sumaTransito += ruta.getDuracion();
-            rutasContadas++;
+            sumaEscalas += Math.max(0, subrutas.size() - 1);
+            rutasValidas++;
         }
 
         final double overflowVuelos = calcularOverflowVuelos(cargaPorVuelo, instancia);
-        final double[] metricasAlmacenes = calcularMetricasAlmacenes(solucion, instancia);
+        final double[] metricasAlmacenes = calcularMetricasAlmacenes(cargaPorAeropuerto, instancia);
         final double overflowAlmacenes = metricasAlmacenes[0];
         final double ocupacionPromedioAlmacenes = metricasAlmacenes[1];
-        final double transitoPromedio = rutasContadas > 0 ? sumaTransito / rutasContadas : 0.0;
+        final double promedioEscalas = rutasValidas > 0 ? sumaEscalas / rutasValidas : 0.0;
         final double ocupacionPromedio = calcularOcupacionPromedio(cargaPorVuelo, instancia);
 
-        final double costoTotal =
-                costoRutas
-                + params.getW1MaletasIncumplidas() * incumplidas
-                + params.getPenalizacionRutaParcial() * rutasParciales
-                + params.getW3OverflowVuelo() * overflowVuelos
-                + params.getW4OverflowAlmacen() * overflowAlmacenes
-                + params.getW5TransitoPromedio() * transitoPromedio;
+        // --- Capa 1: duras ---
+        final double pesoNoEnrutadas = params.getPesoNoEnrutadas();
+        final double pesoAeropuertosOverflow = params.getPesoAeropuertosOverflow();
+        final double pesoVuelosOverflow = params.getPesoVuelosOverflow();
+        double costoTotal = pesoNoEnrutadas * maletasNoEnrutadas;
+        costoTotal += pesoAeropuertosOverflow * overflowAlmacenes;
+        costoTotal += pesoVuelosOverflow * overflowVuelos;
+        // --- Capa 2: calidad ---
+        costoTotal += 1.0 * duracionTotalHoras;
+        costoTotal += 5.0 * promedioEscalas;
 
         solucion.setCostoTotal(costoTotal);
-        solucion.setMaletasEntregadasATiempo(aTiempo);
-        solucion.setMaletasIncumplidas(incumplidas);
+        solucion.setMaletasEntregadasATiempo(rutasValidas);
+        solucion.setMaletasIncumplidas(maletasNoEnrutadas);
         solucion.setOcupacionPromedioVuelos(ocupacionPromedio);
         solucion.setOcupacionPromedioAlmacenes(ocupacionPromedioAlmacenes);
         solucion.setOverflowAlmacenes(overflowAlmacenes);
-        solucion.setFactible(incumplidas == 0 && overflowVuelos == 0.0 && overflowAlmacenes == 0.0);
+        solucion.setFactible(maletasNoEnrutadas == 0 && overflowVuelos == 0.0 && overflowAlmacenes == 0.0);
         solucion.setSemaforo(CalculadorSemaforo.clasificarGlobal(solucion, instancia, params));
         return costoTotal;
-    }
-
-    public static double calcularCostoRuta(final Ruta ruta, final Maleta maleta, final ParametrosGA params) {
-        if (ruta == null) {
-            return params.getPenalizacionRutaInvalida();
-        }
-        final List<VueloInstancia> subrutas = ruta.getSubrutas();
-        if (subrutas == null || subrutas.isEmpty()) {
-            return params.getPenalizacionRutaVacia();
-        }
-        if (maleta == null || maleta.getPedido() == null) {
-            return params.getPenalizacionSinDestino();
-        }
-
-        double costo = 0.0;
-        for (final VueloInstancia vuelo : subrutas) {
-            if (vuelo == null) {
-                costo += params.getPenalizacionRutaInvalida();
-                continue;
-            }
-            if (vuelo.getEstado() == EstadoVuelo.CANCELADO) {
-                costo += params.getPenalizacionRutaInvalida();
-            }
-            if (vuelo.getFechaSalida() != null && vuelo.getFechaLlegada() != null) {
-                costo += Duration.between(vuelo.getFechaSalida(), vuelo.getFechaLlegada()).toMinutes() / 60.0;
-            }
-        }
-
-        costo += (subrutas.size() - 1) * 0.5;
-
-        final double excesoHoras = calcularExcesoHoras(ruta, maleta);
-        if (excesoHoras > 0) {
-            costo += params.getW2ExcesoHorasPlazo() * excesoHoras;
-        }
-
-        if (ruta.getEstado() == EstadoRuta.FALLIDA) {
-            costo += params.getPenalizacionRutaInvalida();
-        }
-
-        final Pedido pedido = maleta.getPedido();
-        if (!primerVueloCoherente(subrutas, pedido.getAeropuertoOrigen())) {
-            costo += params.getPenalizacionRutaInvalida();
-        }
-        if (!ultimoVueloCoherente(subrutas, pedido.getAeropuertoDestino())) {
-            costo += params.getPenalizacionSinDestino();
-        }
-        if (!conexionesCoherentes(subrutas)) {
-            costo += params.getPenalizacionRutaInvalida();
-        }
-        if (esRutaParcial(ruta, maleta)) {
-            costo += params.getPenalizacionRutaParcial();
-        }
-
-        return costo;
-    }
-
-    private static double calcularExcesoHoras(final Ruta ruta, final Maleta maleta) {
-        final List<VueloInstancia> subrutas = ruta.getSubrutas();
-        if (subrutas == null || subrutas.isEmpty() || maleta == null || maleta.getPedido() == null) {
-            return 0.0;
-        }
-        final LocalDateTime llegada = subrutas.get(subrutas.size() - 1).getFechaLlegada();
-        final LocalDateTime plazo = maleta.getPedido().getFechaHoraPlazo();
-        if (llegada == null || plazo == null) {
-            return 0.0;
-        }
-        if (llegada.isAfter(plazo)) {
-            return Duration.between(plazo, llegada).toMinutes() / 60.0;
-        }
-        return 0.0;
-    }
-
-    private static boolean cumplePlazo(final Ruta ruta, final Maleta maleta) {
-        if (ruta == null || ruta.getEstado() == EstadoRuta.FALLIDA) {
-            return false;
-        }
-        if (esRutaParcial(ruta, maleta)) {
-            return false;
-        }
-        return calcularExcesoHoras(ruta, maleta) <= 0.0;
     }
 
     private static boolean esRutaParcial(final Ruta ruta, final Maleta maleta) {
@@ -191,15 +113,6 @@ public final class FuncionCosto {
         return !ultimoVueloCoherente(subrutas, maleta.getPedido().getAeropuertoDestino());
     }
 
-    private static boolean primerVueloCoherente(final List<VueloInstancia> subrutas, final Aeropuerto origen) {
-        if (subrutas.isEmpty() || origen == null) {
-            return false;
-        }
-        final Aeropuerto inicio = subrutas.get(0).getAeropuertoOrigen();
-        return inicio != null && inicio.getIdAeropuerto() != null
-                && inicio.getIdAeropuerto().equals(origen.getIdAeropuerto());
-    }
-
     private static boolean ultimoVueloCoherente(final List<VueloInstancia> subrutas, final Aeropuerto destino) {
         if (subrutas.isEmpty() || destino == null) {
             return false;
@@ -207,29 +120,6 @@ public final class FuncionCosto {
         final Aeropuerto fin = subrutas.get(subrutas.size() - 1).getAeropuertoDestino();
         return fin != null && fin.getIdAeropuerto() != null
                 && fin.getIdAeropuerto().equals(destino.getIdAeropuerto());
-    }
-
-    private static boolean conexionesCoherentes(final List<VueloInstancia> subrutas) {
-        for (int i = 0; i < subrutas.size() - 1; i++) {
-            final VueloInstancia actual = subrutas.get(i);
-            final VueloInstancia siguiente = subrutas.get(i + 1);
-            if (actual == null || siguiente == null) {
-                return false;
-            }
-            final Aeropuerto destinoActual = actual.getAeropuertoDestino();
-            final Aeropuerto origenSiguiente = siguiente.getAeropuertoOrigen();
-            if (destinoActual == null || origenSiguiente == null) {
-                return false;
-            }
-            if (!destinoActual.getIdAeropuerto().equals(origenSiguiente.getIdAeropuerto())) {
-                return false;
-            }
-            if (actual.getFechaLlegada() != null && siguiente.getFechaSalida() != null
-                    && actual.getFechaLlegada().isAfter(siguiente.getFechaSalida())) {
-                return false;
-            }
-        }
-        return true;
     }
 
     private static double calcularOcupacionPromedio(final Map<String, Integer> cargaPorVuelo,
@@ -271,33 +161,13 @@ public final class FuncionCosto {
         return overflow;
     }
 
-    // Calcula overflow y ocupación promedio de almacenes en un único recorrido.
     // Retorna [overflowAlmacenes, ocupacionPromedioAlmacenes].
-    private static double[] calcularMetricasAlmacenes(final Solucion solucion, final InstanciaProblema instancia) {
-        if (solucion == null || solucion.getSolucion() == null || solucion.getSolucion().isEmpty()
-                || instancia == null || instancia.getAeropuertos() == null) {
+    private static double[] calcularMetricasAlmacenes(final Map<String, Integer> cargaPorAeropuerto,
+                                                      final InstanciaProblema instancia) {
+        if (cargaPorAeropuerto.isEmpty() || instancia == null || instancia.getAeropuertos() == null) {
             return new double[]{0.0, 0.0};
         }
-        final Map<String, Integer> cargaPorAeropuerto = new HashMap<>();
         final Map<String, Aeropuerto> aeropuertos = instancia.indexarAeropuertosPorIcao();
-
-        for (final Ruta ruta : solucion.getSolucion()) {
-            if (ruta == null || ruta.getSubrutas() == null || ruta.getSubrutas().isEmpty()) {
-                continue;
-            }
-            for (final VueloInstancia vuelo : ruta.getSubrutas()) {
-                if (vuelo == null) {
-                    continue;
-                }
-                if (vuelo.getAeropuertoOrigen() != null && vuelo.getAeropuertoOrigen().getIdAeropuerto() != null) {
-                    cargaPorAeropuerto.merge(vuelo.getAeropuertoOrigen().getIdAeropuerto(), 1, Integer::sum);
-                }
-                if (vuelo.getAeropuertoDestino() != null && vuelo.getAeropuertoDestino().getIdAeropuerto() != null) {
-                    cargaPorAeropuerto.merge(vuelo.getAeropuertoDestino().getIdAeropuerto(), 1, Integer::sum);
-                }
-            }
-        }
-
         double overflow = 0.0;
         double sumaPromedio = 0.0;
         int cuentaPromedio = 0;
