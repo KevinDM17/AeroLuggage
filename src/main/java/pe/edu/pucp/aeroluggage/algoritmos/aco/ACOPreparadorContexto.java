@@ -5,6 +5,7 @@ import java.util.ArrayList;
 import java.util.Comparator;
 import java.util.HashMap;
 import java.util.HashSet;
+import java.util.List;
 import java.util.Map;
 import java.util.Set;
 
@@ -31,7 +32,7 @@ final class ACOPreparadorContexto {
     }
 
     ArrayList<Maleta> actualizarMaletasPendientes(
-            final ArrayList<Maleta> maletas,
+            final List<Maleta> maletas,
             final ArrayList<String> eventos,
             final ArrayList<Ruta> planesConfirmados
     ) {
@@ -60,7 +61,7 @@ final class ACOPreparadorContexto {
     }
 
     ArrayList<VueloInstancia> actualizarVuelosDisponibles(
-            final ArrayList<VueloInstancia> vuelos,
+            final List<VueloInstancia> vuelos,
             final ArrayList<String> eventos
     ) {
         final ArrayList<VueloInstancia> vuelosDisponibles = new ArrayList<>();
@@ -84,8 +85,8 @@ final class ACOPreparadorContexto {
     }
 
     CapacidadesACO recalcularCapacidades(
-            final ArrayList<VueloInstancia> vuelos,
-            final ArrayList<Aeropuerto> aeropuertos
+            final List<VueloInstancia> vuelos,
+            final List<Aeropuerto> aeropuertos
     ) {
         final Map<String, Integer> capacidadRestanteVuelo = new HashMap<>();
         if (vuelos != null) {
@@ -97,7 +98,7 @@ final class ACOPreparadorContexto {
             }
         }
 
-        final Map<String, Integer> capacidadRestanteAlmacen = new HashMap<>();
+        final Map<String, CapacidadTemporalAlmacen> capacidadRestanteAlmacen = new HashMap<>();
         if (aeropuertos != null) {
             for (final Aeropuerto aeropuerto : aeropuertos) {
                 if (aeropuerto == null || aeropuerto.getIdAeropuerto() == null) {
@@ -107,7 +108,10 @@ final class ACOPreparadorContexto {
                         0,
                         aeropuerto.getCapacidadAlmacen() - aeropuerto.getMaletasActuales()
                 );
-                capacidadRestanteAlmacen.put(aeropuerto.getIdAeropuerto(), capacidadDisponible);
+                capacidadRestanteAlmacen.put(
+                        aeropuerto.getIdAeropuerto(),
+                        new CapacidadTemporalAlmacen(capacidadDisponible)
+                );
             }
         }
 
@@ -115,8 +119,8 @@ final class ACOPreparadorContexto {
     }
 
     SubproblemaACO construirSubproblema(
-            final ArrayList<Maleta> maletas,
-            final ArrayList<VueloInstancia> vuelos,
+            final List<Maleta> maletas,
+            final List<VueloInstancia> vuelos,
             final CapacidadesACO capacidades,
             final int intervaloActual,
             final LocalDateTime tiempoBase

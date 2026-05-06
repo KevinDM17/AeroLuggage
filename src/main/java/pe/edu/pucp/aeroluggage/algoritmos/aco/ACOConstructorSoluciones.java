@@ -59,7 +59,7 @@ final class ACOConstructorSoluciones {
     ) {
         final ArrayList<Solucion> poblacionInicial = new ArrayList<>();
         final Map<String, Integer> capacidadRestanteVuelo = new HashMap<>(subproblema.getCapacidadRestanteVueloBase());
-        final Map<String, Integer> capacidadRestanteAlmacen = new HashMap<>(
+        final Map<String, CapacidadTemporalAlmacen> capacidadRestanteAlmacen = CapacidadTemporalAlmacen.clonarMapa(
                 subproblema.getCapacidadRestanteAlmacenBase()
         );
         final ArrayList<Ruta> rutas = new ArrayList<>();
@@ -84,7 +84,7 @@ final class ACOConstructorSoluciones {
             final FeromonasACO feromonas
     ) {
         final Map<String, Integer> capacidadRestanteVuelo = new HashMap<>(subproblema.getCapacidadRestanteVueloBase());
-        final Map<String, Integer> capacidadRestanteAlmacen = new HashMap<>(
+        final Map<String, CapacidadTemporalAlmacen> capacidadRestanteAlmacen = CapacidadTemporalAlmacen.clonarMapa(
                 subproblema.getCapacidadRestanteAlmacenBase()
         );
         final ArrayList<Ruta> rutas = new ArrayList<>();
@@ -256,7 +256,7 @@ final class ACOConstructorSoluciones {
             final SubproblemaACO subproblema,
             final FeromonasACO feromonas,
             final Map<String, Integer> capacidadRestanteVuelo,
-            final Map<String, Integer> capacidadRestanteAlmacen,
+            final Map<String, CapacidadTemporalAlmacen> capacidadRestanteAlmacen,
             final boolean modoCodicioso
     ) {
         if (maleta == null || maleta.getIdMaleta() == null || maleta.getPedido() == null) {
@@ -274,8 +274,9 @@ final class ACOConstructorSoluciones {
         final LocalDateTime tiempoActual = obtenerTiempoDisponible(maleta, subproblema.getInicioIntervalo());
         final LocalDateTime plazoBase = subproblema.getPlazoPorMaleta().get(maleta.getIdMaleta());
         final LocalDateTime plazo = plazoBase;
-        final Map<String, Integer> capacidadRestanteVueloTemporal = new HashMap<>(capacidadRestanteVuelo);
-        final Map<String, Integer> capacidadRestanteAlmacenTemporal = new HashMap<>(capacidadRestanteAlmacen);
+        // Se pasan los mapas directamente: construirPlanTemporal solo escribe en ellos
+        // cuando encuentra un camino (vía aplicarConsumoPlan). Si falla, devuelve null
+        // sin haber modificado nada, por lo que la copia defensiva es innecesaria.
         final ArrayList<VueloInstancia> plan = construirPlanTemporal(
                 maleta,
                 subproblema,
@@ -284,15 +285,13 @@ final class ACOConstructorSoluciones {
                 destino,
                 tiempoActual,
                 plazo,
-                capacidadRestanteVueloTemporal,
-                capacidadRestanteAlmacenTemporal,
+                capacidadRestanteVuelo,
+                capacidadRestanteAlmacen,
                 modoCodicioso
         );
         if (plan == null || plan.isEmpty()) {
             return crearRutaNoFactible(maleta, new ArrayList<>(), subproblema);
         }
-        capacidadRestanteVuelo.putAll(capacidadRestanteVueloTemporal);
-        capacidadRestanteAlmacen.putAll(capacidadRestanteAlmacenTemporal);
         return crearRutaFactible(maleta, plan, subproblema, ESTADO_PLANIFICADA);
     }
 
@@ -305,7 +304,7 @@ final class ACOConstructorSoluciones {
             final LocalDateTime tiempoActual,
             final LocalDateTime plazo,
             final Map<String, Integer> capacidadRestanteVuelo,
-            final Map<String, Integer> capacidadRestanteAlmacen,
+            final Map<String, CapacidadTemporalAlmacen> capacidadRestanteAlmacen,
             final boolean modoCodicioso
     ) {
         final Set<String> visitados = new HashSet<>();
@@ -337,7 +336,7 @@ final class ACOConstructorSoluciones {
             final LocalDateTime tiempoActual,
             final LocalDateTime plazo,
             final Map<String, Integer> capacidadRestanteVuelo,
-            final Map<String, Integer> capacidadRestanteAlmacen,
+            final Map<String, CapacidadTemporalAlmacen> capacidadRestanteAlmacen,
             final boolean modoCodicioso
     ) {
         final String idOrigen = obtenerIdAeropuerto(origen);
@@ -351,9 +350,7 @@ final class ACOConstructorSoluciones {
                         .thenComparing(EstadoPlanTemporal::getTiempoActual)
         );
         final Map<String, LocalDateTime> mejorLlegadaPorAeropuerto = new HashMap<>();
-        final Set<String> visitadosIniciales = new HashSet<>();
-        visitadosIniciales.add(idOrigen);
-        frontera.add(new EstadoPlanTemporal(idOrigen, tiempoActual, 0D, null, null, 0, visitadosIniciales));
+        frontera.add(new EstadoPlanTemporal(idOrigen, tiempoActual, 0D, null, null, 0));
         mejorLlegadaPorAeropuerto.put(idOrigen, tiempoActual);
 
         int estadosEvaluados = 0;
@@ -414,7 +411,7 @@ final class ACOConstructorSoluciones {
             final EstadoPlanTemporal estado,
             final LocalDateTime plazo,
             final Map<String, Integer> capacidadRestanteVuelo,
-            final Map<String, Integer> capacidadRestanteAlmacen
+            final Map<String, CapacidadTemporalAlmacen> capacidadRestanteAlmacen
     ) {
         if (vuelo == null || vuelo.getFechaSalida() == null || vuelo.getFechaLlegada() == null) {
             return false;
@@ -428,12 +425,17 @@ final class ACOConstructorSoluciones {
         }
 
         final String idDestino = obtenerIdAeropuerto(vuelo.getAeropuertoDestino());
-        if (idDestino == null || estado.getVisitados().contains(idDestino)) {
+        if (idDestino == null || estado.contieneAeropuerto(idDestino)) {
             return false;
         }
 
-        final boolean esDestinoFinal = esMismoAeropuerto(vuelo.getAeropuertoDestino(), destinoFinal);
-        return esDestinoFinal || capacidadRestanteAlmacen.getOrDefault(idDestino, 0) >= UNIDAD_MALETA;
+        // Verificar capacidad temporal: tanto en escalas como en destino final (tiempoRecojo).
+        // Sin info del aeropuerto: permitir solo si es destino final.
+        final CapacidadTemporalAlmacen cap = capacidadRestanteAlmacen.get(idDestino);
+        if (cap == null) {
+            return esMismoAeropuerto(vuelo.getAeropuertoDestino(), destinoFinal);
+        }
+        return cap.disponibleEn(vuelo.getFechaLlegada()) >= UNIDAD_MALETA;
     }
 
     private double calcularCostoBusqueda(
@@ -471,12 +473,36 @@ final class ACOConstructorSoluciones {
     private void aplicarConsumoPlan(final List<VueloInstancia> plan,
                                     final Aeropuerto destinoFinal,
                                     final Map<String, Integer> capacidadRestanteVuelo,
-                                    final Map<String, Integer> capacidadRestanteAlmacen) {
+                                    final Map<String, CapacidadTemporalAlmacen> capacidadRestanteAlmacen) {
         for (int i = 0; i < plan.size(); i++) {
             final VueloInstancia vuelo = plan.get(i);
-            final int nuevaCapacidad = actualizarEstadoTemporal(vuelo, capacidadRestanteVuelo,
-                    capacidadRestanteAlmacen, destinoFinal);
-            plan.set(i, clonarVueloInstanciaConCapacidad(vuelo, nuevaCapacidad));
+
+            // Descuentar capacidad del vuelo.
+            final String idVuelo = vuelo.getIdVueloInstancia();
+            final int nuevaCapacidadVuelo = Math.max(
+                    0, capacidadRestanteVuelo.getOrDefault(idVuelo, 0) - UNIDAD_MALETA
+            );
+            capacidadRestanteVuelo.put(idVuelo, nuevaCapacidadVuelo);
+            plan.set(i, clonarVueloInstanciaConCapacidad(vuelo, nuevaCapacidadVuelo));
+
+            // Registrar intervalo de ocupación en el aeropuerto destino.
+            final String idDestino = obtenerIdAeropuerto(vuelo.getAeropuertoDestino());
+            if (idDestino == null) {
+                continue;
+            }
+            final LocalDateTime llegada = vuelo.getFechaLlegada();
+            final LocalDateTime liberacion;
+            if (i < plan.size() - 1) {
+                // Escala intermedia: ocupa almacén desde llegada hasta que sale el siguiente vuelo.
+                liberacion = plan.get(i + 1).getFechaSalida();
+            } else {
+                // Destino final: ocupa almacén hasta que el cliente recoge la maleta.
+                liberacion = llegada == null ? null : llegada.plusMinutes(tiempoRecojo);
+            }
+            final CapacidadTemporalAlmacen cap = capacidadRestanteAlmacen.get(idDestino);
+            if (cap != null) {
+                cap.reservar(llegada, liberacion);
+            }
         }
     }
 
@@ -497,7 +523,7 @@ final class ACOConstructorSoluciones {
             final LocalDateTime tiempoActual,
             final LocalDateTime plazo,
             final Map<String, Integer> capacidadRestanteVuelo,
-            final Map<String, Integer> capacidadRestanteAlmacen,
+            final Map<String, CapacidadTemporalAlmacen> capacidadRestanteAlmacen,
             final Set<String> visitados,
             final boolean modoCodicioso,
             final int profundidad
@@ -530,14 +556,21 @@ final class ACOConstructorSoluciones {
         for (int i = 0; i < limite; i++) {
             final VueloInstancia siguienteVuelo = candidatos.get(i);
             final Map<String, Integer> capacidadVueloCopia = new HashMap<>(capacidadRestanteVuelo);
-            final Map<String, Integer> capacidadAlmacenCopia = new HashMap<>(capacidadRestanteAlmacen);
+            // Copia superficial: CapacidadTemporalAlmacen no se escribe en la recursión,
+            // solo se lee (disponibleEn). Si se encontrase un camino se registrarán
+            // los intervalos al final vía aplicarConsumoPlan.
+            final Map<String, CapacidadTemporalAlmacen> capacidadAlmacenCopia =
+                    new HashMap<>(capacidadRestanteAlmacen);
             final Set<String> visitadosCopia = new HashSet<>(visitados);
-            final int nuevaCapacidad = actualizarEstadoTemporal(
-                    siguienteVuelo,
-                    capacidadVueloCopia,
-                    capacidadAlmacenCopia,
-                    destino
+
+            // Solo descuenta capacidad del vuelo; los intervalos de almacén se registran
+            // en aplicarConsumoPlan cuando se conoce el camino completo.
+            final String idVueloCandidato = siguienteVuelo.getIdVueloInstancia();
+            final int nuevaCapacidad = Math.max(
+                    0, capacidadVueloCopia.getOrDefault(idVueloCandidato, 0) - UNIDAD_MALETA
             );
+            capacidadVueloCopia.put(idVueloCandidato, nuevaCapacidad);
+
             if (siguienteVuelo.getAeropuertoDestino() != null
                     && siguienteVuelo.getAeropuertoDestino().getIdAeropuerto() != null) {
                 visitadosCopia.add(siguienteVuelo.getAeropuertoDestino().getIdAeropuerto());
@@ -563,8 +596,6 @@ final class ACOConstructorSoluciones {
 
             capacidadRestanteVuelo.clear();
             capacidadRestanteVuelo.putAll(capacidadVueloCopia);
-            capacidadRestanteAlmacen.clear();
-            capacidadRestanteAlmacen.putAll(capacidadAlmacenCopia);
 
             final ArrayList<VueloInstancia> plan = new ArrayList<>(sufijo.size() + 1);
             plan.add(clonarVueloInstanciaConCapacidad(siguienteVuelo, nuevaCapacidad));
@@ -582,7 +613,7 @@ final class ACOConstructorSoluciones {
             final LocalDateTime tiempoActual,
             final SubproblemaACO subproblema,
             final Map<String, Integer> capacidadRestanteVuelo,
-            final Map<String, Integer> capacidadRestanteAlmacen,
+            final Map<String, CapacidadTemporalAlmacen> capacidadRestanteAlmacen,
             final LocalDateTime plazo,
             final Set<String> visitados
     ) {
@@ -617,11 +648,13 @@ final class ACOConstructorSoluciones {
             }
 
             final boolean esDestinoFinal = esMismoAeropuerto(vuelo.getAeropuertoDestino(), destinoFinal);
-            if (!esDestinoFinal) {
-                final int capacidadAlmacen = capacidadRestanteAlmacen.getOrDefault(idDestino, 0);
-                if (capacidadAlmacen < UNIDAD_MALETA) {
+            final CapacidadTemporalAlmacen cap = capacidadRestanteAlmacen.get(idDestino);
+            if (cap == null) {
+                if (!esDestinoFinal) {
                     continue;
                 }
+            } else if (cap.disponibleEn(vuelo.getFechaLlegada()) < UNIDAD_MALETA) {
+                continue;
             }
             candidatos.add(vuelo);
         }
@@ -715,26 +748,6 @@ final class ACOConstructorSoluciones {
         return bonificacionDestino * conectividad * holgura / (1D + esperaMinutos / 60D + duracionMinutos / 60D);
     }
 
-    private int actualizarEstadoTemporal(
-            final VueloInstancia vuelo,
-            final Map<String, Integer> capacidadRestanteVuelo,
-            final Map<String, Integer> capacidadRestanteAlmacen,
-            final Aeropuerto destinoFinal
-    ) {
-        final String idVuelo = vuelo.getIdVueloInstancia();
-        final int capacidadActualVuelo = capacidadRestanteVuelo.getOrDefault(idVuelo, 0);
-        final int nuevaCapacidadVuelo = Math.max(0, capacidadActualVuelo - UNIDAD_MALETA);
-        capacidadRestanteVuelo.put(idVuelo, nuevaCapacidadVuelo);
-
-        if (!esMismoAeropuerto(vuelo.getAeropuertoDestino(), destinoFinal)) {
-            final String idAeropuerto = obtenerIdAeropuerto(vuelo.getAeropuertoDestino());
-            final int capacidadActualAlmacen = capacidadRestanteAlmacen.getOrDefault(idAeropuerto, 0);
-            final int nuevaCapacidadAlmacen = Math.max(0, capacidadActualAlmacen - UNIDAD_MALETA);
-            capacidadRestanteAlmacen.put(idAeropuerto, nuevaCapacidadAlmacen);
-        }
-
-        return nuevaCapacidadVuelo;
-    }
 
     private VueloInstancia buscarMejorVueloDirecto(final Maleta maleta, final SubproblemaACO subproblema) {
         if (maleta == null || maleta.getPedido() == null) {
@@ -978,38 +991,45 @@ final class ACOConstructorSoluciones {
         private final EstadoPlanTemporal padre;
         private final VueloInstancia vueloTomado;
         private final int profundidad;
-        private final Set<String> visitados;
 
         private EstadoPlanTemporal(final String idAeropuerto,
                                    final LocalDateTime tiempoActual,
                                    final double costo,
                                    final EstadoPlanTemporal padre,
                                    final VueloInstancia vueloTomado,
-                                   final int profundidad,
-                                   final Set<String> visitados) {
+                                   final int profundidad) {
             this.idAeropuerto = idAeropuerto;
             this.tiempoActual = tiempoActual;
             this.costo = costo;
             this.padre = padre;
             this.vueloTomado = vueloTomado;
             this.profundidad = profundidad;
-            this.visitados = visitados;
         }
 
         private EstadoPlanTemporal avanzar(final String idSiguiente,
                                            final VueloInstancia vuelo,
                                            final double costoTramo) {
-            final Set<String> nuevosVisitados = new HashSet<>(visitados);
-            nuevosVisitados.add(idSiguiente);
             return new EstadoPlanTemporal(
                     idSiguiente,
                     vuelo.getFechaLlegada(),
                     costo + costoTramo,
                     this,
                     vuelo,
-                    profundidad + 1,
-                    nuevosVisitados
+                    profundidad + 1
             );
+        }
+
+        // Recorre la cadena de padres para detectar ciclos sin copiar conjuntos.
+        // El camino máximo es MAX_ESCALAS_RUTA (8 nodos), por lo que el coste es O(1) acotado.
+        private boolean contieneAeropuerto(final String id) {
+            EstadoPlanTemporal cursor = this;
+            while (cursor != null) {
+                if (cursor.idAeropuerto.equals(id)) {
+                    return true;
+                }
+                cursor = cursor.padre;
+            }
+            return false;
         }
 
         private ArrayList<VueloInstancia> reconstruirCamino() {
@@ -1037,10 +1057,6 @@ final class ACOConstructorSoluciones {
 
         private int getProfundidad() {
             return profundidad;
-        }
-
-        private Set<String> getVisitados() {
-            return visitados;
         }
     }
 }

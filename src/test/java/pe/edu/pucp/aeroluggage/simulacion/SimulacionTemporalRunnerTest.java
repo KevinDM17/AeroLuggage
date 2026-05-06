@@ -7,10 +7,12 @@ import static org.junit.jupiter.api.Assertions.assertTrue;
 import java.time.Duration;
 import java.time.LocalDateTime;
 import java.util.ArrayList;
+import java.util.HashSet;
 import java.util.HashMap;
 import java.util.List;
 import java.util.Map;
 import java.util.Properties;
+import java.util.Set;
 
 import org.junit.jupiter.api.Test;
 
@@ -18,7 +20,9 @@ import pe.edu.pucp.aeroluggage.dominio.entidades.Aeropuerto;
 import pe.edu.pucp.aeroluggage.dominio.entidades.Ciudad;
 import pe.edu.pucp.aeroluggage.dominio.entidades.Maleta;
 import pe.edu.pucp.aeroluggage.dominio.entidades.Pedido;
+import pe.edu.pucp.aeroluggage.dominio.entidades.VueloInstancia;
 import pe.edu.pucp.aeroluggage.dominio.enums.Continente;
+import pe.edu.pucp.aeroluggage.dominio.enums.EstadoVuelo;
 
 class SimulacionTemporalRunnerTest {
 
@@ -77,6 +81,57 @@ class SimulacionTemporalRunnerTest {
     void excede_ventana_planificacion_ok() {
         assertTrue(SimulacionTemporalRunner.excedeVentanaPlanificacion(61000L, 60000L));
         assertFalse(SimulacionTemporalRunner.excedeVentanaPlanificacion(60000L, 60000L));
+    }
+
+    @Test
+    void ya_salio_de_data_activa_en_umbral_de_diez_minutos() {
+        final LocalDateTime llegadaFinal = LocalDateTime.of(2027, 4, 11, 10, 0);
+        final VueloInstancia ultimoVuelo = new VueloInstancia(
+                "VI-1",
+                "LIM-BOG",
+                llegadaFinal.minusHours(2),
+                llegadaFinal,
+                10,
+                10,
+                crearAeropuerto("LIM"),
+                crearAeropuerto("BOG"),
+                EstadoVuelo.FINALIZADO
+        );
+
+        assertFalse(SimulacionTemporalRunner.yaSalioDeDataActiva(
+                List.of(ultimoVuelo),
+                llegadaFinal.plusMinutes(9),
+                10L
+        ));
+        assertTrue(SimulacionTemporalRunner.yaSalioDeDataActiva(
+                List.of(ultimoVuelo),
+                llegadaFinal.plusMinutes(10),
+                10L
+        ));
+    }
+
+    @Test
+    void depurar_maletas_finalizadas_remueve_data_activa_y_rutas() {
+        final Pedido pedido = crearPedido("PED-1", LocalDateTime.of(2027, 4, 11, 10, 5), 2);
+        final Maleta maletaFinalizada = crearMaleta("M-1", pedido);
+        final Maleta maletaActiva = crearMaleta("M-2", pedido);
+        final List<Maleta> registradas = new ArrayList<>(List.of(maletaFinalizada, maletaActiva));
+        final Map<String, Object> rutasProgramadas = new HashMap<>();
+        rutasProgramadas.put("M-1", new Object());
+        rutasProgramadas.put("M-2", new Object());
+        final Set<String> maletasFinalizadas = new HashSet<>(Set.of("M-1"));
+
+        final int removidas = SimulacionTemporalRunner.depurarMaletasFinalizadas(
+                registradas,
+                rutasProgramadas,
+                maletasFinalizadas
+        );
+
+        assertEquals(1, removidas);
+        assertEquals(1, registradas.size());
+        assertEquals("M-2", registradas.get(0).getIdMaleta());
+        assertFalse(rutasProgramadas.containsKey("M-1"));
+        assertTrue(rutasProgramadas.containsKey("M-2"));
     }
 
     private Pedido crearPedido(final String idPedido, final LocalDateTime fechaRegistro, final int cantidadMaletas) {
