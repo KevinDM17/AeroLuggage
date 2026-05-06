@@ -164,6 +164,10 @@ final class ACOConstructorSoluciones {
             return new Solucion(rutasMejoradas);
         }
 
+        // Reconstruir el estado comprometido por la solución completa (vuelos y almacenes).
+        // Esto refleja la vista real de la hormiga, no la snapshot inicial.
+        final CapacidadesACO comprometida = reconstruirCapacidadesComprometidas(solucion, subproblema);
+
         for (final Ruta rutaOriginal : solucion.getSubrutas()) {
             final Ruta ruta = clonarRuta(rutaOriginal);
             if (ESTADO_NO_FACTIBLE.equals(ruta.getEstado()) || ruta.getSubrutas().size() <= 1) {
@@ -172,7 +176,12 @@ final class ACOConstructorSoluciones {
             }
 
             final Maleta maleta = subproblema.obtenerMaleta(ruta.getIdMaleta());
-            final VueloInstancia vueloDirecto = buscarMejorVueloDirecto(maleta, subproblema);
+            final VueloInstancia vueloDirecto = buscarMejorVueloDirecto(
+                    maleta,
+                    subproblema,
+                    comprometida.getCapacidadRestanteVuelo(),
+                    comprometida.getCapacidadRestanteAlmacen()
+            );
             if (vueloDirecto == null) {
                 rutasMejoradas.add(ruta);
                 continue;
@@ -185,10 +194,12 @@ final class ACOConstructorSoluciones {
                 continue;
             }
 
+            final int capacidadComprometidaVuelo = comprometida.getCapacidadRestanteVuelo()
+                    .getOrDefault(vueloDirecto.getIdVueloInstancia(), 0);
             final ArrayList<VueloInstancia> nuevaSubruta = new ArrayList<>();
             nuevaSubruta.add(clonarVueloInstanciaConCapacidad(
                     vueloDirecto,
-                    Math.max(0, vueloDirecto.getCapacidadDisponible() - UNIDAD_MALETA)
+                    Math.max(0, capacidadComprometidaVuelo - UNIDAD_MALETA)
             ));
             ruta.setSubrutas(nuevaSubruta);
             ruta.calcularPlazo();
@@ -197,6 +208,56 @@ final class ACOConstructorSoluciones {
         }
 
         return new Solucion(rutasMejoradas);
+    }
+
+    private CapacidadesACO reconstruirCapacidadesComprometidas(
+            final Solucion solucion,
+            final SubproblemaACO subproblema
+    ) {
+        final Map<String, Integer> capacidadVuelo = new HashMap<>(subproblema.getCapacidadRestanteVueloBase());
+        final Map<String, CapacidadTemporalAlmacen> capacidadAlmacen =
+                CapacidadTemporalAlmacen.clonarMapa(subproblema.getCapacidadRestanteAlmacenBase());
+        if (solucion == null) {
+            return new CapacidadesACO(capacidadVuelo, capacidadAlmacen);
+        }
+        for (final Ruta ruta : solucion.getSubrutas()) {
+            if (ruta == null || ESTADO_NO_FACTIBLE.equals(ruta.getEstado()) || ruta.getSubrutas().isEmpty()) {
+                continue;
+            }
+            final List<VueloInstancia> vuelos = ruta.getSubrutas();
+            final String idOrigen = obtenerIdAeropuerto(vuelos.get(0).getAeropuertoOrigen());
+            final CapacidadTemporalAlmacen capOrigen = capacidadAlmacen.get(idOrigen);
+            if (capOrigen != null) {
+                capOrigen.liberar(vuelos.get(0).getFechaSalida());
+            }
+            for (int i = 0; i < vuelos.size(); i++) {
+                final VueloInstancia vuelo = vuelos.get(i);
+                if (vuelo == null) {
+                    continue;
+                }
+                final String idVuelo = vuelo.getIdVueloInstancia();
+                if (idVuelo != null) {
+                    capacidadVuelo.put(idVuelo,
+                            Math.max(0, capacidadVuelo.getOrDefault(idVuelo, 0) - UNIDAD_MALETA));
+                }
+                if (vuelo.getFechaLlegada() == null) {
+                    continue;
+                }
+                final String idDestino = obtenerIdAeropuerto(vuelo.getAeropuertoDestino());
+                if (idDestino == null) {
+                    continue;
+                }
+                final LocalDateTime llegada = vuelo.getFechaLlegada();
+                final LocalDateTime liberacion = (i < vuelos.size() - 1)
+                        ? vuelos.get(i + 1).getFechaSalida()
+                        : llegada.plusMinutes(tiempoRecojo);
+                final CapacidadTemporalAlmacen cap = capacidadAlmacen.get(idDestino);
+                if (cap != null) {
+                    cap.reservar(llegada, liberacion);
+                }
+            }
+        }
+        return new CapacidadesACO(capacidadVuelo, capacidadAlmacen);
     }
 
     Solucion clonarSolucion(final Solucion solucion) {
@@ -471,7 +532,10 @@ final class ACOConstructorSoluciones {
         if (esMismoAeropuerto(vuelo.getAeropuertoDestino(), destinoFinal)) {
             return cap.puedeReservar(vuelo.getFechaLlegada(), vuelo.getFechaLlegada().plusMinutes(tiempoRecojo));
         }
-        return true;
+        // Escala intermedia: verificar que haya al menos 1 slot disponible a la llegada.
+        // La duración exacta de la escala no se conoce aún; planRespetaCapacidadAlmacen()
+        // hace la verificación completa con el intervalo real antes de confirmar el plan.
+        return cap.disponibleEn(vuelo.getFechaLlegada()) >= 1;
     }
 
     private double calcularCostoBusqueda(
@@ -510,6 +574,15 @@ final class ACOConstructorSoluciones {
                                     final Aeropuerto destinoFinal,
                                     final Map<String, Integer> capacidadRestanteVuelo,
                                     final Map<String, CapacidadTemporalAlmacen> capacidadRestanteAlmacen) {
+        // Liberar el aeropuerto de origen: la maleta estaba físicamente allí (contada en
+        // maletasActuales → capacidadBase) y parte en el primer vuelo, devolviendo 1 slot.
+        if (!plan.isEmpty()) {
+            final String idOrigen = obtenerIdAeropuerto(plan.get(0).getAeropuertoOrigen());
+            final CapacidadTemporalAlmacen capOrigen = capacidadRestanteAlmacen.get(idOrigen);
+            if (capOrigen != null) {
+                capOrigen.liberar(plan.get(0).getFechaSalida());
+            }
+        }
         for (int i = 0; i < plan.size(); i++) {
             final VueloInstancia vuelo = plan.get(i);
 
@@ -702,6 +775,8 @@ final class ACOConstructorSoluciones {
                 if (!destinoFinalDisponible) {
                     continue;
                 }
+            } else if (cap.disponibleEn(vuelo.getFechaLlegada()) < 1) {
+                continue;
             }
             candidatos.add(vuelo);
         }
@@ -798,7 +873,12 @@ final class ACOConstructorSoluciones {
     }
 
 
-    private VueloInstancia buscarMejorVueloDirecto(final Maleta maleta, final SubproblemaACO subproblema) {
+    private VueloInstancia buscarMejorVueloDirecto(
+            final Maleta maleta,
+            final SubproblemaACO subproblema,
+            final Map<String, Integer> capacidadVueloComprometida,
+            final Map<String, CapacidadTemporalAlmacen> capacidadAlmacenComprometida
+    ) {
         if (maleta == null || maleta.getPedido() == null) {
             return null;
         }
@@ -811,8 +891,7 @@ final class ACOConstructorSoluciones {
         }
 
         final LocalDateTime tiempoDisponible = obtenerTiempoDisponible(maleta, subproblema.getInicioIntervalo());
-        final LocalDateTime plazoBaseDireto = subproblema.getPlazoPorMaleta().get(maleta.getIdMaleta());
-        final LocalDateTime plazo = plazoBaseDireto;
+        final LocalDateTime plazo = subproblema.getPlazoPorMaleta().get(maleta.getIdMaleta());
         VueloInstancia mejorVuelo = null;
         final ArrayList<VueloInstancia> vuelosOrigen = subproblema.getVuelosDesde(obtenerIdAeropuerto(origen));
 
@@ -829,18 +908,19 @@ final class ACOConstructorSoluciones {
             if (plazo != null && vuelo.getFechaLlegada().isAfter(plazo)) {
                 continue;
             }
-            if (vuelo.getCapacidadDisponible() < UNIDAD_MALETA) {
+            final int capVuelo = capacidadVueloComprometida.getOrDefault(vuelo.getIdVueloInstancia(), 0);
+            if (capVuelo < UNIDAD_MALETA) {
                 continue;
             }
-            final CapacidadTemporalAlmacen cap = subproblema.getCapacidadRestanteAlmacenBase().get(
+            final CapacidadTemporalAlmacen cap = capacidadAlmacenComprometida.get(
                     obtenerIdAeropuerto(vuelo.getAeropuertoDestino())
             );
             if (cap != null) {
-                final boolean destinoFinalDisponible = cap.puedeReservar(
+                final boolean destinoDisponible = cap.puedeReservar(
                         vuelo.getFechaLlegada(),
                         vuelo.getFechaLlegada().plusMinutes(tiempoRecojo)
                 );
-                if (!destinoFinalDisponible) {
+                if (!destinoDisponible) {
                     continue;
                 }
             }

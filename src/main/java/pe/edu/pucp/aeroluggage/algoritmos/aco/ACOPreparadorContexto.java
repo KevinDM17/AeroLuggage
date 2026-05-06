@@ -9,6 +9,7 @@ import java.util.Map;
 
 import pe.edu.pucp.aeroluggage.algoritmos.InstanciaProblema;
 import pe.edu.pucp.aeroluggage.algoritmos.InstanciaProblema.IntervaloOcupacionAeropuerto;
+import pe.edu.pucp.aeroluggage.algoritmos.InstanciaProblema.LiberacionAeropuerto;
 import pe.edu.pucp.aeroluggage.dominio.entidades.Aeropuerto;
 import pe.edu.pucp.aeroluggage.dominio.entidades.Maleta;
 import pe.edu.pucp.aeroluggage.dominio.entidades.Pedido;
@@ -61,6 +62,9 @@ final class ACOPreparadorContexto {
         final Map<String, List<IntervaloOcupacionAeropuerto>> ocupacionFuturaAeropuertos = instancia == null
                 ? Map.of()
                 : instancia.getOcupacionFuturaAeropuertos();
+        final Map<String, List<LiberacionAeropuerto>> liberacionesFuturas = instancia == null
+                ? Map.of()
+                : instancia.getLiberacionesFuturaAeropuertos();
         if (aeropuertos != null) {
             for (final Aeropuerto aeropuerto : aeropuertos) {
                 if (aeropuerto == null || aeropuerto.getIdAeropuerto() == null) {
@@ -75,6 +79,10 @@ final class ACOPreparadorContexto {
                 precargarOcupacionFutura(
                         capacidadTemporalAlmacen,
                         ocupacionFuturaAeropuertos.get(aeropuerto.getIdAeropuerto())
+                );
+                precargarLiberacionesFuturas(
+                        capacidadTemporalAlmacen,
+                        liberacionesFuturas.get(aeropuerto.getIdAeropuerto())
                 );
                 capacidadRestanteAlmacen.put(aeropuerto.getIdAeropuerto(), capacidadTemporalAlmacen);
             }
@@ -171,6 +179,21 @@ final class ACOPreparadorContexto {
                 continue;
             }
             capacidadTemporalAlmacen.reservar(intervalo.desde(), intervalo.hasta());
+        }
+    }
+
+    private void precargarLiberacionesFuturas(
+            final CapacidadTemporalAlmacen capacidadTemporalAlmacen,
+            final List<LiberacionAeropuerto> liberaciones
+    ) {
+        if (capacidadTemporalAlmacen == null || liberaciones == null || liberaciones.isEmpty()) {
+            return;
+        }
+        for (final LiberacionAeropuerto liberacion : liberaciones) {
+            if (liberacion == null) {
+                continue;
+            }
+            capacidadTemporalAlmacen.liberar(liberacion.cuando());
         }
     }
 }

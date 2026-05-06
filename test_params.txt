@@ -17,11 +17,7 @@ exp.w7Espera=10
 simulacion.fecha.inicio=2028-06-23
 simulacion.fecha.fin=2028-06-23
 simulacion.ventana.dias=4
-<<<<<<< HEAD
 simulacion.iteraciones=30
-=======
-simulacion.iteraciones=1
->>>>>>> 0f9393686afb1c0befc5d305e7d14bf7e5da2ff1
 simulacion.programada.sa.segundos=0
 simulacion.programada.k=720
 simulacion.programada.sleep.habilitado=true
@@ -48,16 +44,16 @@ ga.penalizacionRutaInvalida=300
 ga.pesoGreedySolomon=0.4
 
 # ---------- Parametros ACO ----------
-aco.maxEstadosBusquedaTemporal=240
+aco.maxEstadosBusquedaTemporal=60
 aco.maxIter=2
 aco.nAnts=2
 aco.alpha=2.0
 aco.beta=4.0
-aco.rho=0.3
+aco.rho=0.7
 aco.gamma=0.1
 aco.tau0=1.0
 aco.tauMin=0.01
-aco.tauMax=10.0
+aco.tauMax=25.0
 aco.semilla=-1
 aco.penalizacionNoFactible=1000
 aco.penalizacionIncumplimiento=300

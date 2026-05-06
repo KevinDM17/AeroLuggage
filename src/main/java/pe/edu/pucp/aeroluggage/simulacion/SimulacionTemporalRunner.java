@@ -22,6 +22,7 @@ import java.util.Set;
 
 import pe.edu.pucp.aeroluggage.algoritmos.InstanciaProblema;
 import pe.edu.pucp.aeroluggage.algoritmos.InstanciaProblema.IntervaloOcupacionAeropuerto;
+import pe.edu.pucp.aeroluggage.algoritmos.InstanciaProblema.LiberacionAeropuerto;
 import pe.edu.pucp.aeroluggage.algoritmos.Metaheuristico;
 import pe.edu.pucp.aeroluggage.algoritmos.Solucion;
 import pe.edu.pucp.aeroluggage.algoritmos.aco.ACO;
@@ -54,8 +55,7 @@ public final class SimulacionTemporalRunner {
     private static final String FITNESS_EXPERIMENTAL_CABECERA =
             "Simulacion,ejecucion,Fitness HGA,tiempo HGA,Fitness ACO,tiempo ACO";
     private static final DateTimeFormatter FMT = DateTimeFormatter.ISO_LOCAL_DATE;
-    private static final String PREFIJO_DIAGNOSTICO_MALETA = "MAL-SPIM-000010930-";
-    private static final long SEMILLA_ALEATORIA = -1L;
+private static final long SEMILLA_ALEATORIA = -1L;
     private static final long DEFAULT_MINUTOS_CONEXION = 10L;
     private static final long DEFAULT_TIEMPO_RECOJO = 10L;
     private static final long DEFAULT_SA_SEGUNDOS = 0L;
@@ -613,6 +613,14 @@ public final class SimulacionTemporalRunner {
                                 ventanaCompromisoGa
                         )
                 );
+                instancia.setLiberacionesFuturaAeropuertos(
+                        construirLiberacionesFuturaAeropuertosComprometida(
+                                estadosPorMaleta,
+                                esGa,
+                                finCicloDatos,
+                                ventanaCompromisoGa
+                        )
+                );
 
                 algoritmo.ejecutar(instancia);
                 solucion = obtenerSolucion(algoritmo);
@@ -783,7 +791,6 @@ public final class SimulacionTemporalRunner {
         resultado.maxOcupacionVuelos = maxOcupacionVuelos;
         resultado.maxOcupacionAeropuertos = maxOcupacionAeropuertos;
         resultado.fitnessExperimental = fitnessExperimental;
-        reportarDiagnosticoMaletasNoRuteadasFinal(nombre, resultado.detalleNoRuteadas, estadosFinales);
         reportarResumen(nombre, resultado);
         return resultado;
     }
@@ -1394,40 +1401,6 @@ public final class SimulacionTemporalRunner {
         return true;
     }
 
-    private static boolean esMaletaSeguimiento(final String idMaleta) {
-        return idMaleta != null && idMaleta.startsWith(PREFIJO_DIAGNOSTICO_MALETA);
-    }
-
-    private static void reportarDiagnosticoMaletasNoRuteadasFinal(final String nombre,
-                                                                  final List<MaletaNoRuteada> noRuteadas,
-                                                                  final Map<String, EstadoMaletaTemporal> estadosFinales) {
-        if (noRuteadas == null || noRuteadas.isEmpty() || estadosFinales == null || estadosFinales.isEmpty()) {
-            return;
-        }
-        for (final MaletaNoRuteada maletaNoRuteada : noRuteadas) {
-            if (maletaNoRuteada == null || !esMaletaSeguimiento(maletaNoRuteada.idMaleta())) {
-                continue;
-            }
-            final EstadoMaletaTemporal estado = estadosFinales.get(maletaNoRuteada.idMaleta());
-            if (estado == null) {
-                continue;
-            }
-            final String aeropuertoActual = estado.aeropuertoActual() != null ? estado.aeropuertoActual() : "-";
-            System.out.printf(
-                    "[DIAG FINAL %s] maleta=%s motivo=%s estado=%s aeropuerto=%s ejecutados=%d futuros=%d replanificable=%s plazo=%s%n",
-                    nombre,
-                    maletaNoRuteada.idMaleta(),
-                    maletaNoRuteada.motivo(),
-                    estado.estado(),
-                    aeropuertoActual,
-                    estado.vuelosEjecutados().size(),
-                    estado.vuelosFuturos().size(),
-                    estado.replanificable(),
-                    maletaNoRuteada.plazo()
-            );
-        }
-    }
-
     private static void reservarCapacidadRutas(final Map<String, List<VueloInstancia>> nuevasRutas) {
         for (final List<VueloInstancia> ruta : nuevasRutas.values()) {
             for (final VueloInstancia vueloInstancia : ruta) {
@@ -1495,6 +1468,35 @@ public final class SimulacionTemporalRunner {
             ocupacionFutura.computeIfAbsent(idAeropuerto, key -> new ArrayList<>())
                     .add(new IntervaloOcupacionAeropuerto(inicio, fin));
         }
+    }
+
+    private static Map<String, List<LiberacionAeropuerto>> construirLiberacionesFuturaAeropuertosComprometida(
+            final Map<String, EstadoMaletaTemporal> estadosPorMaleta,
+            final boolean esGa,
+            final LocalDateTime currentTime,
+            final LocalDateTime ventanaCompromisoGa
+    ) {
+        final Map<String, List<LiberacionAeropuerto>> liberaciones = new HashMap<>();
+        if (estadosPorMaleta == null || estadosPorMaleta.isEmpty()) {
+            return liberaciones;
+        }
+        for (final EstadoMaletaTemporal estado : estadosPorMaleta.values()) {
+            if (estado == null || esReplanificableSegunAlgoritmo(estado, currentTime, esGa, ventanaCompromisoGa)) {
+                continue;
+            }
+            final String aeropuertoActual = estado.aeropuertoActual();
+            final List<VueloInstancia> vuelosFuturos = estado.vuelosFuturos();
+            if (aeropuertoActual == null || vuelosFuturos == null || vuelosFuturos.isEmpty()) {
+                continue;
+            }
+            final VueloInstancia primerVuelo = vuelosFuturos.get(0);
+            if (primerVuelo == null || primerVuelo.getFechaSalida() == null) {
+                continue;
+            }
+            liberaciones.computeIfAbsent(aeropuertoActual, key -> new ArrayList<>())
+                    .add(new LiberacionAeropuerto(aeropuertoActual, primerVuelo.getFechaSalida()));
+        }
+        return liberaciones;
     }
 
     private static List<MaletaNoRuteada> identificarNoRuteadas(

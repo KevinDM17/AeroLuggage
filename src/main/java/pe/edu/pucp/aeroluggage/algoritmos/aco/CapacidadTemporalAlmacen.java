@@ -12,19 +12,28 @@ import java.util.Map;
  * Registra intervalos [llegada, liberacion) por cada maleta asignada.
  * La consulta disponibleEn(t) cuenta solo las maletas que siguen en el
  * aeropuerto en el instante t, liberando automáticamente las que ya salieron.
+ *
+ * Adicionalmente, soporta "liberaciones": momentos en que una maleta que ya
+ * estaba físicamente en el aeropuerto (y por tanto reducía capacidadBase)
+ * parte en un vuelo, devolviendo 1 slot de forma permanente desde ese instante.
  */
 final class CapacidadTemporalAlmacen {
     private final int capacidadBase;
     private final List<long[]> intervalos;
+    private final List<Long> liberaciones;
 
     CapacidadTemporalAlmacen(final int capacidadBase) {
         this.capacidadBase = capacidadBase;
         this.intervalos = new ArrayList<>();
+        this.liberaciones = new ArrayList<>();
     }
 
-    private CapacidadTemporalAlmacen(final int capacidadBase, final List<long[]> intervalos) {
+    private CapacidadTemporalAlmacen(final int capacidadBase,
+                                     final List<long[]> intervalos,
+                                     final List<Long> liberaciones) {
         this.capacidadBase = capacidadBase;
         this.intervalos = new ArrayList<>(intervalos);
+        this.liberaciones = new ArrayList<>(liberaciones);
     }
 
     int getCapacidadBase() {
@@ -40,6 +49,11 @@ final class CapacidadTemporalAlmacen {
                 ocupados++;
             }
         }
+        for (final long libTime : liberaciones) {
+            if (libTime <= t) {
+                ocupados--;
+            }
+        }
         return Math.max(0, capacidadBase - ocupados);
     }
 
@@ -47,13 +61,13 @@ final class CapacidadTemporalAlmacen {
         if (desde == null || hasta == null || !hasta.isAfter(desde)) {
             return false;
         }
-        if (capacidadBase <= 0) {
+        if (capacidadBase <= 0 && liberaciones.isEmpty()) {
             return false;
         }
 
         final long inicio = desde.toEpochSecond(ZoneOffset.UTC);
         final long fin = hasta.toEpochSecond(ZoneOffset.UTC);
-        final List<long[]> eventos = new ArrayList<>(intervalos.size() * 2 + 2);
+        final List<long[]> eventos = new ArrayList<>(intervalos.size() * 2 + liberaciones.size() + 2);
 
         for (final long[] intervalo : intervalos) {
             final long inicioSolapado = Math.max(inicio, intervalo[0]);
@@ -64,6 +78,17 @@ final class CapacidadTemporalAlmacen {
             eventos.add(new long[]{inicioSolapado, 1});
             eventos.add(new long[]{finSolapado, -1});
         }
+
+        // Liberaciones: cada una reduce el conteo neto de ocupados desde ese instante.
+        // Las anteriores al inicio afectan todo el ventana, así que se anclan al inicio.
+        for (final long libTime : liberaciones) {
+            if (libTime <= inicio) {
+                eventos.add(new long[]{inicio, -1});
+            } else if (libTime < fin) {
+                eventos.add(new long[]{libTime, -1});
+            }
+        }
+
         eventos.add(new long[]{inicio, 1});
         eventos.add(new long[]{fin, -1});
         eventos.sort((primero, segundo) -> {
@@ -95,9 +120,21 @@ final class CapacidadTemporalAlmacen {
         });
     }
 
-    /** Copia profunda: misma capacidad base, lista de intervalos propia. */
+    /**
+     * Registra que una maleta que ya estaba físicamente en el aeropuerto
+     * (contada en maletasActuales y por tanto en capacidadBase) parte en
+     * un vuelo en {@code desde}, devolviendo 1 slot de almacén desde ese instante.
+     */
+    void liberar(final LocalDateTime desde) {
+        if (desde == null) {
+            return;
+        }
+        liberaciones.add(desde.toEpochSecond(ZoneOffset.UTC));
+    }
+
+    /** Copia profunda: misma capacidad base, listas de intervalos y liberaciones propias. */
     CapacidadTemporalAlmacen clonar() {
-        return new CapacidadTemporalAlmacen(capacidadBase, intervalos);
+        return new CapacidadTemporalAlmacen(capacidadBase, intervalos, liberaciones);
     }
 
     /** Clona un mapa completo de capacidades, creando objetos independientes. */
