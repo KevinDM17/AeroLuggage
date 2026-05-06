@@ -995,34 +995,20 @@ public final class SimulacionTemporalRunner {
             );
         }
         final List<VueloInstancia> vuelos = rutaProgramada.vuelos();
-        if (rutaProgramada.aeropuertoEspera() != null && (vuelos == null || vuelos.isEmpty())) {
-            return new EstadoMaletaTemporal(
-                    maleta,
-                    maleta != null ? maleta.getIdMaleta() : null,
-                    EstadoOperacionMaleta.SIN_RUTA,
-                    rutaProgramada.aeropuertoEspera(),
-                    List.of(),
-                    List.of(),
-                    true,
-                    false
-            );
-        }
-        String aeropuertoActual = rutaProgramada.aeropuertoEspera() != null
-                ? rutaProgramada.aeropuertoEspera()
-                : aeropuertoOrigen;
-        final List<VueloInstancia> vuelosEjecutados = new ArrayList<>();
         if (vuelos == null || vuelos.isEmpty()) {
             return new EstadoMaletaTemporal(
                     maleta,
                     maleta != null ? maleta.getIdMaleta() : null,
                     EstadoOperacionMaleta.SIN_RUTA,
-                    aeropuertoActual,
-                    vuelosEjecutados,
+                    rutaProgramada.aeropuertoPosicion(),
+                    List.of(),
                     List.of(),
                     true,
                     false
             );
         }
+        String aeropuertoActual = rutaProgramada.aeropuertoPosicion();
+        final List<VueloInstancia> vuelosEjecutados = new ArrayList<>();
         for (int i = 0; i < vuelos.size(); i++) {
             final VueloInstancia vueloInstancia = vuelos.get(i);
             if (vueloInstancia == null) {
@@ -1067,18 +1053,6 @@ public final class SimulacionTemporalRunner {
                     aeropuertoActual = aeropuertoDestino;
                 }
             }
-        }
-        if (rutaProgramada.aeropuertoEspera() != null && !rutaProgramada.aeropuertoEspera().equals(destinoFinal)) {
-            return new EstadoMaletaTemporal(
-                    maleta,
-                    maleta != null ? maleta.getIdMaleta() : null,
-                    EstadoOperacionMaleta.ESPERANDO_CONEXION,
-                    rutaProgramada.aeropuertoEspera(),
-                    vuelosEjecutados,
-                    List.of(),
-                    true,
-                    false
-            );
         }
         final boolean llegoDestinoFinal = destinoFinal == null || destinoFinal.equals(aeropuertoActual);
         if (llegoDestinoFinal) {
@@ -1156,6 +1130,9 @@ public final class SimulacionTemporalRunner {
             if (!esReplanificableSegunAlgoritmo(estado, currentTime, esGa, ventanaCompromisoGa)) {
                 continue;
             }
+            if (estado.aeropuertoActual() == null) {
+                continue;
+            }
             maletasReplanificables.add(clonarMaletaReplanificable(maleta, estado, indiceAeropuertos, currentTime));
         }
         return maletasReplanificables;
@@ -1166,7 +1143,9 @@ public final class SimulacionTemporalRunner {
                                                      final Map<String, Aeropuerto> indiceAeropuertos,
                                                      final LocalDateTime currentTime) {
         final Pedido pedidoOriginal = maleta.getPedido();
-        final Aeropuerto origenActual = indiceAeropuertos.get(estado.aeropuertoActual());
+        final Aeropuerto origenActual = estado.aeropuertoActual() != null
+                ? indiceAeropuertos.get(estado.aeropuertoActual())
+                : pedidoOriginal != null ? pedidoOriginal.getAeropuertoOrigen() : null;
         final Pedido pedidoClonado = new Pedido(
                 pedidoOriginal != null ? pedidoOriginal.getIdPedido() : null,
                 origenActual,
@@ -1298,9 +1277,7 @@ public final class SimulacionTemporalRunner {
                 actualizarRutaSinSolucion(rutasProgramadasPorMaleta, estado, esGa);
                 continue;
             }
-            final List<VueloInstancia> rutaFusionada = new ArrayList<>(estado.vuelosEjecutados());
-            rutaFusionada.addAll(nuevaRuta);
-            rutasProgramadasPorMaleta.put(idMaleta, new RutaMaletaProgramada(rutaFusionada, null));
+            rutasProgramadasPorMaleta.put(idMaleta, new RutaMaletaProgramada(nuevaRuta, estado.aeropuertoActual()));
             maletasEnrutadas.add(idMaleta);
         }
     }
@@ -1313,20 +1290,10 @@ public final class SimulacionTemporalRunner {
         if (esGa && rutaProgramadaSigueSiendoCoherente(estado)) {
             return;
         }
-        if (estado.vuelosEjecutados().isEmpty()) {
-            if (estado.estado() == EstadoOperacionMaleta.ESPERANDO_CONEXION) {
-                rutasProgramadasPorMaleta.put(
-                        estado.idMaleta(),
-                        new RutaMaletaProgramada(List.of(), estado.aeropuertoActual())
-                );
-                return;
-            }
-            rutasProgramadasPorMaleta.remove(estado.idMaleta());
-            return;
-        }
+        // Los vuelos futuros ya tuvieron su capacidad liberada; almacenar posición sin vuelos pendientes.
         rutasProgramadasPorMaleta.put(
                 estado.idMaleta(),
-                new RutaMaletaProgramada(new ArrayList<>(estado.vuelosEjecutados()), estado.aeropuertoActual())
+                new RutaMaletaProgramada(List.of(), estado.aeropuertoActual())
         );
     }
 
@@ -2362,7 +2329,7 @@ public final class SimulacionTemporalRunner {
         PLAZO_VENCIDO
     }
 
-    private record RutaMaletaProgramada(List<VueloInstancia> vuelos, String aeropuertoEspera) {
+    private record RutaMaletaProgramada(List<VueloInstancia> vuelos, String aeropuertoPosicion) {
     }
 
     private record MaletaNoRuteada(String idMaleta, String aeropuertoActual, String aeropuertoDestino,
