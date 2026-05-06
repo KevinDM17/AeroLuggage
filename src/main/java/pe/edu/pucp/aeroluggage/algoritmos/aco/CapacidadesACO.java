@@ -5,11 +5,11 @@ import java.util.Map;
 
 final class CapacidadesACO {
     private final Map<String, Integer> capacidadRestanteVuelo;
-    private final Map<String, Integer> capacidadRestanteAlmacen;
+    private final Map<String, CapacidadTemporalAlmacen> capacidadRestanteAlmacen;
 
     CapacidadesACO(
             final Map<String, Integer> capacidadRestanteVuelo,
-            final Map<String, Integer> capacidadRestanteAlmacen
+            final Map<String, CapacidadTemporalAlmacen> capacidadRestanteAlmacen
     ) {
         this.capacidadRestanteVuelo = new HashMap<>(capacidadRestanteVuelo);
         this.capacidadRestanteAlmacen = new HashMap<>(capacidadRestanteAlmacen);
@@ -19,7 +19,7 @@ final class CapacidadesACO {
         return capacidadRestanteVuelo;
     }
 
-    Map<String, Integer> getCapacidadRestanteAlmacen() {
+    Map<String, CapacidadTemporalAlmacen> getCapacidadRestanteAlmacen() {
         return capacidadRestanteAlmacen;
     }
 }

@@ -88,7 +88,8 @@ final class ACOEvaluador {
 
         double ocupacionAlmacenes = 0D;
         for (final Map.Entry<String, Integer> entry : usoAlmacenes.entrySet()) {
-            final int capacidadBase = subproblema.getCapacidadRestanteAlmacenBase().getOrDefault(entry.getKey(), 0);
+            final CapacidadTemporalAlmacen cap = subproblema.getCapacidadRestanteAlmacenBase().get(entry.getKey());
+            final int capacidadBase = cap == null ? 0 : cap.getCapacidadBase();
             if (capacidadBase > 0) {
                 ocupacionAlmacenes += (double) entry.getValue() / capacidadBase;
             } else {

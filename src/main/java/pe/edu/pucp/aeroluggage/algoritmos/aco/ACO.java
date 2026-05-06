@@ -56,6 +56,17 @@ public class ACO extends Metaheuristico {
 
         final ArrayList<Ruta> planesConfirmados = new ArrayList<>();
         final LocalDateTime tiempoBase = preparadorContexto.obtenerTiempoBase(instancia);
+        // Los vuelos no cambian entre intervalos (leerEventos siempre devuelve vacío),
+        // por lo que se filtran y ordenan una sola vez fuera del loop.
+        final ArrayList<VueloInstancia> vuelosDisponibles = preparadorContexto.actualizarVuelosDisponibles(
+                instancia.getVuelosInstancia(), new ArrayList<>()
+        );
+        // Las capacidades base se calculan una vez. capacidadesAcumuladas parte de esa base
+        // y absorbe solo los planes nuevos confirmados al final de cada intervalo,
+        // evitando reconstruir y reaplicar todos los planes en cada iteración.
+        final CapacidadesACO capacidadesAcumuladas = preparadorContexto.recalcularCapacidades(
+                vuelosDisponibles, instancia.getAeropuertos()
+        );
 
         for (int t = 0; preparadorContexto.noTerminaHorizonteOperacion(t); t = preparadorContexto.avanzarIntervalo(t)) {
             final ArrayList<String> eventos = preparadorContexto.leerEventos(t);
@@ -64,7 +75,8 @@ public class ACO extends Metaheuristico {
                     planesConfirmados,
                     tiempoBase,
                     t,
-                    eventos
+                    vuelosDisponibles,
+                    capacidadesAcumuladas
             );
             if (subproblema.getMaletasPendientes().isEmpty()) {
                 ultimoReporte.setIntervalosProcesados(t + 1);
@@ -121,7 +133,15 @@ public class ACO extends Metaheuristico {
             final LocalDateTime ventanaCompromiso = preparadorContexto.siguienteIntervalo(
                     subproblema.getInicioIntervalo()
             );
+            final int planesAntes = planesConfirmados.size();
             confirmarDecisionesProximas(planesConfirmados, mejorSolucionIntervalo, ventanaCompromiso);
+            if (planesConfirmados.size() > planesAntes) {
+                aplicarConsumoPlanesConfirmados(
+                        new ArrayList<>(planesConfirmados.subList(planesAntes, planesConfirmados.size())),
+                        capacidadesAcumuladas,
+                        instancia.getTiempoRecojo()
+                );
+            }
             evaluador.actualizarIndicadores(ultimoReporte, planesConfirmados, t, mejorEvaluacionIntervalo);
             feromonas = evaluador.conservarYAdaptarFeromonas(
                     feromonas,
@@ -201,23 +221,15 @@ public class ACO extends Metaheuristico {
             final ArrayList<Ruta> planesConfirmados,
             final LocalDateTime tiempoBase,
             final int intervaloActual,
-            final ArrayList<String> eventos
+            final ArrayList<VueloInstancia> vuelosDisponibles,
+            final CapacidadesACO capacidades
     ) {
         final ArrayList<pe.edu.pucp.aeroluggage.dominio.entidades.Maleta> maletasPendientes =
                 preparadorContexto.actualizarMaletasPendientes(
                         instancia.getMaletas(),
-                        eventos,
+                        new ArrayList<>(),
                         planesConfirmados
                 );
-        final ArrayList<VueloInstancia> vuelosDisponibles = preparadorContexto.actualizarVuelosDisponibles(
-                instancia.getVuelosInstancia(),
-                eventos
-        );
-        final CapacidadesACO capacidades = preparadorContexto.recalcularCapacidades(
-                vuelosDisponibles,
-                instancia.getAeropuertos()
-        );
-        aplicarConsumoPlanesConfirmados(planesConfirmados, capacidades);
         return preparadorContexto.construirSubproblema(
                 maletasPendientes,
                 vuelosDisponibles,
@@ -294,7 +306,8 @@ public class ACO extends Metaheuristico {
     }
 
     private void aplicarConsumoPlanesConfirmados(final ArrayList<Ruta> planesConfirmados,
-                                                 final CapacidadesACO capacidades) {
+                                                 final CapacidadesACO capacidades,
+                                                 final long tiempoRecojo) {
         if (planesConfirmados == null || planesConfirmados.isEmpty() || capacidades == null) {
             return;
         }
@@ -309,6 +322,8 @@ public class ACO extends Metaheuristico {
                 if (vuelo == null || vuelo.getIdVueloInstancia() == null) {
                     continue;
                 }
+
+                // Descuentar capacidad del vuelo.
                 final Integer capacidadVuelo = capacidades.getCapacidadRestanteVuelo().get(vuelo.getIdVueloInstancia());
                 if (capacidadVuelo != null) {
                     capacidades.getCapacidadRestanteVuelo().put(
@@ -317,14 +332,26 @@ public class ACO extends Metaheuristico {
                     );
                 }
 
-                if (i == subrutas.size() - 1 || vuelo.getAeropuertoDestino() == null
-                        || vuelo.getAeropuertoDestino().getIdAeropuerto() == null) {
+                // Registrar intervalo de ocupación en el aeropuerto destino.
+                if (vuelo.getAeropuertoDestino() == null
+                        || vuelo.getAeropuertoDestino().getIdAeropuerto() == null
+                        || vuelo.getFechaLlegada() == null) {
                     continue;
                 }
                 final String idAeropuerto = vuelo.getAeropuertoDestino().getIdAeropuerto();
-                final Integer capacidadAlmacen = capacidades.getCapacidadRestanteAlmacen().get(idAeropuerto);
-                if (capacidadAlmacen != null) {
-                    capacidades.getCapacidadRestanteAlmacen().put(idAeropuerto, Math.max(0, capacidadAlmacen - 1));
+                final java.time.LocalDateTime llegada = vuelo.getFechaLlegada();
+                final java.time.LocalDateTime liberacion;
+                if (i < subrutas.size() - 1) {
+                    // Escala intermedia: hasta que sale el siguiente vuelo.
+                    liberacion = subrutas.get(i + 1).getFechaSalida();
+                } else {
+                    // Destino final: hasta que el cliente recoge la maleta.
+                    liberacion = llegada.plusMinutes(tiempoRecojo);
+                }
+                final CapacidadTemporalAlmacen cap =
+                        capacidades.getCapacidadRestanteAlmacen().get(idAeropuerto);
+                if (cap != null) {
+                    cap.reservar(llegada, liberacion);
                 }
             }
         }

@@ -3,6 +3,7 @@ package pe.edu.pucp.aeroluggage.algoritmos;
 import java.time.LocalDate;
 import java.time.LocalDateTime;
 import java.util.ArrayList;
+import java.util.Collections;
 import java.util.HashMap;
 import java.util.List;
 import java.util.Map;
@@ -114,8 +115,8 @@ public class InstanciaProblema {
         this.idInstanciaProblema = idInstanciaProblema;
     }
 
-    public ArrayList<Maleta> getMaletas() {
-        return new ArrayList<>(maletas);
+    public List<Maleta> getMaletas() {
+        return Collections.unmodifiableList(maletas);
     }
 
     public void setMaletas(final ArrayList<Maleta> maletas) {
@@ -124,8 +125,8 @@ public class InstanciaProblema {
         reconstruirPedidosDesdeMaletas();
     }
 
-    public ArrayList<Pedido> getPedidos() {
-        return new ArrayList<>(pedidos);
+    public List<Pedido> getPedidos() {
+        return Collections.unmodifiableList(pedidos);
     }
 
     public void setPedidos(final ArrayList<Pedido> pedidos) {
@@ -133,18 +134,18 @@ public class InstanciaProblema {
     }
 
     public List<Pedido> pedidos() {
-        return getPedidos();
+        return Collections.unmodifiableList(pedidos);
     }
 
-    public ArrayList<VueloProgramado> getVuelosProgramados() {
-        return new ArrayList<>(vuelosProgramados);
+    public List<VueloProgramado> getVuelosProgramados() {
+        return Collections.unmodifiableList(vuelosProgramados);
     }
 
     public void setVuelosProgramados(final ArrayList<VueloProgramado> vuelosProgramados) {
         this.vuelosProgramados = vuelosProgramados == null ? new ArrayList<>() : new ArrayList<>(vuelosProgramados);
     }
 
-    public ArrayList<VueloProgramado> getVuelos() {
+    public List<VueloProgramado> getVuelos() {
         return getVuelosProgramados();
     }
 
@@ -153,8 +154,8 @@ public class InstanciaProblema {
         setVuelosInstancia(crearInstanciasCompatibles(vuelos));
     }
 
-    public ArrayList<VueloInstancia> getVuelosInstancia() {
-        return new ArrayList<>(vuelosInstancia);
+    public List<VueloInstancia> getVuelosInstancia() {
+        return Collections.unmodifiableList(vuelosInstancia);
     }
 
     public void setVuelosInstancia(final ArrayList<VueloInstancia> vuelosInstancia) {
@@ -162,7 +163,7 @@ public class InstanciaProblema {
         this.indiceVuelos = null;
     }
 
-    public ArrayList<VueloInstancia> getVueloInstancias() {
+    public List<VueloInstancia> getVueloInstancias() {
         return getVuelosInstancia();
     }
 
@@ -170,8 +171,8 @@ public class InstanciaProblema {
         setVuelosInstancia(vueloInstancias);
     }
 
-    public ArrayList<Aeropuerto> getAeropuertos() {
-        return new ArrayList<>(aeropuertos);
+    public List<Aeropuerto> getAeropuertos() {
+        return Collections.unmodifiableList(aeropuertos);
     }
 
     public void setAeropuertos(final ArrayList<Aeropuerto> aeropuertos) {

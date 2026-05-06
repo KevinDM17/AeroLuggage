@@ -7,8 +7,8 @@ minutosConexion=10
 tiempoRecojo=10
 
 # Rango de fechas de simulacion (yyyy-MM-dd)
-simulacion.fecha.inicio=2027-04-11
-simulacion.fecha.fin=2027-04-11
+simulacion.fecha.inicio=2028-06-23
+simulacion.fecha.fin=2028-06-23
 simulacion.ventana.dias=4
 simulacion.iteraciones=5
 simulacion.programada.sa.segundos=0
@@ -38,15 +38,15 @@ ga.pesoGreedySolomon=0.4
 
 # ---------- Parametros ACO ----------
 aco.nts=3
-aco.maxIter=10
-aco.nAnts=8
+aco.maxIter=2
+aco.nAnts=2
 aco.alpha=2.0
 aco.beta=4.0
 aco.rho=0.3
 aco.gamma=0.1
 aco.tau0=1.0
 aco.tauMin=0.01
-aco.tauMax=25.0
+aco.tauMax=10.0
 aco.semilla=-1
 aco.horasPorIntervalo=24
 aco.penalizacionNoFactible=1000

@@ -3,6 +3,7 @@ package pe.edu.pucp.aeroluggage.algoritmos.aco;
 import java.time.LocalDateTime;
 import java.util.ArrayList;
 import java.util.HashMap;
+import java.util.List;
 import java.util.Map;
 
 import pe.edu.pucp.aeroluggage.dominio.entidades.Maleta;
@@ -13,17 +14,17 @@ final class SubproblemaACO {
     private final ArrayList<VueloInstancia> vuelosDisponibles;
     private final Map<String, ArrayList<VueloInstancia>> vuelosPorOrigen;
     private final Map<String, Integer> capacidadRestanteVueloBase;
-    private final Map<String, Integer> capacidadRestanteAlmacenBase;
+    private final Map<String, CapacidadTemporalAlmacen> capacidadRestanteAlmacenBase;
     private final Map<String, LocalDateTime> plazoPorMaleta;
     private final Map<String, Maleta> maletasPorId;
     private final int intervaloActual;
     private final LocalDateTime inicioIntervalo;
 
     SubproblemaACO(
-            final ArrayList<Maleta> maletasPendientes,
-            final ArrayList<VueloInstancia> vuelosDisponibles,
+            final List<Maleta> maletasPendientes,
+            final List<VueloInstancia> vuelosDisponibles,
             final Map<String, Integer> capacidadRestanteVueloBase,
-            final Map<String, Integer> capacidadRestanteAlmacenBase,
+            final Map<String, CapacidadTemporalAlmacen> capacidadRestanteAlmacenBase,
             final Map<String, LocalDateTime> plazoPorMaleta,
             final Map<String, Maleta> maletasPorId,
             final int intervaloActual,
@@ -33,7 +34,8 @@ final class SubproblemaACO {
         this.vuelosDisponibles = vuelosDisponibles == null ? new ArrayList<>() : new ArrayList<>(vuelosDisponibles);
         this.vuelosPorOrigen = indexarVuelosPorOrigen(this.vuelosDisponibles);
         this.capacidadRestanteVueloBase = new HashMap<>(capacidadRestanteVueloBase);
-        this.capacidadRestanteAlmacenBase = new HashMap<>(capacidadRestanteAlmacenBase);
+        // Copia profunda: cada hormiga necesita su propia instancia para no interferir con las demás.
+        this.capacidadRestanteAlmacenBase = CapacidadTemporalAlmacen.clonarMapa(capacidadRestanteAlmacenBase);
         this.plazoPorMaleta = new HashMap<>(plazoPorMaleta);
         this.maletasPorId = new HashMap<>(maletasPorId);
         this.intervaloActual = intervaloActual;
@@ -59,7 +61,7 @@ final class SubproblemaACO {
         return capacidadRestanteVueloBase;
     }
 
-    Map<String, Integer> getCapacidadRestanteAlmacenBase() {
+    Map<String, CapacidadTemporalAlmacen> getCapacidadRestanteAlmacenBase() {
         return capacidadRestanteAlmacenBase;
     }
 
