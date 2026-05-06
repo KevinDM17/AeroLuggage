@@ -139,7 +139,8 @@ public class ACO extends Metaheuristico {
                 aplicarConsumoPlanesConfirmados(
                         new ArrayList<>(planesConfirmados.subList(planesAntes, planesConfirmados.size())),
                         capacidadesAcumuladas,
-                        instancia.getTiempoRecojo()
+                        instancia.getTiempoRecojo(),
+                        subproblema.getInicioIntervalo()
                 );
             }
             evaluador.actualizarIndicadores(ultimoReporte, planesConfirmados, t, mejorEvaluacionIntervalo);
@@ -307,7 +308,8 @@ public class ACO extends Metaheuristico {
 
     private void aplicarConsumoPlanesConfirmados(final ArrayList<Ruta> planesConfirmados,
                                                  final CapacidadesACO capacidades,
-                                                 final long tiempoRecojo) {
+                                                 final long tiempoRecojo,
+                                                 final LocalDateTime tiempoActual) {
         if (planesConfirmados == null || planesConfirmados.isEmpty() || capacidades == null) {
             return;
         }
@@ -317,6 +319,21 @@ public class ACO extends Metaheuristico {
                 continue;
             }
             final ArrayList<VueloInstancia> subrutas = new ArrayList<>(ruta.getSubrutas());
+            final VueloInstancia primerVuelo = subrutas.get(0);
+            
+            if (tiempoActual != null
+                    && primerVuelo != null
+                    && primerVuelo.getAeropuertoOrigen() != null
+                    && primerVuelo.getAeropuertoOrigen().getIdAeropuerto() != null
+                    && primerVuelo.getFechaSalida() != null
+                    && primerVuelo.getFechaSalida().isAfter(tiempoActual)) {
+                final String idOrigen = primerVuelo.getAeropuertoOrigen().getIdAeropuerto();
+                final CapacidadTemporalAlmacen capOrigen = capacidades.getCapacidadRestanteAlmacen().get(idOrigen);
+                if (capOrigen != null) {
+                    capOrigen.reservar(tiempoActual, primerVuelo.getFechaSalida());
+                }
+            }
+
             for (int i = 0; i < subrutas.size(); i++) {
                 final VueloInstancia vuelo = subrutas.get(i);
                 if (vuelo == null || vuelo.getIdVueloInstancia() == null) {
