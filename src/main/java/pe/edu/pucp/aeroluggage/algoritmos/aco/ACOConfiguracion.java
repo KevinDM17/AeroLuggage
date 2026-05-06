@@ -1,7 +1,7 @@
 package pe.edu.pucp.aeroluggage.algoritmos.aco;
 
 public class ACOConfiguracion {
-    private static final int NTS_POR_DEFECTO = 1;
+    private static final int MAX_ESTADOS_BUSQUEDA_TEMPORAL_POR_DEFECTO = 120;
     private static final int MAX_ITER_POR_DEFECTO = 10;
     private static final int N_ANTS_POR_DEFECTO = 8;
     private static final double ALPHA_POR_DEFECTO = 1D;
@@ -16,10 +16,9 @@ public class ACOConfiguracion {
     private static final double PENALIZACION_SOBRECARGA_VUELO_POR_DEFECTO = 200D;
     private static final double PENALIZACION_SOBRECARGA_ALMACEN_POR_DEFECTO = 120D;
     private static final double PENALIZACION_REPLANIFICACION_POR_DEFECTO = 25D;
-    private static final int HORAS_POR_INTERVALO_POR_DEFECTO = 24;
     private static final long SEMILLA_POR_DEFECTO = 42L;
 
-    private int nts;
+    private int maxEstadosBusquedaTemporal;
     private int maxIter;
     private int nAnts;
     private double alpha;
@@ -34,11 +33,10 @@ public class ACOConfiguracion {
     private double penalizacionSobrecargaVuelo;
     private double penalizacionSobrecargaAlmacen;
     private double penalizacionReplanificacion;
-    private int horasPorIntervalo;
     private long semilla;
 
     public ACOConfiguracion() {
-        nts = NTS_POR_DEFECTO;
+        maxEstadosBusquedaTemporal = MAX_ESTADOS_BUSQUEDA_TEMPORAL_POR_DEFECTO;
         maxIter = MAX_ITER_POR_DEFECTO;
         nAnts = N_ANTS_POR_DEFECTO;
         alpha = ALPHA_POR_DEFECTO;
@@ -53,16 +51,15 @@ public class ACOConfiguracion {
         penalizacionSobrecargaVuelo = PENALIZACION_SOBRECARGA_VUELO_POR_DEFECTO;
         penalizacionSobrecargaAlmacen = PENALIZACION_SOBRECARGA_ALMACEN_POR_DEFECTO;
         penalizacionReplanificacion = PENALIZACION_REPLANIFICACION_POR_DEFECTO;
-        horasPorIntervalo = HORAS_POR_INTERVALO_POR_DEFECTO;
         semilla = SEMILLA_POR_DEFECTO;
     }
 
-    public int getNts() {
-        return nts;
+    public int getMaxEstadosBusquedaTemporal() {
+        return maxEstadosBusquedaTemporal;
     }
 
-    public void setNts(final int nts) {
-        this.nts = nts;
+    public void setMaxEstadosBusquedaTemporal(final int maxEstadosBusquedaTemporal) {
+        this.maxEstadosBusquedaTemporal = maxEstadosBusquedaTemporal;
     }
 
     public int getMaxIter() {
@@ -175,14 +172,6 @@ public class ACOConfiguracion {
 
     public void setPenalizacionReplanificacion(final double penalizacionReplanificacion) {
         this.penalizacionReplanificacion = penalizacionReplanificacion;
-    }
-
-    public int getHorasPorIntervalo() {
-        return horasPorIntervalo;
-    }
-
-    public void setHorasPorIntervalo(final int horasPorIntervalo) {
-        this.horasPorIntervalo = horasPorIntervalo;
     }
 
     public long getSemilla() {

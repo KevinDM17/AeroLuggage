@@ -4,60 +4,18 @@ import java.time.LocalDateTime;
 import java.util.ArrayList;
 import java.util.Comparator;
 import java.util.HashMap;
-import java.util.HashSet;
 import java.util.List;
 import java.util.Map;
-import java.util.Set;
 
 import pe.edu.pucp.aeroluggage.algoritmos.InstanciaProblema;
+import pe.edu.pucp.aeroluggage.algoritmos.InstanciaProblema.IntervaloOcupacionAeropuerto;
 import pe.edu.pucp.aeroluggage.dominio.entidades.Aeropuerto;
 import pe.edu.pucp.aeroluggage.dominio.entidades.Maleta;
 import pe.edu.pucp.aeroluggage.dominio.entidades.Pedido;
-import pe.edu.pucp.aeroluggage.dominio.entidades.Ruta;
 import pe.edu.pucp.aeroluggage.dominio.entidades.VueloInstancia;
 
 final class ACOPreparadorContexto {
-    private final ACOConfiguracion configuracion;
-
     ACOPreparadorContexto(final ACOConfiguracion configuracion) {
-        this.configuracion = configuracion;
-    }
-
-    boolean noTerminaHorizonteOperacion(final int intervaloActual) {
-        return intervaloActual < Math.max(1, configuracion.getNts());
-    }
-
-    ArrayList<String> leerEventos(final int intervaloActual) {
-        return new ArrayList<>();
-    }
-
-    ArrayList<Maleta> actualizarMaletasPendientes(
-            final List<Maleta> maletas,
-            final ArrayList<String> eventos,
-            final ArrayList<Ruta> planesConfirmados
-    ) {
-        final Set<String> maletasConfirmadas = new HashSet<>();
-        for (final Ruta ruta : planesConfirmados) {
-            if (ruta == null || ruta.getIdMaleta() == null) {
-                continue;
-            }
-            maletasConfirmadas.add(ruta.getIdMaleta());
-        }
-
-        final ArrayList<Maleta> maletasPendientes = new ArrayList<>();
-        if (maletas == null || maletas.isEmpty()) {
-            return maletasPendientes;
-        }
-        for (final Maleta maleta : maletas) {
-            if (maleta == null || maleta.getIdMaleta() == null) {
-                continue;
-            }
-            if (maletasConfirmadas.contains(maleta.getIdMaleta())) {
-                continue;
-            }
-            maletasPendientes.add(maleta);
-        }
-        return maletasPendientes;
     }
 
     ArrayList<VueloInstancia> actualizarVuelosDisponibles(
@@ -85,6 +43,7 @@ final class ACOPreparadorContexto {
     }
 
     CapacidadesACO recalcularCapacidades(
+            final InstanciaProblema instancia,
             final List<VueloInstancia> vuelos,
             final List<Aeropuerto> aeropuertos
     ) {
@@ -99,6 +58,9 @@ final class ACOPreparadorContexto {
         }
 
         final Map<String, CapacidadTemporalAlmacen> capacidadRestanteAlmacen = new HashMap<>();
+        final Map<String, List<IntervaloOcupacionAeropuerto>> ocupacionFuturaAeropuertos = instancia == null
+                ? Map.of()
+                : instancia.getOcupacionFuturaAeropuertos();
         if (aeropuertos != null) {
             for (final Aeropuerto aeropuerto : aeropuertos) {
                 if (aeropuerto == null || aeropuerto.getIdAeropuerto() == null) {
@@ -108,10 +70,13 @@ final class ACOPreparadorContexto {
                         0,
                         aeropuerto.getCapacidadAlmacen() - aeropuerto.getMaletasActuales()
                 );
-                capacidadRestanteAlmacen.put(
-                        aeropuerto.getIdAeropuerto(),
-                        new CapacidadTemporalAlmacen(capacidadDisponible)
+                final CapacidadTemporalAlmacen capacidadTemporalAlmacen =
+                        new CapacidadTemporalAlmacen(capacidadDisponible);
+                precargarOcupacionFutura(
+                        capacidadTemporalAlmacen,
+                        ocupacionFuturaAeropuertos.get(aeropuerto.getIdAeropuerto())
                 );
+                capacidadRestanteAlmacen.put(aeropuerto.getIdAeropuerto(), capacidadTemporalAlmacen);
             }
         }
 
@@ -122,14 +87,10 @@ final class ACOPreparadorContexto {
             final List<Maleta> maletas,
             final List<VueloInstancia> vuelos,
             final CapacidadesACO capacidades,
-            final int intervaloActual,
             final LocalDateTime tiempoBase
     ) {
         final Map<String, LocalDateTime> plazosPorMaleta = new HashMap<>();
         final Map<String, Maleta> maletasPorId = new HashMap<>();
-        final LocalDateTime inicioIntervalo = tiempoBase == null
-                ? null
-                : tiempoBase.plusHours((long) intervaloActual * configuracion.getHorasPorIntervalo());
 
         if (maletas != null) {
             for (final Maleta maleta : maletas) {
@@ -156,8 +117,7 @@ final class ACOPreparadorContexto {
                 capacidades.getCapacidadRestanteAlmacen(),
                 plazosPorMaleta,
                 maletasPorId,
-                intervaloActual,
-                inicioIntervalo
+                tiempoBase
         );
     }
 
@@ -189,17 +149,6 @@ final class ACOPreparadorContexto {
         return tiempoBase;
     }
 
-    LocalDateTime siguienteIntervalo(final LocalDateTime inicioIntervalo) {
-        if (inicioIntervalo == null) {
-            return null;
-        }
-        return inicioIntervalo.plusHours(configuracion.getHorasPorIntervalo());
-    }
-
-    int avanzarIntervalo(final int intervaloActual) {
-        return intervaloActual + 1;
-    }
-
     private LocalDateTime minimoTiempo(final LocalDateTime primero, final LocalDateTime segundo) {
         if (primero == null) {
             return segundo;
@@ -208,5 +157,20 @@ final class ACOPreparadorContexto {
             return primero;
         }
         return primero.isBefore(segundo) ? primero : segundo;
+    }
+
+    private void precargarOcupacionFutura(
+            final CapacidadTemporalAlmacen capacidadTemporalAlmacen,
+            final List<IntervaloOcupacionAeropuerto> intervalos
+    ) {
+        if (capacidadTemporalAlmacen == null || intervalos == null || intervalos.isEmpty()) {
+            return;
+        }
+        for (final IntervaloOcupacionAeropuerto intervalo : intervalos) {
+            if (intervalo == null) {
+                continue;
+            }
+            capacidadTemporalAlmacen.reservar(intervalo.desde(), intervalo.hasta());
+        }
     }
 }

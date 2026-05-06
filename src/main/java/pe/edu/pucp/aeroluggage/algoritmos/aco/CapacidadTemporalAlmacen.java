@@ -43,6 +43,47 @@ final class CapacidadTemporalAlmacen {
         return Math.max(0, capacidadBase - ocupados);
     }
 
+    boolean puedeReservar(final LocalDateTime desde, final LocalDateTime hasta) {
+        if (desde == null || hasta == null || !hasta.isAfter(desde)) {
+            return false;
+        }
+        if (capacidadBase <= 0) {
+            return false;
+        }
+
+        final long inicio = desde.toEpochSecond(ZoneOffset.UTC);
+        final long fin = hasta.toEpochSecond(ZoneOffset.UTC);
+        final List<long[]> eventos = new ArrayList<>(intervalos.size() * 2 + 2);
+
+        for (final long[] intervalo : intervalos) {
+            final long inicioSolapado = Math.max(inicio, intervalo[0]);
+            final long finSolapado = Math.min(fin, intervalo[1]);
+            if (inicioSolapado >= finSolapado) {
+                continue;
+            }
+            eventos.add(new long[]{inicioSolapado, 1});
+            eventos.add(new long[]{finSolapado, -1});
+        }
+        eventos.add(new long[]{inicio, 1});
+        eventos.add(new long[]{fin, -1});
+        eventos.sort((primero, segundo) -> {
+            final int comparacionTiempo = Long.compare(primero[0], segundo[0]);
+            if (comparacionTiempo != 0) {
+                return comparacionTiempo;
+            }
+            return Long.compare(primero[1], segundo[1]);
+        });
+
+        int ocupados = 0;
+        for (final long[] evento : eventos) {
+            ocupados += (int) evento[1];
+            if (ocupados > capacidadBase) {
+                return false;
+            }
+        }
+        return true;
+    }
+
     /** Registra que una maleta ocupa almacén desde {@code desde} hasta {@code hasta}. */
     void reservar(final LocalDateTime desde, final LocalDateTime hasta) {
         if (desde == null || hasta == null || !hasta.isAfter(desde)) {

@@ -30,8 +30,9 @@ final class ACOConstructorSoluciones {
     private static final int MAX_CANDIDATOS_CODICIOSOS = 2;
     private static final int MAX_CANDIDATOS_PROBABILISTICOS = 4;
     private static final int MAX_CONECTIVIDAD_CONSIDERADA = 6;
-    private static final int MAX_ESTADOS_BUSQUEDA_TEMPORAL = 120;
-    private static final int MAX_VUELOS_POR_EXPANSION = 90;
+    private static final int MAX_LLEGADAS_COMPETITIVAS_POR_AEROPUERTO = 3;
+    private static final double BONIFICACION_DESTINO_DIRECTO = 2D;
+    private static final double BONIFICACION_DESTINO_NO_DIRECTO = 1D;
     private static final double FACTOR_ALEATORIO_MINIMO = 0.85D;
     private static final double RANGO_FACTOR_ALEATORIO = 0.30D;
 
@@ -349,16 +350,19 @@ final class ACOConstructorSoluciones {
                 Comparator.comparingDouble(EstadoPlanTemporal::getCosto)
                         .thenComparing(EstadoPlanTemporal::getTiempoActual)
         );
-        final Map<String, LocalDateTime> mejorLlegadaPorAeropuerto = new HashMap<>();
+        final Map<String, ArrayList<LocalDateTime>> mejoresLlegadasPorAeropuerto = new HashMap<>();
         frontera.add(new EstadoPlanTemporal(idOrigen, tiempoActual, 0D, null, null, 0));
-        mejorLlegadaPorAeropuerto.put(idOrigen, tiempoActual);
+        registrarLlegadaCompetitiva(mejoresLlegadasPorAeropuerto, idOrigen, tiempoActual);
 
         int estadosEvaluados = 0;
-        while (!frontera.isEmpty() && estadosEvaluados < MAX_ESTADOS_BUSQUEDA_TEMPORAL) {
+        while (!frontera.isEmpty() && estadosEvaluados < configuracion.getMaxEstadosBusquedaTemporal()) {
             estadosEvaluados++;
             final EstadoPlanTemporal estado = frontera.poll();
             if (estado.getIdAeropuerto().equals(idDestino)) {
                 final ArrayList<VueloInstancia> plan = estado.reconstruirCamino();
+                if (!planRespetaCapacidadAlmacen(plan, destino, capacidadRestanteAlmacen)) {
+                    continue;
+                }
                 aplicarConsumoPlan(plan, destino, capacidadRestanteVuelo, capacidadRestanteAlmacen);
                 reforzarFeromonaLocal(plan, maleta, feromonas);
                 return plan;
@@ -368,12 +372,7 @@ final class ACOConstructorSoluciones {
             }
 
             final ArrayList<VueloInstancia> vuelos = subproblema.getVuelosDesde(estado.getIdAeropuerto());
-            int vuelosEvaluados = 0;
             for (int i = primerIndiceConSalidaNoAnterior(vuelos, estado.getTiempoActual().plusMinutes(minutosConexion)); i < vuelos.size(); i++) {
-                if (vuelosEvaluados >= MAX_VUELOS_POR_EXPANSION) {
-                    break;
-                }
-                vuelosEvaluados++;
                 final VueloInstancia vuelo = vuelos.get(i);
                 if (!esVueloFactibleParaBusqueda(
                         vuelo,
@@ -387,12 +386,11 @@ final class ACOConstructorSoluciones {
                 }
 
                 final String idSiguiente = obtenerIdAeropuerto(vuelo.getAeropuertoDestino());
-                final LocalDateTime mejorLlegada = mejorLlegadaPorAeropuerto.get(idSiguiente);
-                if (mejorLlegada != null && !vuelo.getFechaLlegada().isBefore(mejorLlegada)) {
+                if (!aceptaLlegadaCompetitiva(mejoresLlegadasPorAeropuerto, idSiguiente, vuelo.getFechaLlegada())) {
                     continue;
                 }
 
-                mejorLlegadaPorAeropuerto.put(idSiguiente, vuelo.getFechaLlegada());
+                registrarLlegadaCompetitiva(mejoresLlegadasPorAeropuerto, idSiguiente, vuelo.getFechaLlegada());
                 frontera.add(estado.avanzar(
                         idSiguiente,
                         vuelo,
@@ -403,6 +401,41 @@ final class ACOConstructorSoluciones {
         }
 
         return null;
+    }
+
+    private boolean aceptaLlegadaCompetitiva(
+            final Map<String, ArrayList<LocalDateTime>> mejoresLlegadasPorAeropuerto,
+            final String idAeropuerto,
+            final LocalDateTime llegada
+    ) {
+        if (idAeropuerto == null || llegada == null) {
+            return false;
+        }
+        final ArrayList<LocalDateTime> llegadas = mejoresLlegadasPorAeropuerto.get(idAeropuerto);
+        if (llegadas == null || llegadas.size() < MAX_LLEGADAS_COMPETITIVAS_POR_AEROPUERTO) {
+            return true;
+        }
+        final LocalDateTime peorLlegadaAceptada = llegadas.get(llegadas.size() - 1);
+        return llegada.isBefore(peorLlegadaAceptada);
+    }
+
+    private void registrarLlegadaCompetitiva(
+            final Map<String, ArrayList<LocalDateTime>> mejoresLlegadasPorAeropuerto,
+            final String idAeropuerto,
+            final LocalDateTime llegada
+    ) {
+        if (idAeropuerto == null || llegada == null) {
+            return;
+        }
+        final ArrayList<LocalDateTime> llegadas = mejoresLlegadasPorAeropuerto.computeIfAbsent(
+                idAeropuerto,
+                key -> new ArrayList<>()
+        );
+        llegadas.add(llegada);
+        llegadas.sort(LocalDateTime::compareTo);
+        while (llegadas.size() > MAX_LLEGADAS_COMPETITIVAS_POR_AEROPUERTO) {
+            llegadas.remove(llegadas.size() - 1);
+        }
     }
 
     private boolean esVueloFactibleParaBusqueda(
@@ -435,7 +468,10 @@ final class ACOConstructorSoluciones {
         if (cap == null) {
             return esMismoAeropuerto(vuelo.getAeropuertoDestino(), destinoFinal);
         }
-        return cap.disponibleEn(vuelo.getFechaLlegada()) >= UNIDAD_MALETA;
+        if (esMismoAeropuerto(vuelo.getAeropuertoDestino(), destinoFinal)) {
+            return cap.puedeReservar(vuelo.getFechaLlegada(), vuelo.getFechaLlegada().plusMinutes(tiempoRecojo));
+        }
+        return true;
     }
 
     private double calcularCostoBusqueda(
@@ -560,7 +596,7 @@ final class ACOConstructorSoluciones {
             // solo se lee (disponibleEn). Si se encontrase un camino se registrarán
             // los intervalos al final vía aplicarConsumoPlan.
             final Map<String, CapacidadTemporalAlmacen> capacidadAlmacenCopia =
-                    new HashMap<>(capacidadRestanteAlmacen);
+                    CapacidadTemporalAlmacen.clonarMapa(capacidadRestanteAlmacen);
             final Set<String> visitadosCopia = new HashSet<>(visitados);
 
             // Solo descuenta capacidad del vuelo; los intervalos de almacén se registran
@@ -594,12 +630,17 @@ final class ACOConstructorSoluciones {
                 continue;
             }
 
-            capacidadRestanteVuelo.clear();
-            capacidadRestanteVuelo.putAll(capacidadVueloCopia);
-
             final ArrayList<VueloInstancia> plan = new ArrayList<>(sufijo.size() + 1);
             plan.add(clonarVueloInstanciaConCapacidad(siguienteVuelo, nuevaCapacidad));
             plan.addAll(sufijo);
+            if (!reservarCapacidadAlmacenPlan(plan, destino, capacidadAlmacenCopia)) {
+                continue;
+            }
+
+            capacidadRestanteVuelo.clear();
+            capacidadRestanteVuelo.putAll(capacidadVueloCopia);
+            capacidadRestanteAlmacen.clear();
+            capacidadRestanteAlmacen.putAll(capacidadAlmacenCopia);
             aplicarActualizacionLocalFeromona(feromonas, maleta, siguienteVuelo);
             return plan;
         }
@@ -653,8 +694,14 @@ final class ACOConstructorSoluciones {
                 if (!esDestinoFinal) {
                     continue;
                 }
-            } else if (cap.disponibleEn(vuelo.getFechaLlegada()) < UNIDAD_MALETA) {
-                continue;
+            } else if (esDestinoFinal) {
+                final boolean destinoFinalDisponible = cap.puedeReservar(
+                        vuelo.getFechaLlegada(),
+                        vuelo.getFechaLlegada().plusMinutes(tiempoRecojo)
+                );
+                if (!destinoFinalDisponible) {
+                    continue;
+                }
             }
             candidatos.add(vuelo);
         }
@@ -731,7 +778,9 @@ final class ACOConstructorSoluciones {
                 Duration.between(vuelo.getFechaSalida(), vuelo.getFechaLlegada()).toMinutes()
         );
         final boolean vueloDirecto = esMismoAeropuerto(vuelo.getAeropuertoDestino(), destinoFinal);
-        final double bonificacionDestino = vueloDirecto ? 6D : 1D;
+        final double bonificacionDestino = vueloDirecto
+                ? BONIFICACION_DESTINO_DIRECTO
+                : BONIFICACION_DESTINO_NO_DIRECTO;
         final double conectividad = 1D + contarSalidasFuturas(
                 vuelo.getAeropuertoDestino(),
                 vuelo.getFechaLlegada(),
@@ -780,12 +829,70 @@ final class ACOConstructorSoluciones {
             if (plazo != null && vuelo.getFechaLlegada().isAfter(plazo)) {
                 continue;
             }
+            if (vuelo.getCapacidadDisponible() < UNIDAD_MALETA) {
+                continue;
+            }
+            final CapacidadTemporalAlmacen cap = subproblema.getCapacidadRestanteAlmacenBase().get(
+                    obtenerIdAeropuerto(vuelo.getAeropuertoDestino())
+            );
+            if (cap != null) {
+                final boolean destinoFinalDisponible = cap.puedeReservar(
+                        vuelo.getFechaLlegada(),
+                        vuelo.getFechaLlegada().plusMinutes(tiempoRecojo)
+                );
+                if (!destinoFinalDisponible) {
+                    continue;
+                }
+            }
             if (mejorVuelo != null && !vuelo.getFechaLlegada().isBefore(mejorVuelo.getFechaLlegada())) {
                 continue;
             }
             mejorVuelo = vuelo;
         }
         return mejorVuelo;
+    }
+
+    private boolean planRespetaCapacidadAlmacen(final List<VueloInstancia> plan,
+                                                final Aeropuerto destinoFinal,
+                                                final Map<String, CapacidadTemporalAlmacen> capacidadRestanteAlmacen) {
+        if (plan == null || plan.isEmpty()) {
+            return false;
+        }
+        final Map<String, CapacidadTemporalAlmacen> copia = CapacidadTemporalAlmacen.clonarMapa(capacidadRestanteAlmacen);
+        return reservarCapacidadAlmacenPlan(plan, destinoFinal, copia);
+    }
+
+    private boolean reservarCapacidadAlmacenPlan(final List<VueloInstancia> plan,
+                                                 final Aeropuerto destinoFinal,
+                                                 final Map<String, CapacidadTemporalAlmacen> capacidadRestanteAlmacen) {
+        for (int i = 0; i < plan.size(); i++) {
+            final VueloInstancia vuelo = plan.get(i);
+            if (vuelo == null || vuelo.getAeropuertoDestino() == null || vuelo.getFechaLlegada() == null) {
+                continue;
+            }
+            final String idDestino = obtenerIdAeropuerto(vuelo.getAeropuertoDestino());
+            if (idDestino == null) {
+                continue;
+            }
+            final CapacidadTemporalAlmacen cap = capacidadRestanteAlmacen.get(idDestino);
+            if (cap == null) {
+                if (!esMismoAeropuerto(vuelo.getAeropuertoDestino(), destinoFinal)) {
+                    return false;
+                }
+                continue;
+            }
+            final LocalDateTime liberacion;
+            if (i < plan.size() - 1) {
+                liberacion = plan.get(i + 1).getFechaSalida();
+            } else {
+                liberacion = vuelo.getFechaLlegada().plusMinutes(tiempoRecojo);
+            }
+            if (!cap.puedeReservar(vuelo.getFechaLlegada(), liberacion)) {
+                return false;
+            }
+            cap.reservar(vuelo.getFechaLlegada(), liberacion);
+        }
+        return true;
     }
 
     private void ordenarCandidatos(final ArrayList<VueloInstancia> candidatos, final FeromonasACO feromonas,

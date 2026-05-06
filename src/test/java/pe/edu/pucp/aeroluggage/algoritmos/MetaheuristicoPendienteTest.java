@@ -66,6 +66,7 @@ class MetaheuristicoPendienteTest {
         assertEquals("MAL-1", ruta.getIdMaleta());
         assertEquals(1, ruta.getSubrutas().size());
         assertEquals("VP-1", ruta.getSubrutas().get(0).getIdVueloInstancia());
+        assertEquals(1, reporte.getIntervalosProcesados());
         assertEquals(1, reporte.getRutasFactibles());
         assertEquals(0, reporte.getRutasNoFactibles());
         assertTrue(Double.isFinite(aco.getUltimoCosto()));
@@ -118,6 +119,7 @@ class MetaheuristicoPendienteTest {
         final Solucion solucion = aco.getUltimaSolucion();
         assertEquals(1, solucion.getSubrutas().size());
         assertEquals(2, solucion.getSubrutas().get(0).getSubrutas().size());
+        assertEquals(1, aco.getUltimoReporte().getIntervalosProcesados());
         assertEquals(1, aco.getUltimoReporte().getRutasFactibles());
     }
 
@@ -129,7 +131,6 @@ class MetaheuristicoPendienteTest {
 
     private ACOConfiguracion crearConfiguracionBasica() {
         final ACOConfiguracion configuracion = new ACOConfiguracion();
-        configuracion.setNts(1);
         configuracion.setMaxIter(5);
         configuracion.setNAnts(4);
         configuracion.setSemilla(17L);

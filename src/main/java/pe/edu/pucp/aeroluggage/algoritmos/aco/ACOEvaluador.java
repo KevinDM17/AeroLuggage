@@ -71,8 +71,7 @@ final class ACOEvaluador {
                 final VueloInstancia subruta = subrutas.get(i);
                 final String idVuelo = subruta.getIdVueloInstancia();
                 usoVuelos.put(idVuelo, usoVuelos.getOrDefault(idVuelo, 0) + UNIDAD_MALETA);
-
-                if (i == subrutas.size() - 1) {
+                if (subruta.getAeropuertoDestino() == null || subruta.getAeropuertoDestino().getIdAeropuerto() == null) {
                     continue;
                 }
                 final String idAeropuerto = subruta.getAeropuertoDestino().getIdAeropuerto();
@@ -134,27 +133,6 @@ final class ACOEvaluador {
                 feromonas.reforzar(ruta.getIdMaleta(), subruta, delta);
             }
         }
-    }
-
-    void actualizarIndicadores(
-            final ACOReporte reporte,
-            final ArrayList<Ruta> planesConfirmados,
-            final int intervaloActual,
-            final EvaluacionACO evaluacion
-    ) {
-        reporte.setIntervalosProcesados(intervaloActual + 1);
-        reporte.setPlanesConfirmados(planesConfirmados.size());
-        if (evaluacion == null) {
-            return;
-        }
-        reporte.setRutasFactibles(evaluacion.getRutasFactibles());
-        reporte.setRutasNoFactibles(evaluacion.getRutasNoFactibles());
-        reporte.setTiempoTotalDias(evaluacion.getTiempoTotalDias());
-        reporte.setIncumplimientosPlazo(evaluacion.getIncumplimientosPlazo());
-        reporte.setSobrecargaVuelos(evaluacion.getSobrecargaVuelos());
-        reporte.setSobrecargaAlmacenes(evaluacion.getSobrecargaAlmacenes());
-        reporte.setNumeroReplanificaciones(evaluacion.getNumeroReplanificaciones());
-        reporte.setMejorCosto(evaluacion.getCosto());
     }
 
     FeromonasACO conservarYAdaptarFeromonas(
