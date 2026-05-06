@@ -23,6 +23,7 @@ public class InstanciaProblema {
     private ArrayList<VueloProgramado> vuelosProgramados;
     private ArrayList<VueloInstancia> vuelosInstancia;
     private ArrayList<Aeropuerto> aeropuertos;
+    private Map<String, List<IntervaloOcupacionAeropuerto>> ocupacionFuturaAeropuertos;
     private GrafoTiempoExpandido grafo;
     private long minutosConexion = 10L;
     private long tiempoRecojo = 10L;
@@ -37,6 +38,7 @@ public class InstanciaProblema {
         this.vuelosProgramados = new ArrayList<>();
         this.vuelosInstancia = new ArrayList<>();
         this.aeropuertos = new ArrayList<>();
+        this.ocupacionFuturaAeropuertos = new HashMap<>();
     }
 
     public InstanciaProblema(final String idInstanciaProblema, final ArrayList<Maleta> maletas,
@@ -204,6 +206,29 @@ public class InstanciaProblema {
         this.tiempoRecojo = tiempoRecojo;
     }
 
+    public Map<String, List<IntervaloOcupacionAeropuerto>> getOcupacionFuturaAeropuertos() {
+        final Map<String, List<IntervaloOcupacionAeropuerto>> copia = new HashMap<>();
+        for (final Map.Entry<String, List<IntervaloOcupacionAeropuerto>> entry : ocupacionFuturaAeropuertos.entrySet()) {
+            copia.put(entry.getKey(), List.copyOf(entry.getValue()));
+        }
+        return Collections.unmodifiableMap(copia);
+    }
+
+    public void setOcupacionFuturaAeropuertos(
+            final Map<String, List<IntervaloOcupacionAeropuerto>> ocupacionFuturaAeropuertos
+    ) {
+        final Map<String, List<IntervaloOcupacionAeropuerto>> copia = new HashMap<>();
+        if (ocupacionFuturaAeropuertos != null) {
+            for (final Map.Entry<String, List<IntervaloOcupacionAeropuerto>> entry : ocupacionFuturaAeropuertos.entrySet()) {
+                if (entry.getKey() == null || entry.getValue() == null) {
+                    continue;
+                }
+                copia.put(entry.getKey(), List.copyOf(entry.getValue()));
+            }
+        }
+        this.ocupacionFuturaAeropuertos = copia;
+    }
+
     public Pedido buscarPedido(final String idPedido) {
         if (idPedido == null || idPedido.isBlank()) {
             return null;
@@ -305,5 +330,8 @@ public class InstanciaProblema {
             ));
         }
         return instancias;
+    }
+
+    public record IntervaloOcupacionAeropuerto(LocalDateTime desde, LocalDateTime hasta) {
     }
 }

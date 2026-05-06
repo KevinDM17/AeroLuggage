@@ -9,7 +9,6 @@ import pe.edu.pucp.aeroluggage.algoritmos.InstanciaProblema;
 import pe.edu.pucp.aeroluggage.algoritmos.Metaheuristico;
 import pe.edu.pucp.aeroluggage.algoritmos.Solucion;
 import pe.edu.pucp.aeroluggage.dominio.entidades.Ruta;
-import pe.edu.pucp.aeroluggage.dominio.entidades.VueloInstancia;
 import pe.edu.pucp.aeroluggage.dominio.enums.EstadoRuta;
 
 public class ACO extends Metaheuristico {
@@ -43,6 +42,9 @@ public class ACO extends Metaheuristico {
 
     @Override
     public void ejecutar(final InstanciaProblema instancia) {
+        if (instancia == null) {
+            return;
+        }
         ultimaInstancia = instancia;
         constructorSoluciones.setMinutosConexion(instancia.getMinutosConexion());
         constructorSoluciones.setTiempoRecojo(instancia.getTiempoRecojo());
@@ -50,117 +52,82 @@ public class ACO extends Metaheuristico {
         ultimoReporte = new ACOReporte();
         ultimoCosto = Double.POSITIVE_INFINITY;
         feromonas = new FeromonasACO(configuracion);
-        if (instancia == null || instancia.getMaletas().isEmpty()) {
+        if (instancia.getMaletas().isEmpty()) {
             return;
         }
 
-        final ArrayList<Ruta> planesConfirmados = new ArrayList<>();
         final LocalDateTime tiempoBase = preparadorContexto.obtenerTiempoBase(instancia);
-        // Los vuelos no cambian entre intervalos (leerEventos siempre devuelve vacío),
-        // por lo que se filtran y ordenan una sola vez fuera del loop.
-        final ArrayList<VueloInstancia> vuelosDisponibles = preparadorContexto.actualizarVuelosDisponibles(
-                instancia.getVuelosInstancia(), new ArrayList<>()
+        final ArrayList<pe.edu.pucp.aeroluggage.dominio.entidades.VueloInstancia> vuelosDisponibles =
+                preparadorContexto.actualizarVuelosDisponibles(instancia.getVuelosInstancia(), new ArrayList<>());
+        final CapacidadesACO capacidadesBase = preparadorContexto.recalcularCapacidades(
+                instancia,
+                vuelosDisponibles,
+                instancia.getAeropuertos()
         );
-        // Las capacidades base se calculan una vez. capacidadesAcumuladas parte de esa base
-        // y absorbe solo los planes nuevos confirmados al final de cada intervalo,
-        // evitando reconstruir y reaplicar todos los planes en cada iteración.
-        final CapacidadesACO capacidadesAcumuladas = preparadorContexto.recalcularCapacidades(
-                vuelosDisponibles, instancia.getAeropuertos()
+        final SubproblemaACO subproblema = prepararSubproblema(
+                instancia,
+                tiempoBase,
+                vuelosDisponibles,
+                capacidadesBase
         );
+        if (subproblema.getMaletasPendientes().isEmpty()) {
+            ultimoReporte.setIntervalosProcesados(1);
+            ultimoReporte.setPlanesConfirmados(0);
+            return;
+        }
 
-        for (int t = 0; preparadorContexto.noTerminaHorizonteOperacion(t); t = preparadorContexto.avanzarIntervalo(t)) {
-            final ArrayList<String> eventos = preparadorContexto.leerEventos(t);
-            final SubproblemaACO subproblema = prepararSubproblema(
-                    instancia,
-                    planesConfirmados,
-                    tiempoBase,
-                    t,
-                    vuelosDisponibles,
-                    capacidadesAcumuladas
-            );
-            if (subproblema.getMaletasPendientes().isEmpty()) {
-                ultimoReporte.setIntervalosProcesados(t + 1);
-                ultimoReporte.setPlanesConfirmados(planesConfirmados.size());
-                continue;
-            }
+        Solucion mejorSolucionCiclo = seleccionarMejorSolucionInicial(subproblema);
+        EvaluacionACO mejorEvaluacionCiclo = evaluador.evaluarSolucion(mejorSolucionCiclo, subproblema);
 
-            Solucion mejorSolucionIntervalo = seleccionarMejorSolucionInicial(subproblema);
-            EvaluacionACO mejorEvaluacionIntervalo = evaluador.evaluarSolucion(mejorSolucionIntervalo, subproblema);
+        int iteracionesSinMejora = 0;
+        final int maxIteracionesSinMejora = Math.max(
+                MIN_ITERACIONES_SIN_MEJORA,
+                configuracion.getMaxIter() / DIVISOR_ITERACIONES_SIN_MEJORA
+        );
+        final int maxIteraciones = Math.max(1, configuracion.getMaxIter());
+        final int hormigas = Math.max(1, configuracion.getNAnts());
 
-            int iteracionesSinMejora = 0;
-            final int maxIteracionesSinMejora = Math.max(
-                    MIN_ITERACIONES_SIN_MEJORA,
-                    configuracion.getMaxIter() / DIVISOR_ITERACIONES_SIN_MEJORA
-            );
-
-            final int maxIterIntervalo = Math.max(1, configuracion.getMaxIter());
-            final int hormigasIntervalo = Math.max(1, configuracion.getNAnts());
-            for (int iter = 1; iter <= maxIterIntervalo; iter++) {
-                boolean huboMejora = false;
-                for (int hormiga = 1; hormiga <= hormigasIntervalo; hormiga++) {
-                    final Solucion solucionHormiga = constructorSoluciones.construirSolucionHormiga(
-                            subproblema,
-                            feromonas
-                    );
-                    final Solucion solucionReparada = constructorSoluciones.repararInconsistencias(
-                            solucionHormiga,
-                            subproblema
-                    );
-                    final Solucion solucionMejorada = constructorSoluciones.mejoraLocal(solucionReparada, subproblema);
-                    final EvaluacionACO evaluacion = evaluador.evaluarSolucion(solucionMejorada, subproblema);
-
-                    if (evaluador.esMejorEvaluacion(evaluacion, mejorEvaluacionIntervalo)) {
-                        mejorSolucionIntervalo = constructorSoluciones.clonarSolucion(solucionMejorada);
-                        mejorEvaluacionIntervalo = evaluacion;
-                        huboMejora = true;
-                    }
-                }
-                evaluador.aplicarActualizacionGlobalFeromona(
-                        feromonas,
-                        mejorSolucionIntervalo,
-                        mejorEvaluacionIntervalo
+        for (int iter = 1; iter <= maxIteraciones; iter++) {
+            boolean huboMejora = false;
+            for (int hormiga = 1; hormiga <= hormigas; hormiga++) {
+                final Solucion solucionHormiga = constructorSoluciones.construirSolucionHormiga(
+                        subproblema,
+                        feromonas
                 );
-                if (huboMejora) {
-                    iteracionesSinMejora = 0;
-                    continue;
-                }
-                iteracionesSinMejora++;
-                if (iteracionesSinMejora >= maxIteracionesSinMejora) {
-                    break;
-                }
-            }
-
-            final LocalDateTime ventanaCompromiso = preparadorContexto.siguienteIntervalo(
-                    subproblema.getInicioIntervalo()
-            );
-            final int planesAntes = planesConfirmados.size();
-            confirmarDecisionesProximas(planesConfirmados, mejorSolucionIntervalo, ventanaCompromiso);
-            if (planesConfirmados.size() > planesAntes) {
-                aplicarConsumoPlanesConfirmados(
-                        new ArrayList<>(planesConfirmados.subList(planesAntes, planesConfirmados.size())),
-                        capacidadesAcumuladas,
-                        instancia.getTiempoRecojo(),
-                        subproblema.getInicioIntervalo()
+                final Solucion solucionReparada = constructorSoluciones.repararInconsistencias(
+                        solucionHormiga,
+                        subproblema
                 );
+                final Solucion solucionMejorada = constructorSoluciones.mejoraLocal(solucionReparada, subproblema);
+                final EvaluacionACO evaluacion = evaluador.evaluarSolucion(solucionMejorada, subproblema);
+                if (evaluador.esMejorEvaluacion(evaluacion, mejorEvaluacionCiclo)) {
+                    mejorSolucionCiclo = constructorSoluciones.clonarSolucion(solucionMejorada);
+                    mejorEvaluacionCiclo = evaluacion;
+                    huboMejora = true;
+                }
             }
-            evaluador.actualizarIndicadores(ultimoReporte, planesConfirmados, t, mejorEvaluacionIntervalo);
+            evaluador.aplicarActualizacionGlobalFeromona(
+                    feromonas,
+                    mejorSolucionCiclo,
+                    mejorEvaluacionCiclo
+            );
             feromonas = evaluador.conservarYAdaptarFeromonas(
                     feromonas,
-                    mejorSolucionIntervalo,
-                    mejorEvaluacionIntervalo,
-                    eventos
+                    mejorSolucionCiclo,
+                    mejorEvaluacionCiclo,
+                    new ArrayList<>()
             );
-
-            final EvaluacionACO evaluacionActual = Double.isFinite(ultimoCosto)
-                    ? new EvaluacionACO(ultimoCosto, 0D, 0, 0, 0, 0, 0, 0)
-                    : null;
-            if (evaluador.esMejorEvaluacion(mejorEvaluacionIntervalo, evaluacionActual)) {
-                ultimaSolucion = constructorSoluciones.clonarSolucion(mejorSolucionIntervalo);
-                ultimoCosto = mejorEvaluacionIntervalo.getCosto();
+            if (huboMejora) {
+                iteracionesSinMejora = 0;
+                continue;
+            }
+            iteracionesSinMejora++;
+            if (iteracionesSinMejora >= maxIteracionesSinMejora) {
+                break;
             }
         }
 
-        ultimaSolucion = completarRutasFaltantes(instancia, consolidarPlanes(planesConfirmados, ultimaSolucion));
+        ultimaSolucion = completarRutasFaltantes(instancia, mejorSolucionCiclo);
         evaluar();
     }
 
@@ -170,11 +137,13 @@ public class ACO extends Metaheuristico {
             return;
         }
 
-        final ArrayList<VueloInstancia> vuelosDisponibles = preparadorContexto.actualizarVuelosDisponibles(
-                ultimaInstancia.getVuelosInstancia(),
-                new ArrayList<>()
-        );
+        final ArrayList<pe.edu.pucp.aeroluggage.dominio.entidades.VueloInstancia> vuelosDisponibles =
+                preparadorContexto.actualizarVuelosDisponibles(
+                        ultimaInstancia.getVuelosInstancia(),
+                        new ArrayList<>()
+                );
         final CapacidadesACO capacidades = preparadorContexto.recalcularCapacidades(
+                ultimaInstancia,
                 vuelosDisponibles,
                 ultimaInstancia.getAeropuertos()
         );
@@ -182,14 +151,11 @@ public class ACO extends Metaheuristico {
                 ultimaInstancia.getMaletas(),
                 vuelosDisponibles,
                 capacidades,
-                0,
                 preparadorContexto.obtenerTiempoBase(ultimaInstancia)
         );
         final EvaluacionACO evaluacion = evaluador.evaluarSolucion(ultimaSolucion, subproblema);
         ultimoCosto = evaluacion.getCosto();
-        ultimoReporte.setIntervalosProcesados(
-                Math.max(ultimoReporte.getIntervalosProcesados(), configuracion.getNts())
-        );
+        ultimoReporte.setIntervalosProcesados(1);
         ultimoReporte.setPlanesConfirmados(ultimaSolucion.getSubrutas().size());
         ultimoReporte.setRutasFactibles(evaluacion.getRutasFactibles());
         ultimoReporte.setRutasNoFactibles(evaluacion.getRutasNoFactibles());
@@ -219,23 +185,14 @@ public class ACO extends Metaheuristico {
 
     private SubproblemaACO prepararSubproblema(
             final InstanciaProblema instancia,
-            final ArrayList<Ruta> planesConfirmados,
             final LocalDateTime tiempoBase,
-            final int intervaloActual,
-            final ArrayList<VueloInstancia> vuelosDisponibles,
+            final ArrayList<pe.edu.pucp.aeroluggage.dominio.entidades.VueloInstancia> vuelosDisponibles,
             final CapacidadesACO capacidades
     ) {
-        final ArrayList<pe.edu.pucp.aeroluggage.dominio.entidades.Maleta> maletasPendientes =
-                preparadorContexto.actualizarMaletasPendientes(
-                        instancia.getMaletas(),
-                        new ArrayList<>(),
-                        planesConfirmados
-                );
         return preparadorContexto.construirSubproblema(
-                maletasPendientes,
+                instancia.getMaletas(),
                 vuelosDisponibles,
                 capacidades,
-                intervaloActual,
                 tiempoBase
         );
     }
@@ -262,143 +219,6 @@ public class ACO extends Metaheuristico {
         }
 
         return mejorSolucion == null ? new Solucion() : mejorSolucion;
-    }
-
-    private void confirmarDecisionesProximas(
-            final ArrayList<Ruta> planesConfirmados,
-            final Solucion mejorSolucionIntervalo,
-            final LocalDateTime ventanaCompromiso
-    ) {
-        if (mejorSolucionIntervalo == null || mejorSolucionIntervalo.getSubrutas().isEmpty()) {
-            return;
-        }
-
-        final Set<String> yaConfirmadas = new HashSet<>();
-        for (final Ruta ruta : planesConfirmados) {
-            if (ruta == null || ruta.getIdMaleta() == null) {
-                continue;
-            }
-            yaConfirmadas.add(ruta.getIdMaleta());
-        }
-
-        for (final Ruta rutaOriginal : mejorSolucionIntervalo.getSubrutas()) {
-            if (rutaOriginal == null || rutaOriginal.getIdMaleta() == null) {
-                continue;
-            }
-            if (yaConfirmadas.contains(rutaOriginal.getIdMaleta())) {
-                continue;
-            }
-            if (!constructorSoluciones.esRutaFactible(rutaOriginal)) {
-                continue;
-            }
-
-            final LocalDateTime primeraSalida = constructorSoluciones.obtenerPrimeraSalida(rutaOriginal);
-            final boolean confirmarAhora = primeraSalida != null
-                    && (ventanaCompromiso == null || !primeraSalida.isAfter(ventanaCompromiso));
-            if (!confirmarAhora) {
-                continue;
-            }
-
-            final Ruta rutaConfirmada = constructorSoluciones.clonarRuta(rutaOriginal);
-            rutaConfirmada.setEstado(EstadoRuta.CONFIRMADA);
-            planesConfirmados.add(rutaConfirmada);
-            yaConfirmadas.add(rutaConfirmada.getIdMaleta());
-        }
-    }
-
-    private void aplicarConsumoPlanesConfirmados(final ArrayList<Ruta> planesConfirmados,
-                                                 final CapacidadesACO capacidades,
-                                                 final long tiempoRecojo,
-                                                 final LocalDateTime tiempoActual) {
-        if (planesConfirmados == null || planesConfirmados.isEmpty() || capacidades == null) {
-            return;
-        }
-
-        for (final Ruta ruta : planesConfirmados) {
-            if (ruta == null || ruta.getSubrutas() == null || ruta.getSubrutas().isEmpty()) {
-                continue;
-            }
-            final ArrayList<VueloInstancia> subrutas = new ArrayList<>(ruta.getSubrutas());
-            final VueloInstancia primerVuelo = subrutas.get(0);
-            
-            if (tiempoActual != null
-                    && primerVuelo != null
-                    && primerVuelo.getAeropuertoOrigen() != null
-                    && primerVuelo.getAeropuertoOrigen().getIdAeropuerto() != null
-                    && primerVuelo.getFechaSalida() != null
-                    && primerVuelo.getFechaSalida().isAfter(tiempoActual)) {
-                final String idOrigen = primerVuelo.getAeropuertoOrigen().getIdAeropuerto();
-                final CapacidadTemporalAlmacen capOrigen = capacidades.getCapacidadRestanteAlmacen().get(idOrigen);
-                if (capOrigen != null) {
-                    capOrigen.reservar(tiempoActual, primerVuelo.getFechaSalida());
-                }
-            }
-
-            for (int i = 0; i < subrutas.size(); i++) {
-                final VueloInstancia vuelo = subrutas.get(i);
-                if (vuelo == null || vuelo.getIdVueloInstancia() == null) {
-                    continue;
-                }
-
-                // Descuentar capacidad del vuelo.
-                final Integer capacidadVuelo = capacidades.getCapacidadRestanteVuelo().get(vuelo.getIdVueloInstancia());
-                if (capacidadVuelo != null) {
-                    capacidades.getCapacidadRestanteVuelo().put(
-                            vuelo.getIdVueloInstancia(),
-                            Math.max(0, capacidadVuelo - 1)
-                    );
-                }
-
-                // Registrar intervalo de ocupación en el aeropuerto destino.
-                if (vuelo.getAeropuertoDestino() == null
-                        || vuelo.getAeropuertoDestino().getIdAeropuerto() == null
-                        || vuelo.getFechaLlegada() == null) {
-                    continue;
-                }
-                final String idAeropuerto = vuelo.getAeropuertoDestino().getIdAeropuerto();
-                final java.time.LocalDateTime llegada = vuelo.getFechaLlegada();
-                final java.time.LocalDateTime liberacion;
-                if (i < subrutas.size() - 1) {
-                    // Escala intermedia: hasta que sale el siguiente vuelo.
-                    liberacion = subrutas.get(i + 1).getFechaSalida();
-                } else {
-                    // Destino final: hasta que el cliente recoge la maleta.
-                    liberacion = llegada.plusMinutes(tiempoRecojo);
-                }
-                final CapacidadTemporalAlmacen cap =
-                        capacidades.getCapacidadRestanteAlmacen().get(idAeropuerto);
-                if (cap != null) {
-                    cap.reservar(llegada, liberacion);
-                }
-            }
-        }
-    }
-
-    private Solucion consolidarPlanes(final ArrayList<Ruta> planesConfirmados, final Solucion mejorSolucion) {
-        final ArrayList<Ruta> rutasConsolidadas = new ArrayList<>();
-        final Set<String> maletasConsolidadas = new HashSet<>();
-
-        if (planesConfirmados != null) {
-            for (final Ruta ruta : planesConfirmados) {
-                if (ruta == null || ruta.getIdMaleta() == null || maletasConsolidadas.contains(ruta.getIdMaleta())) {
-                    continue;
-                }
-                rutasConsolidadas.add(constructorSoluciones.clonarRuta(ruta));
-                maletasConsolidadas.add(ruta.getIdMaleta());
-            }
-        }
-
-        if (mejorSolucion != null) {
-            for (final Ruta ruta : mejorSolucion.getSubrutas()) {
-                if (ruta == null || ruta.getIdMaleta() == null || maletasConsolidadas.contains(ruta.getIdMaleta())) {
-                    continue;
-                }
-                rutasConsolidadas.add(constructorSoluciones.clonarRuta(ruta));
-                maletasConsolidadas.add(ruta.getIdMaleta());
-            }
-        }
-
-        return new Solucion(rutasConsolidadas);
     }
 
     private Solucion completarRutasFaltantes(final InstanciaProblema instancia, final Solucion solucion) {

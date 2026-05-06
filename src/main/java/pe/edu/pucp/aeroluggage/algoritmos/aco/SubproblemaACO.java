@@ -17,7 +17,6 @@ final class SubproblemaACO {
     private final Map<String, CapacidadTemporalAlmacen> capacidadRestanteAlmacenBase;
     private final Map<String, LocalDateTime> plazoPorMaleta;
     private final Map<String, Maleta> maletasPorId;
-    private final int intervaloActual;
     private final LocalDateTime inicioIntervalo;
 
     SubproblemaACO(
@@ -27,7 +26,6 @@ final class SubproblemaACO {
             final Map<String, CapacidadTemporalAlmacen> capacidadRestanteAlmacenBase,
             final Map<String, LocalDateTime> plazoPorMaleta,
             final Map<String, Maleta> maletasPorId,
-            final int intervaloActual,
             final LocalDateTime inicioIntervalo
     ) {
         this.maletasPendientes = maletasPendientes == null ? new ArrayList<>() : new ArrayList<>(maletasPendientes);
@@ -38,7 +36,6 @@ final class SubproblemaACO {
         this.capacidadRestanteAlmacenBase = CapacidadTemporalAlmacen.clonarMapa(capacidadRestanteAlmacenBase);
         this.plazoPorMaleta = new HashMap<>(plazoPorMaleta);
         this.maletasPorId = new HashMap<>(maletasPorId);
-        this.intervaloActual = intervaloActual;
         this.inicioIntervalo = inicioIntervalo;
     }
 
@@ -67,10 +64,6 @@ final class SubproblemaACO {
 
     Map<String, LocalDateTime> getPlazoPorMaleta() {
         return plazoPorMaleta;
-    }
-
-    int getIntervaloActual() {
-        return intervaloActual;
     }
 
     LocalDateTime getInicioIntervalo() {

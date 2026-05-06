@@ -137,7 +137,8 @@ class AlgoritmosDesdeArchivoTest {
 
     private static ACOConfiguracion construirConfiguracionACO() {
         final ACOConfiguracion c = new ACOConfiguracion();
-        c.setNts(intParam("aco.nts", c.getNts()));
+        c.setMaxEstadosBusquedaTemporal(
+                intParam("aco.maxEstadosBusquedaTemporal", c.getMaxEstadosBusquedaTemporal()));
         c.setMaxIter(intParam("aco.maxIter", c.getMaxIter()));
         c.setNAnts(intParam("aco.nAnts", c.getNAnts()));
         c.setAlpha(doubleParam("aco.alpha", c.getAlpha()));
@@ -148,7 +149,6 @@ class AlgoritmosDesdeArchivoTest {
         c.setTauMin(doubleParam("aco.tauMin", c.getTauMin()));
         c.setTauMax(doubleParam("aco.tauMax", c.getTauMax()));
         c.setSemilla(longParam("aco.semilla", c.getSemilla()));
-        c.setHorasPorIntervalo(intParam("aco.horasPorIntervalo", c.getHorasPorIntervalo()));
         c.setPenalizacionNoFactible(doubleParam("aco.penalizacionNoFactible", c.getPenalizacionNoFactible()));
         c.setPenalizacionIncumplimiento(doubleParam("aco.penalizacionIncumplimiento", c.getPenalizacionIncumplimiento()));
         c.setPenalizacionSobrecargaVuelo(doubleParam("aco.penalizacionSobrecargaVuelo", c.getPenalizacionSobrecargaVuelo()));

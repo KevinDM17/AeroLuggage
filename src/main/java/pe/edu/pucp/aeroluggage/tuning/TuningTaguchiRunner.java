@@ -335,9 +335,7 @@ public final class TuningTaguchiRunner {
         for (int i = 0; i < columnas.size(); i++) {
             final double val = valores[i];
             final String col = columnas.get(i);
-            if ("nts".equals(col)) {
-                p.setNts((int) val);
-            } else if ("maxIter".equals(col)) {
+            if ("maxIter".equals(col)) {
                 p.setMaxIter((int) val);
             } else if ("nAnts".equals(col)) {
                 p.setNAnts((int) val);
@@ -355,8 +353,6 @@ public final class TuningTaguchiRunner {
                 p.setTauMin(val);
             } else if ("tauMax".equals(col)) {
                 p.setTauMax(val);
-            } else if ("horasPorIntervalo".equals(col)) {
-                p.setHorasPorIntervalo((int) val);
             } else if ("penalizacionNoFactible".equals(col)) {
                 p.setPenalizacionNoFactible(val);
             } else if ("penalizacionIncumplimiento".equals(col)) {
