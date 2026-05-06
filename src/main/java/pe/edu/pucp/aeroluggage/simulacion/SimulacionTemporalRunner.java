@@ -643,11 +643,27 @@ public final class SimulacionTemporalRunner {
                     finCicloDatos,
                     tiempoRecojo
             );
-            final List<MaletaNoRuteada> noRuteadasCiclo = identificarNoRuteadas(estadosActualizados, finCicloDatos);
+            final Set<String> maletasFinalizadasEnCiclo = identificarMaletasFinalizadas(estadosActualizados);
+            depurarMaletasFinalizadas(registradas, rutasProgramadasPorMaleta, maletasFinalizadasEnCiclo);
+            if (!maletasFinalizadasEnCiclo.isEmpty()) {
+                recalcularOcupacionAeropuertos(
+                        ocupacion,
+                        contextoEjecucion.aeropuertos(),
+                        registradas,
+                        rutasProgramadasPorMaleta,
+                        finCicloDatos,
+                        tiempoRecojo
+                );
+            }
+            final Map<String, EstadoMaletaTemporal> estadosDepurados = filtrarEstadosActivos(
+                    estadosActualizados,
+                    maletasFinalizadasEnCiclo
+            );
+            final List<MaletaNoRuteada> noRuteadasCiclo = identificarNoRuteadas(estadosDepurados, finCicloDatos);
             final int pendientesSinRuta = noRuteadasCiclo.size();
             final int enrutadasVigentes = Math.max(0, registradas.size() - pendientesSinRuta);
             final DetalleColapso detalleColapso = detectarDetalleColapso(
-                    estadosActualizados,
+                    estadosDepurados,
                     contextoEjecucion.aeropuertos(),
                     contextoEjecucion.todosVuelosInstancia(),
                     inicioCicloDatos,
@@ -678,7 +694,7 @@ public final class SimulacionTemporalRunner {
                         pendientesSinRuta,
                         noRuteadasCiclo,
                         estadosPorMaleta,
-                        estadosActualizados,
+                        estadosDepurados,
                         rutasProgramadasPorMaleta
                 ));
             }
@@ -743,7 +759,7 @@ public final class SimulacionTemporalRunner {
                 : limiteProcesado;
         final Map<String, EstadoMaletaTemporal> estadosFinales =
                 evaluarEstadosMaletas(registradas, rutasProgramadasPorMaleta, momentoFinal, tiempoRecojo);
-        resultado.totalMaletasEnrutadas = contarMaletasRuteadasFinales(estadosFinales);
+        resultado.totalMaletasEnrutadas = contarMaletasRuteadasFinales(estadosFinales, maletasEnrutadas);
         resultado.detalleNoRuteadas = identificarNoRuteadas(estadosFinales, momentoFinal);
         resultado.totalMaletasPendientes = resultado.detalleNoRuteadas.size();
         resultado.historial = historial;
@@ -795,6 +811,21 @@ public final class SimulacionTemporalRunner {
                                                       final long tiempoRecojo) {
         final EstadoMaletaTemporal estado = evaluarEstadoMaleta(maleta, rutaConfirmada, currentTime, tiempoRecojo);
         return estado.aeropuertoActual();
+    }
+
+    static int depurarMaletasFinalizadas(final List<Maleta> registradas,
+                                         final Map<String, ?> rutasProgramadasPorMaleta,
+                                         final Set<String> maletasFinalizadas) {
+        final boolean sinMaletas = registradas == null || registradas.isEmpty();
+        final boolean sinFinalizadas = maletasFinalizadas == null || maletasFinalizadas.isEmpty();
+        if (sinMaletas || sinFinalizadas) {
+            return 0;
+        }
+        registradas.removeIf(maleta -> maleta != null && maletasFinalizadas.contains(maleta.getIdMaleta()));
+        if (rutasProgramadasPorMaleta != null && !rutasProgramadasPorMaleta.isEmpty()) {
+            rutasProgramadasPorMaleta.keySet().removeIf(maletasFinalizadas::contains);
+        }
+        return maletasFinalizadas.size();
     }
 
     private static ConfiguracionProgramada construirConfiguracionProgramada(final Properties params) {
@@ -882,6 +913,41 @@ public final class SimulacionTemporalRunner {
             }
         }
         return false;
+    }
+
+    private static Set<String> identificarMaletasFinalizadas(final Map<String, EstadoMaletaTemporal> estadosPorMaleta) {
+        final Set<String> maletasFinalizadas = new HashSet<>();
+        if (estadosPorMaleta == null || estadosPorMaleta.isEmpty()) {
+            return maletasFinalizadas;
+        }
+        for (final Map.Entry<String, EstadoMaletaTemporal> entry : estadosPorMaleta.entrySet()) {
+            final EstadoMaletaTemporal estado = entry.getValue();
+            if (estado != null && estado.estado() == EstadoOperacionMaleta.FINALIZADA && entry.getKey() != null) {
+                maletasFinalizadas.add(entry.getKey());
+            }
+        }
+        return maletasFinalizadas;
+    }
+
+    private static Map<String, EstadoMaletaTemporal> filtrarEstadosActivos(
+            final Map<String, EstadoMaletaTemporal> estadosPorMaleta,
+            final Set<String> maletasFinalizadas
+    ) {
+        if (estadosPorMaleta == null || estadosPorMaleta.isEmpty()) {
+            return Map.of();
+        }
+        final boolean sinFinalizadas = maletasFinalizadas == null || maletasFinalizadas.isEmpty();
+        if (sinFinalizadas) {
+            return estadosPorMaleta;
+        }
+        final Map<String, EstadoMaletaTemporal> estadosActivos = new HashMap<>();
+        for (final Map.Entry<String, EstadoMaletaTemporal> entry : estadosPorMaleta.entrySet()) {
+            if (entry.getKey() == null || maletasFinalizadas.contains(entry.getKey())) {
+                continue;
+            }
+            estadosActivos.put(entry.getKey(), entry.getValue());
+        }
+        return estadosActivos;
     }
 
     private static Map<String, EstadoMaletaTemporal> evaluarEstadosMaletas(
@@ -1064,6 +1130,13 @@ public final class SimulacionTemporalRunner {
             return null;
         }
         return ultimoVuelo.getFechaLlegada().plusMinutes(Math.max(0L, tiempoRecojo));
+    }
+
+    static boolean yaSalioDeDataActiva(final List<VueloInstancia> vuelosEjecutados,
+                                       final LocalDateTime currentTime,
+                                       final long tiempoRecojo) {
+        final LocalDateTime salidaSistemaDestino = calcularSalidaSistemaDestino(vuelosEjecutados, tiempoRecojo);
+        return salidaSistemaDestino != null && !currentTime.isBefore(salidaSistemaDestino);
     }
 
     private static List<Maleta> construirMaletasReplanificables(
@@ -1517,11 +1590,15 @@ public final class SimulacionTemporalRunner {
         return String.join(", ", maletasBeneficiadas);
     }
 
-    private static int contarMaletasRuteadasFinales(final Map<String, EstadoMaletaTemporal> estadosPorMaleta) {
-        if (estadosPorMaleta == null || estadosPorMaleta.isEmpty()) {
-            return 0;
+    private static int contarMaletasRuteadasFinales(final Map<String, EstadoMaletaTemporal> estadosPorMaleta,
+                                                    final Set<String> maletasEnrutadasHistoricas) {
+        final Set<String> maletasRuteadas = new HashSet<>();
+        if (maletasEnrutadasHistoricas != null && !maletasEnrutadasHistoricas.isEmpty()) {
+            maletasRuteadas.addAll(maletasEnrutadasHistoricas);
         }
-        int totalRuteadas = 0;
+        if (estadosPorMaleta == null || estadosPorMaleta.isEmpty()) {
+            return maletasRuteadas.size();
+        }
         for (final EstadoMaletaTemporal estado : estadosPorMaleta.values()) {
             if (estado == null) {
                 continue;
@@ -1531,11 +1608,11 @@ public final class SimulacionTemporalRunner {
                     || estado.estado() == EstadoOperacionMaleta.EN_TRANSITO
                     || !estado.vuelosFuturos().isEmpty()
                     || !estado.vuelosEjecutados().isEmpty();
-            if (tieneRutaActivaOFinalizada) {
-                totalRuteadas++;
+            if (tieneRutaActivaOFinalizada && estado.idMaleta() != null) {
+                maletasRuteadas.add(estado.idMaleta());
             }
         }
-        return totalRuteadas;
+        return maletasRuteadas.size();
     }
 
     private static DetalleColapso detectarDetalleColapso(final Map<String, EstadoMaletaTemporal> estadosPorMaleta,
