@@ -15,12 +15,6 @@ import pe.edu.pucp.aeroluggage.dominio.enums.EstadoRuta;
 public class ACO extends Metaheuristico {
     private static final int MIN_ITERACIONES_SIN_MEJORA = 3;
     private static final int DIVISOR_ITERACIONES_SIN_MEJORA = 4;
-    private static final int UMBRAL_SUBPROBLEMA_GRANDE = 200;
-    private static final int UMBRAL_SUBPROBLEMA_MEDIANO = 50;
-    private static final int MAX_ITER_SUBPROBLEMA_MEDIANO = 5;
-    private static final int MAX_HORMIGAS_SUBPROBLEMA_MEDIANO = 4;
-    private static final int MAX_ITER_SUBPROBLEMA_GRANDE = 2;
-    private static final int MAX_HORMIGAS_SUBPROBLEMA_GRANDE = 2;
 
     private final ACOConfiguracion configuracion;
     private final ACOPreparadorContexto preparadorContexto;
@@ -87,8 +81,8 @@ public class ACO extends Metaheuristico {
                     configuracion.getMaxIter() / DIVISOR_ITERACIONES_SIN_MEJORA
             );
 
-            final int maxIterIntervalo = obtenerMaxIteracionesIntervalo(subproblema);
-            final int hormigasIntervalo = obtenerHormigasIntervalo(subproblema);
+            final int maxIterIntervalo = Math.max(1, configuracion.getMaxIter());
+            final int hormigasIntervalo = Math.max(1, configuracion.getNAnts());
             for (int iter = 1; iter <= maxIterIntervalo; iter++) {
                 boolean huboMejora = false;
                 for (int hormiga = 1; hormiga <= hormigasIntervalo; hormiga++) {
@@ -231,28 +225,6 @@ public class ACO extends Metaheuristico {
                 intervaloActual,
                 tiempoBase
         );
-    }
-
-    private int obtenerMaxIteracionesIntervalo(final SubproblemaACO subproblema) {
-        final int cantidadMaletas = subproblema.getMaletasPendientes().size();
-        if (cantidadMaletas >= UMBRAL_SUBPROBLEMA_GRANDE) {
-            return MAX_ITER_SUBPROBLEMA_GRANDE;
-        }
-        if (cantidadMaletas >= UMBRAL_SUBPROBLEMA_MEDIANO) {
-            return Math.min(configuracion.getMaxIter(), MAX_ITER_SUBPROBLEMA_MEDIANO);
-        }
-        return Math.max(1, configuracion.getMaxIter());
-    }
-
-    private int obtenerHormigasIntervalo(final SubproblemaACO subproblema) {
-        final int cantidadMaletas = subproblema.getMaletasPendientes().size();
-        if (cantidadMaletas >= UMBRAL_SUBPROBLEMA_GRANDE) {
-            return MAX_HORMIGAS_SUBPROBLEMA_GRANDE;
-        }
-        if (cantidadMaletas >= UMBRAL_SUBPROBLEMA_MEDIANO) {
-            return Math.min(configuracion.getNAnts(), MAX_HORMIGAS_SUBPROBLEMA_MEDIANO);
-        }
-        return Math.max(1, configuracion.getNAnts());
     }
 
     private Solucion seleccionarMejorSolucionInicial(final SubproblemaACO subproblema) {
