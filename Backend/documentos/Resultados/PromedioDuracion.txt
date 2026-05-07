@@ -1,0 +1,2 @@
+Total de vuelos programados: 2866
+Promedio de duracion de vuelos: 7.489 horas

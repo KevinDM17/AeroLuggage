@@ -1,0 +1,25 @@
+@import "tailwindcss";
+@import "leaflet/dist/leaflet.css";
+
+/* Leaflet map styles overriding reset defaults if necessary */
+.leaflet-container {
+  font-family: inherit;
+  background-color: #1e1b4b !important; /* dark blue to match default tiles absence somewhat */
+}
+
+@layer base {
+  body {
+    @apply bg-[#0B0E14] text-slate-200 overflow-hidden;
+  }
+}
+
+@layer utilities {
+  .no-scrollbar::-webkit-scrollbar {
+    display: none;
+  }
+  .no-scrollbar {
+    -ms-overflow-style: none;  /* IE and Edge */
+    scrollbar-width: none;  /* Firefox */
+  }
+}
+
