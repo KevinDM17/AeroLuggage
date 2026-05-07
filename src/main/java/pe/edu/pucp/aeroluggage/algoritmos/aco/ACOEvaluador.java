@@ -29,7 +29,10 @@ final class ACOEvaluador {
         int rutasNoFactibles = 0;
         int numeroReplanificaciones = 0;
         final Map<String, Integer> usoVuelos = new HashMap<>();
-        final Map<String, Integer> usoAlmacenes = new HashMap<>();
+        final Map<String, CapacidadTemporalAlmacen> capacidadesAlmacen = CapacidadTemporalAlmacen.clonarMapa(
+                subproblema.getCapacidadRestanteAlmacenBase()
+        );
+        double sobrecargaAlmacenes = 0D;
 
         if (solucion == null || solucion.getSubrutas().isEmpty()) {
             return new EvaluacionACO(
@@ -69,13 +72,43 @@ final class ACOEvaluador {
             final List<VueloInstancia> subrutas = ruta.getSubrutas();
             for (int i = 0; i < subrutas.size(); i++) {
                 final VueloInstancia subruta = subrutas.get(i);
+                if (subruta == null || subruta.getIdVueloInstancia() == null) {
+                    continue;
+                }
                 final String idVuelo = subruta.getIdVueloInstancia();
                 usoVuelos.put(idVuelo, usoVuelos.getOrDefault(idVuelo, 0) + UNIDAD_MALETA);
-                if (subruta.getAeropuertoDestino() == null || subruta.getAeropuertoDestino().getIdAeropuerto() == null) {
+            }
+
+            final VueloInstancia primerVuelo = subrutas.get(0);
+            if (primerVuelo != null && primerVuelo.getAeropuertoOrigen() != null
+                    && primerVuelo.getAeropuertoOrigen().getIdAeropuerto() != null) {
+                final CapacidadTemporalAlmacen capacidadOrigen = capacidadesAlmacen.get(
+                        primerVuelo.getAeropuertoOrigen().getIdAeropuerto()
+                );
+                if (capacidadOrigen != null) {
+                    capacidadOrigen.liberar(primerVuelo.getFechaSalida());
+                }
+            }
+            for (int i = 0; i < subrutas.size(); i++) {
+                final VueloInstancia subruta = subrutas.get(i);
+                if (subruta == null || subruta.getAeropuertoDestino() == null
+                        || subruta.getAeropuertoDestino().getIdAeropuerto() == null
+                        || subruta.getFechaLlegada() == null) {
                     continue;
                 }
                 final String idAeropuerto = subruta.getAeropuertoDestino().getIdAeropuerto();
-                usoAlmacenes.put(idAeropuerto, usoAlmacenes.getOrDefault(idAeropuerto, 0) + UNIDAD_MALETA);
+                final CapacidadTemporalAlmacen capacidad = capacidadesAlmacen.get(idAeropuerto);
+                if (capacidad == null) {
+                    continue;
+                }
+                final java.time.LocalDateTime liberacion = i < subrutas.size() - 1
+                        ? subrutas.get(i + 1).getFechaSalida()
+                        : subruta.getFechaLlegada().plusMinutes(subproblema.getTiempoRecojo());
+                if (!capacidad.puedeReservar(subruta.getFechaLlegada(), liberacion)) {
+                    sobrecargaAlmacenes += 1D;
+                    continue;
+                }
+                capacidad.reservar(subruta.getFechaLlegada(), liberacion);
             }
         }
 
@@ -85,22 +118,11 @@ final class ACOEvaluador {
             sobrecargaVuelos += Math.max(0, entry.getValue() - capacidadBase);
         }
 
-        double ocupacionAlmacenes = 0D;
-        for (final Map.Entry<String, Integer> entry : usoAlmacenes.entrySet()) {
-            final CapacidadTemporalAlmacen cap = subproblema.getCapacidadRestanteAlmacenBase().get(entry.getKey());
-            final int capacidadBase = cap == null ? 0 : cap.getCapacidadBase();
-            if (capacidadBase > 0) {
-                ocupacionAlmacenes += (double) entry.getValue() / capacidadBase;
-            } else {
-                ocupacionAlmacenes += entry.getValue();
-            }
-        }
-
         final double costo = tiempoTotalDias
                 + rutasNoFactibles * configuracion.getPenalizacionNoFactible()
                 + incumplimientosPlazo * configuracion.getPenalizacionIncumplimiento()
                 + sobrecargaVuelos * configuracion.getPenalizacionSobrecargaVuelo()
-                + ocupacionAlmacenes * configuracion.getPenalizacionSobrecargaAlmacen()
+                + sobrecargaAlmacenes * configuracion.getPenalizacionSobrecargaAlmacen()
                 + numeroReplanificaciones * configuracion.getPenalizacionReplanificacion();
 
         return new EvaluacionACO(
@@ -110,7 +132,7 @@ final class ACOEvaluador {
                 rutasFactibles,
                 rutasNoFactibles,
                 sobrecargaVuelos,
-                ocupacionAlmacenes,
+                sobrecargaAlmacenes,
                 numeroReplanificaciones
         );
     }

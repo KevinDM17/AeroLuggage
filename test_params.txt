@@ -14,12 +14,12 @@ exp.w6Escalas=20
 exp.w7Espera=10
 
 # Rango de fechas de simulacion (yyyy-MM-dd)
-simulacion.fecha.inicio=2028-06-23
-simulacion.fecha.fin=2028-06-23
+simulacion.fecha.inicio=2028-05-05
+simulacion.fecha.fin=2028-05-05
 simulacion.ventana.dias=4
 simulacion.iteraciones=30
 simulacion.programada.sa.segundos=0
-simulacion.programada.k=720
+simulacion.programada.k=480
 simulacion.programada.sleep.habilitado=true
 
 # ---------- Parametros GA ----------

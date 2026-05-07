@@ -24,6 +24,7 @@ public class ACO extends Metaheuristico {
     private ACOReporte ultimoReporte;
     private double ultimoCosto;
     private FeromonasACO feromonas;
+    private ACOMetricas.Snapshot ultimasMetricas;
 
     public ACO() {
         this(new ACOConfiguracion());
@@ -38,6 +39,7 @@ public class ACO extends Metaheuristico {
         this.ultimoReporte = new ACOReporte();
         this.ultimoCosto = Double.POSITIVE_INFINITY;
         this.feromonas = new FeromonasACO(this.configuracion);
+        this.ultimasMetricas = new ACOMetricas().snapshot();
     }
 
     @Override
@@ -52,83 +54,112 @@ public class ACO extends Metaheuristico {
         ultimoReporte = new ACOReporte();
         ultimoCosto = Double.POSITIVE_INFINITY;
         feromonas = new FeromonasACO(configuracion);
+        final ACOMetricas metricas = new ACOMetricas();
+        ACOMetricasContexto.fijar(metricas);
         if (instancia.getMaletas().isEmpty()) {
+            ultimasMetricas = metricas.snapshot();
+            ACOMetricasContexto.limpiar();
             return;
         }
+        try {
+            final LocalDateTime tiempoBase = preparadorContexto.obtenerTiempoBase(instancia);
+            final ArrayList<pe.edu.pucp.aeroluggage.dominio.entidades.VueloInstancia> vuelosDisponibles =
+                    preparadorContexto.actualizarVuelosDisponibles(instancia.getVuelosInstancia(), new ArrayList<>());
+            final CapacidadesACO capacidadesBase = preparadorContexto.recalcularCapacidades(
+                    instancia,
+                    vuelosDisponibles,
+                    instancia.getAeropuertos()
+            );
+            final SubproblemaACO subproblema = prepararSubproblema(
+                    instancia,
+                    tiempoBase,
+                    vuelosDisponibles,
+                    capacidadesBase
+            );
+            if (subproblema.getMaletasPendientes().isEmpty()) {
+                ultimoReporte.setIntervalosProcesados(1);
+                ultimoReporte.setPlanesConfirmados(0);
+                ultimasMetricas = metricas.snapshot();
+                return;
+            }
 
-        final LocalDateTime tiempoBase = preparadorContexto.obtenerTiempoBase(instancia);
-        final ArrayList<pe.edu.pucp.aeroluggage.dominio.entidades.VueloInstancia> vuelosDisponibles =
-                preparadorContexto.actualizarVuelosDisponibles(instancia.getVuelosInstancia(), new ArrayList<>());
-        final CapacidadesACO capacidadesBase = preparadorContexto.recalcularCapacidades(
-                instancia,
-                vuelosDisponibles,
-                instancia.getAeropuertos()
-        );
-        final SubproblemaACO subproblema = prepararSubproblema(
-                instancia,
-                tiempoBase,
-                vuelosDisponibles,
-                capacidadesBase
-        );
-        if (subproblema.getMaletasPendientes().isEmpty()) {
-            ultimoReporte.setIntervalosProcesados(1);
-            ultimoReporte.setPlanesConfirmados(0);
-            return;
-        }
+            final ACOMetricas.Snapshot antesInicial = metricas.snapshot();
+            final long inicioInicial = System.nanoTime();
+            Solucion mejorSolucionCiclo = seleccionarMejorSolucionInicial(subproblema);
+            metricas.registrarFaseHormiga(
+                    "INICIAL",
+                    0,
+                    0,
+                    System.nanoTime() - inicioInicial,
+                    antesInicial,
+                    metricas.snapshot()
+            );
+            EvaluacionACO mejorEvaluacionCiclo = evaluador.evaluarSolucion(mejorSolucionCiclo, subproblema);
 
-        Solucion mejorSolucionCiclo = seleccionarMejorSolucionInicial(subproblema);
-        EvaluacionACO mejorEvaluacionCiclo = evaluador.evaluarSolucion(mejorSolucionCiclo, subproblema);
+            int iteracionesSinMejora = 0;
+            final int maxIteracionesSinMejora = Math.max(
+                    MIN_ITERACIONES_SIN_MEJORA,
+                    configuracion.getMaxIter() / DIVISOR_ITERACIONES_SIN_MEJORA
+            );
+            final int maxIteraciones = Math.max(1, configuracion.getMaxIter());
+            final int hormigas = Math.max(1, configuracion.getNAnts());
 
-        int iteracionesSinMejora = 0;
-        final int maxIteracionesSinMejora = Math.max(
-                MIN_ITERACIONES_SIN_MEJORA,
-                configuracion.getMaxIter() / DIVISOR_ITERACIONES_SIN_MEJORA
-        );
-        final int maxIteraciones = Math.max(1, configuracion.getMaxIter());
-        final int hormigas = Math.max(1, configuracion.getNAnts());
-
-        for (int iter = 1; iter <= maxIteraciones; iter++) {
-            boolean huboMejora = false;
-            for (int hormiga = 1; hormiga <= hormigas; hormiga++) {
-                final Solucion solucionHormiga = constructorSoluciones.construirSolucionHormiga(
-                        subproblema,
-                        feromonas
+            for (int iter = 1; iter <= maxIteraciones; iter++) {
+                boolean huboMejora = false;
+                for (int hormiga = 1; hormiga <= hormigas; hormiga++) {
+                    final ACOMetricas.Snapshot antesHormiga = metricas.snapshot();
+                    final long inicioHormiga = System.nanoTime();
+                    final Solucion solucionHormiga = constructorSoluciones.construirSolucionHormiga(
+                            subproblema,
+                            feromonas
+                    );
+                    final Solucion solucionReparada = constructorSoluciones.repararInconsistencias(
+                            solucionHormiga,
+                            subproblema
+                    );
+                    final Solucion solucionMejorada = constructorSoluciones.mejoraLocal(solucionReparada, subproblema);
+                    metricas.registrarFaseHormiga(
+                            "HORMIGA",
+                            iter,
+                            hormiga,
+                            System.nanoTime() - inicioHormiga,
+                            antesHormiga,
+                            metricas.snapshot()
+                    );
+                    final EvaluacionACO evaluacion = evaluador.evaluarSolucion(solucionMejorada, subproblema);
+                    if (evaluador.esMejorEvaluacion(evaluacion, mejorEvaluacionCiclo)) {
+                        mejorSolucionCiclo = constructorSoluciones.clonarSolucion(solucionMejorada);
+                        mejorEvaluacionCiclo = evaluacion;
+                        huboMejora = true;
+                    }
+                }
+                evaluador.aplicarActualizacionGlobalFeromona(
+                        feromonas,
+                        mejorSolucionCiclo,
+                        mejorEvaluacionCiclo
                 );
-                final Solucion solucionReparada = constructorSoluciones.repararInconsistencias(
-                        solucionHormiga,
-                        subproblema
+                feromonas = evaluador.conservarYAdaptarFeromonas(
+                        feromonas,
+                        mejorSolucionCiclo,
+                        mejorEvaluacionCiclo,
+                        new ArrayList<>()
                 );
-                final Solucion solucionMejorada = constructorSoluciones.mejoraLocal(solucionReparada, subproblema);
-                final EvaluacionACO evaluacion = evaluador.evaluarSolucion(solucionMejorada, subproblema);
-                if (evaluador.esMejorEvaluacion(evaluacion, mejorEvaluacionCiclo)) {
-                    mejorSolucionCiclo = constructorSoluciones.clonarSolucion(solucionMejorada);
-                    mejorEvaluacionCiclo = evaluacion;
-                    huboMejora = true;
+                if (huboMejora) {
+                    iteracionesSinMejora = 0;
+                    continue;
+                }
+                iteracionesSinMejora++;
+                if (iteracionesSinMejora >= maxIteracionesSinMejora) {
+                    break;
                 }
             }
-            evaluador.aplicarActualizacionGlobalFeromona(
-                    feromonas,
-                    mejorSolucionCiclo,
-                    mejorEvaluacionCiclo
-            );
-            feromonas = evaluador.conservarYAdaptarFeromonas(
-                    feromonas,
-                    mejorSolucionCiclo,
-                    mejorEvaluacionCiclo,
-                    new ArrayList<>()
-            );
-            if (huboMejora) {
-                iteracionesSinMejora = 0;
-                continue;
-            }
-            iteracionesSinMejora++;
-            if (iteracionesSinMejora >= maxIteracionesSinMejora) {
-                break;
-            }
-        }
 
-        ultimaSolucion = completarRutasFaltantes(instancia, mejorSolucionCiclo);
-        evaluar();
+            ultimaSolucion = completarRutasFaltantes(instancia, mejorSolucionCiclo);
+            evaluar();
+            ultimasMetricas = metricas.snapshot();
+        } finally {
+            ACOMetricasContexto.limpiar();
+        }
     }
 
     @Override
@@ -151,7 +182,8 @@ public class ACO extends Metaheuristico {
                 ultimaInstancia.getMaletas(),
                 vuelosDisponibles,
                 capacidades,
-                preparadorContexto.obtenerTiempoBase(ultimaInstancia)
+                preparadorContexto.obtenerTiempoBase(ultimaInstancia),
+                ultimaInstancia.getTiempoRecojo()
         );
         final EvaluacionACO evaluacion = evaluador.evaluarSolucion(ultimaSolucion, subproblema);
         ultimoCosto = evaluacion.getCosto();
@@ -183,6 +215,10 @@ public class ACO extends Metaheuristico {
         return configuracion;
     }
 
+    public ACOMetricas.Snapshot getUltimasMetricas() {
+        return ultimasMetricas;
+    }
+
     private SubproblemaACO prepararSubproblema(
             final InstanciaProblema instancia,
             final LocalDateTime tiempoBase,
@@ -193,7 +229,8 @@ public class ACO extends Metaheuristico {
                 instancia.getMaletas(),
                 vuelosDisponibles,
                 capacidades,
-                tiempoBase
+                tiempoBase,
+                instancia.getTiempoRecojo()
         );
     }
 

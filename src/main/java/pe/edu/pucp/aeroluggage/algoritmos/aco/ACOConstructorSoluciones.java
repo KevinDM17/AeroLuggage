@@ -29,10 +29,12 @@ final class ACOConstructorSoluciones {
     private static final int MAX_ESCALAS_RUTA = 8;
     private static final int MAX_CANDIDATOS_CODICIOSOS = 2;
     private static final int MAX_CANDIDATOS_PROBABILISTICOS = 4;
+    private static final int MAX_VUELOS_EXPLORADOS_POR_ESTADO = 48;
     private static final int MAX_CONECTIVIDAD_CONSIDERADA = 6;
-    private static final int MAX_LLEGADAS_COMPETITIVAS_POR_AEROPUERTO = 3;
+    private static final int UMBRAL_MALETAS_MEJORA_LOCAL = 4000;
     private static final double BONIFICACION_DESTINO_DIRECTO = 2D;
     private static final double BONIFICACION_DESTINO_NO_DIRECTO = 1D;
+    private static final double FACTOR_PRESION_ALMACEN_MINIMO = 0.15D;
     private static final double FACTOR_ALEATORIO_MINIMO = 0.85D;
     private static final double RANGO_FACTOR_ALEATORIO = 0.30D;
 
@@ -163,10 +165,13 @@ final class ACOConstructorSoluciones {
         if (solucion == null || solucion.getSubrutas().isEmpty()) {
             return new Solucion(rutasMejoradas);
         }
+        if (subproblema.getMaletasPendientes().size() > UMBRAL_MALETAS_MEJORA_LOCAL) {
+            return clonarSolucion(solucion);
+        }
 
-        // Reconstruir el estado comprometido por la solución completa (vuelos y almacenes).
-        // Esto refleja la vista real de la hormiga, no la snapshot inicial.
+        final long inicioReconstruccion = System.nanoTime();
         final CapacidadesACO comprometida = reconstruirCapacidadesComprometidas(solucion, subproblema);
+        registrarReconstruirCapacidades(System.nanoTime() - inicioReconstruccion);
 
         for (final Ruta rutaOriginal : solucion.getSubrutas()) {
             final Ruta ruta = clonarRuta(rutaOriginal);
@@ -401,6 +406,7 @@ final class ACOConstructorSoluciones {
             final Map<String, CapacidadTemporalAlmacen> capacidadRestanteAlmacen,
             final boolean modoCodicioso
     ) {
+        final long inicioBusqueda = System.nanoTime();
         final String idOrigen = obtenerIdAeropuerto(origen);
         final String idDestino = obtenerIdAeropuerto(destino);
         if (idOrigen == null || idDestino == null || tiempoActual == null || plazo == null) {
@@ -416,6 +422,7 @@ final class ACOConstructorSoluciones {
         registrarLlegadaCompetitiva(mejoresLlegadasPorAeropuerto, idOrigen, tiempoActual);
 
         int estadosEvaluados = 0;
+        long vuelosInspeccionados = 0L;
         while (!frontera.isEmpty() && estadosEvaluados < configuracion.getMaxEstadosBusquedaTemporal()) {
             estadosEvaluados++;
             final EstadoPlanTemporal estado = frontera.poll();
@@ -426,6 +433,7 @@ final class ACOConstructorSoluciones {
                 }
                 aplicarConsumoPlan(plan, destino, capacidadRestanteVuelo, capacidadRestanteAlmacen);
                 reforzarFeromonaLocal(plan, maleta, feromonas);
+                registrarConstruirPlanTemporal(System.nanoTime() - inicioBusqueda, estadosEvaluados, vuelosInspeccionados);
                 return plan;
             }
             if (estado.getProfundidad() >= MAX_ESCALAS_RUTA) {
@@ -433,8 +441,13 @@ final class ACOConstructorSoluciones {
             }
 
             final ArrayList<VueloInstancia> vuelos = subproblema.getVuelosDesde(estado.getIdAeropuerto());
-            for (int i = primerIndiceConSalidaNoAnterior(vuelos, estado.getTiempoActual().plusMinutes(minutosConexion)); i < vuelos.size(); i++) {
+            int vuelosExplorados = 0;
+            for (int i = primerIndiceConSalidaNoAnterior(vuelos, estado.getTiempoActual().plusMinutes(minutosConexion));
+                 i < vuelos.size() && vuelosExplorados < MAX_VUELOS_EXPLORADOS_POR_ESTADO;
+                 i++) {
                 final VueloInstancia vuelo = vuelos.get(i);
+                vuelosExplorados++;
+                vuelosInspeccionados++;
                 if (!esVueloFactibleParaBusqueda(
                         vuelo,
                         destino,
@@ -461,6 +474,7 @@ final class ACOConstructorSoluciones {
             }
         }
 
+        registrarConstruirPlanTemporal(System.nanoTime() - inicioBusqueda, estadosEvaluados, vuelosInspeccionados);
         return null;
     }
 
@@ -473,7 +487,7 @@ final class ACOConstructorSoluciones {
             return false;
         }
         final ArrayList<LocalDateTime> llegadas = mejoresLlegadasPorAeropuerto.get(idAeropuerto);
-        if (llegadas == null || llegadas.size() < MAX_LLEGADAS_COMPETITIVAS_POR_AEROPUERTO) {
+        if (llegadas == null || llegadas.size() < configuracion.getMaxLlegadasCompetitivasPorAeropuerto()) {
             return true;
         }
         final LocalDateTime peorLlegadaAceptada = llegadas.get(llegadas.size() - 1);
@@ -494,7 +508,7 @@ final class ACOConstructorSoluciones {
         );
         llegadas.add(llegada);
         llegadas.sort(LocalDateTime::compareTo);
-        while (llegadas.size() > MAX_LLEGADAS_COMPETITIVAS_POR_AEROPUERTO) {
+        while (llegadas.size() > configuracion.getMaxLlegadasCompetitivasPorAeropuerto()) {
             llegadas.remove(llegadas.size() - 1);
         }
     }
@@ -515,6 +529,7 @@ final class ACOConstructorSoluciones {
             return false;
         }
         if (capacidadRestanteVuelo.getOrDefault(vuelo.getIdVueloInstancia(), 0) < UNIDAD_MALETA) {
+            registrarRechazoCapacidadVuelo();
             return false;
         }
 
@@ -530,12 +545,23 @@ final class ACOConstructorSoluciones {
             return esMismoAeropuerto(vuelo.getAeropuertoDestino(), destinoFinal);
         }
         if (esMismoAeropuerto(vuelo.getAeropuertoDestino(), destinoFinal)) {
-            return cap.puedeReservar(vuelo.getFechaLlegada(), vuelo.getFechaLlegada().plusMinutes(tiempoRecojo));
+            final boolean destinoDisponible = cap.puedeReservar(
+                    vuelo.getFechaLlegada(),
+                    vuelo.getFechaLlegada().plusMinutes(tiempoRecojo)
+            );
+            if (!destinoDisponible) {
+                registrarRechazoAlmacenDestino(idDestino);
+            }
+            return destinoDisponible;
         }
         // Escala intermedia: verificar que haya al menos 1 slot disponible a la llegada.
         // La duración exacta de la escala no se conoce aún; planRespetaCapacidadAlmacen()
         // hace la verificación completa con el intervalo real antes de confirmar el plan.
-        return cap.disponibleEn(vuelo.getFechaLlegada()) >= 1;
+        final boolean disponibleEscala = cap.disponibleEn(vuelo.getFechaLlegada()) >= UNIDAD_MALETA;
+        if (!disponibleEscala) {
+            registrarRechazoAlmacenEscala(idDestino);
+        }
+        return disponibleEscala;
     }
 
     private double calcularCostoBusqueda(
@@ -564,7 +590,8 @@ final class ACOConstructorSoluciones {
                 destinoFinal,
                 tiempoActual,
                 plazo,
-                subproblema
+                subproblema,
+                null
         );
         final double factorAleatorio = FACTOR_ALEATORIO_MINIMO + random.nextDouble() * RANGO_FACTOR_ALEATORIO;
         return (esperaMinutos + duracionMinutos) * factorAleatorio + 1D / Math.max(0.000001D, puntaje);
@@ -612,6 +639,7 @@ final class ACOConstructorSoluciones {
             if (cap != null) {
                 cap.reservar(llegada, liberacion);
             }
+            registrarRutaAceptadaAeropuerto(idDestino);
         }
     }
 
@@ -658,7 +686,16 @@ final class ACOConstructorSoluciones {
             return null;
         }
 
-        ordenarCandidatos(candidatos, feromonas, maleta, destino, tiempoActual, plazo, subproblema);
+        ordenarCandidatos(
+                candidatos,
+                feromonas,
+                maleta,
+                destino,
+                tiempoActual,
+                plazo,
+                subproblema,
+                capacidadRestanteAlmacen
+        );
         final int maxCandidatos = modoCodicioso ? MAX_CANDIDATOS_CODICIOSOS : MAX_CANDIDATOS_PROBABILISTICOS;
         final int limite = Math.min(maxCandidatos, candidatos.size());
 
@@ -742,7 +779,9 @@ final class ACOConstructorSoluciones {
         }
 
         final LocalDateTime tiempoMinSalida = tiempoActual.plusMinutes(minutosConexion);
-        for (int i = primerIndiceConSalidaNoAnterior(vuelos, tiempoMinSalida); i < vuelos.size(); i++) {
+        for (int i = primerIndiceConSalidaNoAnterior(vuelos, tiempoMinSalida);
+             i < vuelos.size() && candidatos.size() < MAX_VUELOS_EXPLORADOS_POR_ESTADO;
+             i++) {
             final VueloInstancia vuelo = vuelos.get(i);
             if (vuelo.getFechaSalida().isBefore(tiempoMinSalida)) {
                 continue;
@@ -753,6 +792,7 @@ final class ACOConstructorSoluciones {
 
             final int capacidadVuelo = capacidadRestanteVuelo.getOrDefault(vuelo.getIdVueloInstancia(), 0);
             if (capacidadVuelo < UNIDAD_MALETA) {
+                registrarRechazoCapacidadVuelo();
                 continue;
             }
 
@@ -773,9 +813,11 @@ final class ACOConstructorSoluciones {
                         vuelo.getFechaLlegada().plusMinutes(tiempoRecojo)
                 );
                 if (!destinoFinalDisponible) {
+                    registrarRechazoAlmacenDestino(idDestino);
                     continue;
                 }
             } else if (cap.disponibleEn(vuelo.getFechaLlegada()) < 1) {
+                registrarRechazoAlmacenEscala(idDestino);
                 continue;
             }
             candidatos.add(vuelo);
@@ -879,7 +921,9 @@ final class ACOConstructorSoluciones {
             final Map<String, Integer> capacidadVueloComprometida,
             final Map<String, CapacidadTemporalAlmacen> capacidadAlmacenComprometida
     ) {
+        final long inicioBusqueda = System.nanoTime();
         if (maleta == null || maleta.getPedido() == null) {
+            registrarBuscarVueloDirecto(System.nanoTime() - inicioBusqueda);
             return null;
         }
 
@@ -887,21 +931,20 @@ final class ACOConstructorSoluciones {
         final Aeropuerto origen = pedido.getAeropuertoOrigen();
         final Aeropuerto destino = pedido.getAeropuertoDestino();
         if (origen == null || destino == null) {
+            registrarBuscarVueloDirecto(System.nanoTime() - inicioBusqueda);
             return null;
         }
 
         final LocalDateTime tiempoDisponible = obtenerTiempoDisponible(maleta, subproblema.getInicioIntervalo());
         final LocalDateTime plazo = subproblema.getPlazoPorMaleta().get(maleta.getIdMaleta());
         VueloInstancia mejorVuelo = null;
-        final ArrayList<VueloInstancia> vuelosOrigen = subproblema.getVuelosDesde(obtenerIdAeropuerto(origen));
+        final ArrayList<VueloInstancia> vuelosOrigen = subproblema.getVuelosDirectos(
+                obtenerIdAeropuerto(origen),
+                obtenerIdAeropuerto(destino)
+        );
 
         for (int i = primerIndiceConSalidaNoAnterior(vuelosOrigen, tiempoDisponible); i < vuelosOrigen.size(); i++) {
             final VueloInstancia vuelo = vuelosOrigen.get(i);
-            final boolean esDirecto = esMismoAeropuerto(vuelo.getAeropuertoOrigen(), origen)
-                    && esMismoAeropuerto(vuelo.getAeropuertoDestino(), destino);
-            if (!esDirecto) {
-                continue;
-            }
             if (vuelo.getFechaSalida().isBefore(tiempoDisponible)) {
                 continue;
             }
@@ -910,6 +953,7 @@ final class ACOConstructorSoluciones {
             }
             final int capVuelo = capacidadVueloComprometida.getOrDefault(vuelo.getIdVueloInstancia(), 0);
             if (capVuelo < UNIDAD_MALETA) {
+                registrarRechazoCapacidadVuelo();
                 continue;
             }
             final CapacidadTemporalAlmacen cap = capacidadAlmacenComprometida.get(
@@ -921,6 +965,7 @@ final class ACOConstructorSoluciones {
                         vuelo.getFechaLlegada().plusMinutes(tiempoRecojo)
                 );
                 if (!destinoDisponible) {
+                    registrarRechazoAlmacenDestino(obtenerIdAeropuerto(vuelo.getAeropuertoDestino()));
                     continue;
                 }
             }
@@ -929,17 +974,50 @@ final class ACOConstructorSoluciones {
             }
             mejorVuelo = vuelo;
         }
+        registrarBuscarVueloDirecto(System.nanoTime() - inicioBusqueda);
         return mejorVuelo;
     }
 
     private boolean planRespetaCapacidadAlmacen(final List<VueloInstancia> plan,
                                                 final Aeropuerto destinoFinal,
                                                 final Map<String, CapacidadTemporalAlmacen> capacidadRestanteAlmacen) {
+        final long inicioValidacion = System.nanoTime();
         if (plan == null || plan.isEmpty()) {
+            registrarPlanRespetaCapacidad(System.nanoTime() - inicioValidacion);
             return false;
         }
-        final Map<String, CapacidadTemporalAlmacen> copia = CapacidadTemporalAlmacen.clonarMapa(capacidadRestanteAlmacen);
-        return reservarCapacidadAlmacenPlan(plan, destinoFinal, copia);
+        for (int i = 0; i < plan.size(); i++) {
+            final VueloInstancia vuelo = plan.get(i);
+            if (vuelo == null || vuelo.getAeropuertoDestino() == null || vuelo.getFechaLlegada() == null) {
+                continue;
+            }
+            final String idDestino = obtenerIdAeropuerto(vuelo.getAeropuertoDestino());
+            if (idDestino == null) {
+                continue;
+            }
+            final CapacidadTemporalAlmacen cap = capacidadRestanteAlmacen.get(idDestino);
+            if (cap == null) {
+                if (!esMismoAeropuerto(vuelo.getAeropuertoDestino(), destinoFinal)) {
+                    registrarPlanRespetaCapacidad(System.nanoTime() - inicioValidacion);
+                    return false;
+                }
+                continue;
+            }
+            final LocalDateTime liberacion = i < plan.size() - 1
+                    ? plan.get(i + 1).getFechaSalida()
+                    : vuelo.getFechaLlegada().plusMinutes(tiempoRecojo);
+            if (!cap.puedeReservar(vuelo.getFechaLlegada(), liberacion)) {
+                if (i == plan.size() - 1) {
+                    registrarRechazoAlmacenDestino(idDestino);
+                } else {
+                    registrarRechazoAlmacenEscala(idDestino);
+                }
+                registrarPlanRespetaCapacidad(System.nanoTime() - inicioValidacion);
+                return false;
+            }
+        }
+        registrarPlanRespetaCapacidad(System.nanoTime() - inicioValidacion);
+        return true;
     }
 
     private boolean reservarCapacidadAlmacenPlan(final List<VueloInstancia> plan,
@@ -978,12 +1056,22 @@ final class ACOConstructorSoluciones {
     private void ordenarCandidatos(final ArrayList<VueloInstancia> candidatos, final FeromonasACO feromonas,
                                    final Maleta maleta, final Aeropuerto destinoFinal,
                                    final LocalDateTime tiempoActual, final LocalDateTime plazo,
-                                   final SubproblemaACO subproblema) {
+                                   final SubproblemaACO subproblema,
+                                   final Map<String, CapacidadTemporalAlmacen> capacidadRestanteAlmacen) {
         final Map<String, Double> puntajes = new HashMap<>(candidatos.size() * 2);
         for (final VueloInstancia candidato : candidatos) {
             puntajes.put(
                     candidato.getIdVueloInstancia(),
-                    puntajeCandidato(candidato, feromonas, maleta, destinoFinal, tiempoActual, plazo, subproblema)
+                    puntajeCandidato(
+                            candidato,
+                            feromonas,
+                            maleta,
+                            destinoFinal,
+                            tiempoActual,
+                            plazo,
+                            subproblema,
+                            capacidadRestanteAlmacen
+                    )
             );
         }
         candidatos.sort((primero, segundo) -> Double.compare(
@@ -994,10 +1082,86 @@ final class ACOConstructorSoluciones {
 
     private double puntajeCandidato(final VueloInstancia candidato, final FeromonasACO feromonas, final Maleta maleta,
                                     final Aeropuerto destinoFinal, final LocalDateTime tiempoActual,
-                                    final LocalDateTime plazo, final SubproblemaACO subproblema) {
+                                    final LocalDateTime plazo, final SubproblemaACO subproblema,
+                                    final Map<String, CapacidadTemporalAlmacen> capacidadRestanteAlmacen) {
         final double feromona = obtenerFeromona(feromonas, maleta, candidato);
         final double heuristica = calcularHeuristica(candidato, destinoFinal, tiempoActual, plazo, subproblema);
-        return Math.pow(feromona, configuracion.getAlpha()) * Math.pow(heuristica, configuracion.getBeta());
+        return Math.pow(feromona, configuracion.getAlpha())
+                * Math.pow(heuristica, configuracion.getBeta())
+                * calcularFactorPresionAlmacen(candidato, capacidadRestanteAlmacen);
+    }
+
+    private double calcularFactorPresionAlmacen(final VueloInstancia vuelo,
+                                                final Map<String, CapacidadTemporalAlmacen> capacidadRestanteAlmacen) {
+        if (vuelo == null || vuelo.getAeropuertoDestino() == null || vuelo.getFechaLlegada() == null
+                || capacidadRestanteAlmacen == null) {
+            return 1D;
+        }
+        final CapacidadTemporalAlmacen capacidad = capacidadRestanteAlmacen.get(
+                obtenerIdAeropuerto(vuelo.getAeropuertoDestino())
+        );
+        if (capacidad == null || capacidad.getCapacidadBase() <= 0) {
+            return 1D;
+        }
+        final int disponible = capacidad.disponibleEn(vuelo.getFechaLlegada());
+        final double proporcion = disponible / (double) capacidad.getCapacidadBase();
+        return Math.max(FACTOR_PRESION_ALMACEN_MINIMO, Math.min(1D, proporcion));
+    }
+
+    private void registrarConstruirPlanTemporal(final long nanos, final long estadosEvaluados, final long vuelos) {
+        final ACOMetricas metricas = ACOMetricasContexto.obtener();
+        if (metricas != null) {
+            metricas.registrarConstruirPlanTemporal(nanos, estadosEvaluados, vuelos);
+        }
+    }
+
+    private void registrarPlanRespetaCapacidad(final long nanos) {
+        final ACOMetricas metricas = ACOMetricasContexto.obtener();
+        if (metricas != null) {
+            metricas.registrarPlanRespetaCapacidad(nanos);
+        }
+    }
+
+    private void registrarReconstruirCapacidades(final long nanos) {
+        final ACOMetricas metricas = ACOMetricasContexto.obtener();
+        if (metricas != null) {
+            metricas.registrarReconstruirCapacidades(nanos);
+        }
+    }
+
+    private void registrarBuscarVueloDirecto(final long nanos) {
+        final ACOMetricas metricas = ACOMetricasContexto.obtener();
+        if (metricas != null) {
+            metricas.registrarBuscarVueloDirecto(nanos);
+        }
+    }
+
+    private void registrarRechazoCapacidadVuelo() {
+        final ACOMetricas metricas = ACOMetricasContexto.obtener();
+        if (metricas != null) {
+            metricas.registrarRechazoCapacidadVuelo();
+        }
+    }
+
+    private void registrarRechazoAlmacenDestino(final String idAeropuerto) {
+        final ACOMetricas metricas = ACOMetricasContexto.obtener();
+        if (metricas != null) {
+            metricas.registrarRechazoAlmacenDestino(idAeropuerto);
+        }
+    }
+
+    private void registrarRechazoAlmacenEscala(final String idAeropuerto) {
+        final ACOMetricas metricas = ACOMetricasContexto.obtener();
+        if (metricas != null) {
+            metricas.registrarRechazoAlmacenEscala(idAeropuerto);
+        }
+    }
+
+    private void registrarRutaAceptadaAeropuerto(final String idAeropuerto) {
+        final ACOMetricas metricas = ACOMetricasContexto.obtener();
+        if (metricas != null) {
+            metricas.registrarRutaAceptadaAeropuerto(idAeropuerto);
+        }
     }
 
     private int contarSalidasFuturas(final Aeropuerto aeropuerto, final LocalDateTime tiempoReferencia,

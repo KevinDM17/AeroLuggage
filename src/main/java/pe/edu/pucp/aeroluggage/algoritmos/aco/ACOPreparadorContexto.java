@@ -95,7 +95,8 @@ final class ACOPreparadorContexto {
             final List<Maleta> maletas,
             final List<VueloInstancia> vuelos,
             final CapacidadesACO capacidades,
-            final LocalDateTime tiempoBase
+            final LocalDateTime tiempoBase,
+            final long tiempoRecojo
     ) {
         final Map<String, LocalDateTime> plazosPorMaleta = new HashMap<>();
         final Map<String, Maleta> maletasPorId = new HashMap<>();
@@ -125,7 +126,8 @@ final class ACOPreparadorContexto {
                 capacidades.getCapacidadRestanteAlmacen(),
                 plazosPorMaleta,
                 maletasPorId,
-                tiempoBase
+                tiempoBase,
+                tiempoRecojo
         );
     }
 

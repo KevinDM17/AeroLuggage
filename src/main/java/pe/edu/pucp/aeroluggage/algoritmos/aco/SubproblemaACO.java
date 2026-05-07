@@ -13,11 +13,13 @@ final class SubproblemaACO {
     private final ArrayList<Maleta> maletasPendientes;
     private final ArrayList<VueloInstancia> vuelosDisponibles;
     private final Map<String, ArrayList<VueloInstancia>> vuelosPorOrigen;
+    private final Map<String, ArrayList<VueloInstancia>> vuelosDirectosPorPar;
     private final Map<String, Integer> capacidadRestanteVueloBase;
     private final Map<String, CapacidadTemporalAlmacen> capacidadRestanteAlmacenBase;
     private final Map<String, LocalDateTime> plazoPorMaleta;
     private final Map<String, Maleta> maletasPorId;
     private final LocalDateTime inicioIntervalo;
+    private final long tiempoRecojo;
 
     SubproblemaACO(
             final List<Maleta> maletasPendientes,
@@ -26,17 +28,20 @@ final class SubproblemaACO {
             final Map<String, CapacidadTemporalAlmacen> capacidadRestanteAlmacenBase,
             final Map<String, LocalDateTime> plazoPorMaleta,
             final Map<String, Maleta> maletasPorId,
-            final LocalDateTime inicioIntervalo
+            final LocalDateTime inicioIntervalo,
+            final long tiempoRecojo
     ) {
         this.maletasPendientes = maletasPendientes == null ? new ArrayList<>() : new ArrayList<>(maletasPendientes);
         this.vuelosDisponibles = vuelosDisponibles == null ? new ArrayList<>() : new ArrayList<>(vuelosDisponibles);
         this.vuelosPorOrigen = indexarVuelosPorOrigen(this.vuelosDisponibles);
+        this.vuelosDirectosPorPar = indexarVuelosDirectosPorPar(this.vuelosDisponibles);
         this.capacidadRestanteVueloBase = new HashMap<>(capacidadRestanteVueloBase);
         // Copia profunda: cada hormiga necesita su propia instancia para no interferir con las demás.
         this.capacidadRestanteAlmacenBase = CapacidadTemporalAlmacen.clonarMapa(capacidadRestanteAlmacenBase);
         this.plazoPorMaleta = new HashMap<>(plazoPorMaleta);
         this.maletasPorId = new HashMap<>(maletasPorId);
         this.inicioIntervalo = inicioIntervalo;
+        this.tiempoRecojo = tiempoRecojo;
     }
 
     ArrayList<Maleta> getMaletasPendientes() {
@@ -54,6 +59,13 @@ final class SubproblemaACO {
         return vuelosPorOrigen.getOrDefault(idAeropuertoOrigen, new ArrayList<>());
     }
 
+    ArrayList<VueloInstancia> getVuelosDirectos(final String idOrigen, final String idDestino) {
+        if (idOrigen == null || idDestino == null) {
+            return new ArrayList<>();
+        }
+        return vuelosDirectosPorPar.getOrDefault(construirClaveDirecta(idOrigen, idDestino), new ArrayList<>());
+    }
+
     Map<String, Integer> getCapacidadRestanteVueloBase() {
         return capacidadRestanteVueloBase;
     }
@@ -68,6 +80,10 @@ final class SubproblemaACO {
 
     LocalDateTime getInicioIntervalo() {
         return inicioIntervalo;
+    }
+
+    long getTiempoRecojo() {
+        return tiempoRecojo;
     }
 
     Maleta obtenerMaleta(final String idMaleta) {
@@ -89,5 +105,31 @@ final class SubproblemaACO {
             ).add(vueloInstancia);
         }
         return indice;
+    }
+
+    private Map<String, ArrayList<VueloInstancia>> indexarVuelosDirectosPorPar(
+            final ArrayList<VueloInstancia> vuelosDisponibles
+    ) {
+        final Map<String, ArrayList<VueloInstancia>> indice = new HashMap<>();
+        for (final VueloInstancia vueloInstancia : vuelosDisponibles) {
+            final boolean vueloInvalido = vueloInstancia == null
+                    || vueloInstancia.getAeropuertoOrigen() == null
+                    || vueloInstancia.getAeropuertoDestino() == null
+                    || vueloInstancia.getAeropuertoOrigen().getIdAeropuerto() == null
+                    || vueloInstancia.getAeropuertoDestino().getIdAeropuerto() == null;
+            if (vueloInvalido) {
+                continue;
+            }
+            final String clave = construirClaveDirecta(
+                    vueloInstancia.getAeropuertoOrigen().getIdAeropuerto(),
+                    vueloInstancia.getAeropuertoDestino().getIdAeropuerto()
+            );
+            indice.computeIfAbsent(clave, key -> new ArrayList<>()).add(vueloInstancia);
+        }
+        return indice;
+    }
+
+    private String construirClaveDirecta(final String idOrigen, final String idDestino) {
+        return idOrigen + "->" + idDestino;
     }
 }

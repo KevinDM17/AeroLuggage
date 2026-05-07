@@ -16,6 +16,7 @@ public class ACOConfiguracion {
     private static final double PENALIZACION_SOBRECARGA_VUELO_POR_DEFECTO = 200D;
     private static final double PENALIZACION_SOBRECARGA_ALMACEN_POR_DEFECTO = 120D;
     private static final double PENALIZACION_REPLANIFICACION_POR_DEFECTO = 25D;
+    private static final int MAX_LLEGADAS_COMPETITIVAS_POR_AEROPUERTO_POR_DEFECTO = 5;
     private static final long SEMILLA_POR_DEFECTO = 42L;
 
     private int maxEstadosBusquedaTemporal;
@@ -33,6 +34,7 @@ public class ACOConfiguracion {
     private double penalizacionSobrecargaVuelo;
     private double penalizacionSobrecargaAlmacen;
     private double penalizacionReplanificacion;
+    private int maxLlegadasCompetitivasPorAeropuerto;
     private long semilla;
 
     public ACOConfiguracion() {
@@ -51,6 +53,7 @@ public class ACOConfiguracion {
         penalizacionSobrecargaVuelo = PENALIZACION_SOBRECARGA_VUELO_POR_DEFECTO;
         penalizacionSobrecargaAlmacen = PENALIZACION_SOBRECARGA_ALMACEN_POR_DEFECTO;
         penalizacionReplanificacion = PENALIZACION_REPLANIFICACION_POR_DEFECTO;
+        maxLlegadasCompetitivasPorAeropuerto = MAX_LLEGADAS_COMPETITIVAS_POR_AEROPUERTO_POR_DEFECTO;
         semilla = SEMILLA_POR_DEFECTO;
     }
 
@@ -180,5 +183,13 @@ public class ACOConfiguracion {
 
     public void setSemilla(final long semilla) {
         this.semilla = semilla;
+    }
+
+    public int getMaxLlegadasCompetitivasPorAeropuerto() {
+        return maxLlegadasCompetitivasPorAeropuerto;
+    }
+
+    public void setMaxLlegadasCompetitivasPorAeropuerto(final int maxLlegadasCompetitivasPorAeropuerto) {
+        this.maxLlegadasCompetitivasPorAeropuerto = maxLlegadasCompetitivasPorAeropuerto;
     }
 }

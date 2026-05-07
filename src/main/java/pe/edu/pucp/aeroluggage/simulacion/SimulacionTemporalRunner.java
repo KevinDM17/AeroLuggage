@@ -27,6 +27,7 @@ import pe.edu.pucp.aeroluggage.algoritmos.Metaheuristico;
 import pe.edu.pucp.aeroluggage.algoritmos.Solucion;
 import pe.edu.pucp.aeroluggage.algoritmos.aco.ACO;
 import pe.edu.pucp.aeroluggage.algoritmos.aco.ACOConfiguracion;
+import pe.edu.pucp.aeroluggage.algoritmos.aco.ACOMetricas;
 import pe.edu.pucp.aeroluggage.algoritmos.common.CalculadorFitnessExperimental;
 import pe.edu.pucp.aeroluggage.algoritmos.common.CalculadorSemaforo;
 import pe.edu.pucp.aeroluggage.algoritmos.common.ConfigFitnessExperimental;
@@ -55,7 +56,7 @@ public final class SimulacionTemporalRunner {
     private static final String FITNESS_EXPERIMENTAL_CABECERA =
             "Simulacion,ejecucion,Fitness HGA,tiempo HGA,Fitness ACO,tiempo ACO";
     private static final DateTimeFormatter FMT = DateTimeFormatter.ISO_LOCAL_DATE;
-private static final long SEMILLA_ALEATORIA = -1L;
+    private static final long SEMILLA_ALEATORIA = -1L;
     private static final long DEFAULT_MINUTOS_CONEXION = 10L;
     private static final long DEFAULT_TIEMPO_RECOJO = 10L;
     private static final long DEFAULT_SA_SEGUNDOS = 0L;
@@ -629,9 +630,9 @@ private static final long SEMILLA_ALEATORIA = -1L;
                 fitnessCiclo = CalculadorFitnessExperimental.calcular(solucion, instancia,
                         ConfigFitnessExperimental.desdeProperties(contexto.params()));
                 fitnessExperimental = fitnessExperimental.sumar(fitnessCiclo);
-                resultado.ciclos.add(new ResultadoCicloAlgoritmo(
-                        fitnessCiclo.getFitnessExperimental(),
-                        System.currentTimeMillis() - inicioCicloRealMs));
+                final ACOMetricas.Snapshot metricasAcoCiclo = algoritmo instanceof ACO
+                        ? ((ACO) algoritmo).getUltimasMetricas()
+                        : null;
 
                 final Map<String, List<VueloInstancia>> nuevasRutas = extraerRutasConfirmadas(
                         solucion,
@@ -658,6 +659,15 @@ private static final long SEMILLA_ALEATORIA = -1L;
                         tiempoRecojo
                 );
                 rutasConfirmadasEnCiclo = nuevasRutas.size();
+                final DiagnosticoTemporal diagnosticoTemporal = diagnosticarTemporalmente(solucion, instancia);
+                resultado.ciclos.add(new ResultadoCicloAlgoritmo(
+                        fitnessCiclo.getFitnessExperimental(),
+                        System.currentTimeMillis() - inicioCicloRealMs,
+                        maletasReplanificables.size(),
+                        rutasConfirmadasEnCiclo,
+                        diagnosticoTemporal.maletasFallidas(),
+                        diagnosticoTemporal,
+                        metricasAcoCiclo));
             }
 
             final Map<String, EstadoMaletaTemporal> estadosActualizados = evaluarEstadosMaletas(
@@ -759,7 +769,7 @@ private static final long SEMILLA_ALEATORIA = -1L;
                     taMs,
                     configuracionProgramada.saMs()
             );
-            //reportarCapacidadAeropuertosCiclo(nombre, numeroCiclo, contextoEjecucion.aeropuertos());
+            reportarCapacidadAeropuertosCiclo(nombre, numeroCiclo, contextoEjecucion.aeropuertos());
             if (configuracionProgramada.saMs() > 0L && taMs > configuracionProgramada.saMs()) {
                 terminarPorTiempoExcedido(taMs, configuracionProgramada.saMs());
             }
@@ -791,6 +801,13 @@ private static final long SEMILLA_ALEATORIA = -1L;
         resultado.maxOcupacionVuelos = maxOcupacionVuelos;
         resultado.maxOcupacionAeropuertos = maxOcupacionAeropuertos;
         resultado.fitnessExperimental = fitnessExperimental;
+        resultado.ocupacionFinalAeropuertos = construirResumenOcupacionAeropuertos(contextoEjecucion.aeropuertos());
+        resultado.diagnosticoTemporalFinal = diagnosticarTemporalmente(solucionFinalDesdeProgramacion(
+                rutasProgramadasPorMaleta,
+                contextoEjecucion.todosVuelosInstancia(),
+                registradas
+        ), construirInstanciaDiagnosticoFinal(contextoEjecucion, registradas, tiempoRecojo));
+        exportarDiagnosticosTxt(nombre, resultado);
         reportarResumen(nombre, resultado);
         return resultado;
     }
@@ -2083,7 +2100,9 @@ private static final long SEMILLA_ALEATORIA = -1L;
                         : "COMPLETADA");
         System.out.printf("Total enrutadas:      %d%n", resultado.totalMaletasEnrutadas);
         System.out.printf("No ruteadas al final: %d%n", resultado.totalMaletasPendientes);
-        reportarDetalleNoRuteadas(resultado.detalleNoRuteadas);
+        if (!esNombreAco(nombre)) {
+            reportarDetalleNoRuteadas(resultado.detalleNoRuteadas);
+        }
         System.out.printf("Tiempo ejecucion:%d ms (%.3f s)%n",
                 resultado.tiempoEjecucionMs,
                 resultado.tiempoEjecucionMs / 1000D
@@ -2095,7 +2114,497 @@ private static final long SEMILLA_ALEATORIA = -1L;
         System.out.printf("Porcentaje maximo llenado vuelos:      %.1f%%%n", resultado.maxOcupacionVuelos);
         System.out.printf("Porcentaje maximo llenado aeropuertos: %.1f%%%n", resultado.maxOcupacionAeropuertos);
         reportarFitnessExperimental(resultado.fitnessExperimental);
+        if (resultado.diagnosticoTemporalFinal != null) {
+            System.out.printf("Rutas construidas vs validas temporalmente: %d / %d%n",
+                    resultado.diagnosticoTemporalFinal.rutasConstruidas(),
+                    resultado.diagnosticoTemporalFinal.rutasValidasTemporalmente());
+        }
         System.out.println();
+    }
+
+    private static DiagnosticoTemporal diagnosticarTemporalmente(final Solucion solucion,
+                                                                 final InstanciaProblema instancia) {
+        if (instancia == null) {
+            return new DiagnosticoTemporal(0, 0, 0, 0, 0, List.of());
+        }
+        final Map<String, Aeropuerto> aeropuertos = instancia.indexarAeropuertosPorIcao();
+        final Map<String, CapacidadTemporalDiagnostico> capacidades = new HashMap<>();
+        for (final Aeropuerto aeropuerto : instancia.getAeropuertos()) {
+            if (aeropuerto == null || aeropuerto.getIdAeropuerto() == null) {
+                continue;
+            }
+            final int capacidadDisponible = Math.max(0, aeropuerto.getCapacidadAlmacen() - aeropuerto.getMaletasActuales());
+            capacidades.put(aeropuerto.getIdAeropuerto(), new CapacidadTemporalDiagnostico(capacidadDisponible));
+        }
+        precargarOcupacionFuturaDiagnostico(capacidades, instancia.getOcupacionFuturaAeropuertos());
+        precargarLiberacionesFuturasDiagnostico(capacidades, instancia.getLiberacionesFuturaAeropuertos());
+
+        int rutasConstruidas = 0;
+        int rutasValidas = 0;
+        int rutasInvalidas = 0;
+        int maletasFallidas = 0;
+        int intervalosInvalidos = 0;
+        final Map<String, Integer> conflictos = new HashMap<>();
+
+        if (solucion == null || solucion.getSolucion() == null || solucion.getSolucion().isEmpty()) {
+            return new DiagnosticoTemporal(0, 0, 0, 0, 0, List.of());
+        }
+
+        for (final Ruta ruta : solucion.getSolucion()) {
+            if (ruta == null || ruta.getEstado() == EstadoRuta.FALLIDA
+                    || ruta.getSubrutas() == null || ruta.getSubrutas().isEmpty()) {
+                maletasFallidas++;
+                continue;
+            }
+            rutasConstruidas++;
+            final List<ReservaTemporalDiagnostico> reservas = new ArrayList<>();
+            boolean valida = true;
+
+            final VueloInstancia primerVuelo = ruta.getSubrutas().get(0);
+            final String idOrigen = primerVuelo.getAeropuertoOrigen() != null
+                    ? primerVuelo.getAeropuertoOrigen().getIdAeropuerto()
+                    : null;
+            if (idOrigen != null && primerVuelo.getFechaSalida() != null) {
+                reservas.add(ReservaTemporalDiagnostico.liberacion(idOrigen, primerVuelo.getFechaSalida()));
+            }
+
+            for (int i = 0; i < ruta.getSubrutas().size(); i++) {
+                final VueloInstancia vuelo = ruta.getSubrutas().get(i);
+                if (vuelo == null || vuelo.getAeropuertoDestino() == null || vuelo.getFechaLlegada() == null) {
+                    continue;
+                }
+                final String idDestino = vuelo.getAeropuertoDestino().getIdAeropuerto();
+                if (idDestino == null) {
+                    continue;
+                }
+                final LocalDateTime liberacion = i < ruta.getSubrutas().size() - 1
+                        ? ruta.getSubrutas().get(i + 1).getFechaSalida()
+                        : vuelo.getFechaLlegada().plusMinutes(instancia.getTiempoRecojo());
+                final CapacidadTemporalDiagnostico capacidad = capacidades.get(idDestino);
+                if (capacidad == null || !capacidad.puedeReservar(vuelo.getFechaLlegada(), liberacion)) {
+                    valida = false;
+                    intervalosInvalidos++;
+                    conflictos.merge(idDestino, 1, Integer::sum);
+                    break;
+                }
+                reservas.add(ReservaTemporalDiagnostico.reserva(idDestino, vuelo.getFechaLlegada(), liberacion));
+            }
+
+            if (!valida) {
+                rutasInvalidas++;
+                continue;
+            }
+            for (final ReservaTemporalDiagnostico reserva : reservas) {
+                final CapacidadTemporalDiagnostico capacidad = capacidades.get(reserva.idAeropuerto());
+                if (capacidad == null) {
+                    continue;
+                }
+                if (reserva.esLiberacion()) {
+                    capacidad.liberar(reserva.desde());
+                    continue;
+                }
+                capacidad.reservar(reserva.desde(), reserva.hasta());
+            }
+            rutasValidas++;
+        }
+
+        return new DiagnosticoTemporal(
+                rutasConstruidas,
+                rutasValidas,
+                rutasInvalidas,
+                maletasFallidas,
+                intervalosInvalidos,
+                construirTopAeropuertos(conflictos)
+        );
+    }
+
+    private static boolean esNombreAco(final String nombre) {
+        if (nombre == null || nombre.isBlank()) {
+            return false;
+        }
+        return nombre.toUpperCase(java.util.Locale.ROOT).startsWith("ACO");
+    }
+
+    private static void precargarOcupacionFuturaDiagnostico(
+            final Map<String, CapacidadTemporalDiagnostico> capacidades,
+            final Map<String, List<IntervaloOcupacionAeropuerto>> ocupacionFutura
+    ) {
+        if (capacidades.isEmpty() || ocupacionFutura == null || ocupacionFutura.isEmpty()) {
+            return;
+        }
+        for (final Map.Entry<String, List<IntervaloOcupacionAeropuerto>> entry : ocupacionFutura.entrySet()) {
+            final CapacidadTemporalDiagnostico capacidad = capacidades.get(entry.getKey());
+            if (capacidad == null || entry.getValue() == null) {
+                continue;
+            }
+            for (final IntervaloOcupacionAeropuerto intervalo : entry.getValue()) {
+                if (intervalo == null) {
+                    continue;
+                }
+                capacidad.reservar(intervalo.desde(), intervalo.hasta());
+            }
+        }
+    }
+
+    private static void precargarLiberacionesFuturasDiagnostico(
+            final Map<String, CapacidadTemporalDiagnostico> capacidades,
+            final Map<String, List<LiberacionAeropuerto>> liberacionesFuturas
+    ) {
+        if (capacidades.isEmpty() || liberacionesFuturas == null || liberacionesFuturas.isEmpty()) {
+            return;
+        }
+        for (final Map.Entry<String, List<LiberacionAeropuerto>> entry : liberacionesFuturas.entrySet()) {
+            final CapacidadTemporalDiagnostico capacidad = capacidades.get(entry.getKey());
+            if (capacidad == null || entry.getValue() == null) {
+                continue;
+            }
+            for (final LiberacionAeropuerto liberacion : entry.getValue()) {
+                if (liberacion == null) {
+                    continue;
+                }
+                capacidad.liberar(liberacion.cuando());
+            }
+        }
+    }
+
+    private static Solucion solucionFinalDesdeProgramacion(final Map<String, RutaMaletaProgramada> rutasProgramadasPorMaleta,
+                                                           final ArrayList<VueloInstancia> vuelosInstancia,
+                                                           final List<Maleta> registradas) {
+        final Map<String, VueloInstancia> vuelosPorId = indexarVuelosInstancia(vuelosInstancia);
+        final ArrayList<Ruta> rutas = new ArrayList<>();
+        final Set<String> maletasConRuta = new HashSet<>();
+        for (final Map.Entry<String, RutaMaletaProgramada> entry : rutasProgramadasPorMaleta.entrySet()) {
+            final ArrayList<VueloInstancia> subrutas = new ArrayList<>();
+            if (entry.getValue() != null && entry.getValue().vuelos() != null) {
+                for (final VueloInstancia vuelo : entry.getValue().vuelos()) {
+                    if (vuelo == null || vuelo.getIdVueloInstancia() == null) {
+                        continue;
+                    }
+                    subrutas.add(vuelosPorId.getOrDefault(vuelo.getIdVueloInstancia(), vuelo));
+                }
+            }
+            rutas.add(new Ruta(
+                    "RUTA-" + entry.getKey(),
+                    entry.getKey(),
+                    Double.MAX_VALUE,
+                    0D,
+                    subrutas,
+                    subrutas.isEmpty() ? EstadoRuta.FALLIDA : EstadoRuta.PLANIFICADA
+            ));
+            maletasConRuta.add(entry.getKey());
+        }
+        for (final Maleta maleta : registradas) {
+            if (maleta == null || maleta.getIdMaleta() == null || maletasConRuta.contains(maleta.getIdMaleta())) {
+                continue;
+            }
+            rutas.add(new Ruta(
+                    "RUTA-" + maleta.getIdMaleta(),
+                    maleta.getIdMaleta(),
+                    Double.MAX_VALUE,
+                    0D,
+                    new ArrayList<>(),
+                    EstadoRuta.FALLIDA
+            ));
+        }
+        return new Solucion(rutas);
+    }
+
+    private static InstanciaProblema construirInstanciaDiagnosticoFinal(final ContextoEjecucion contextoEjecucion,
+                                                                        final List<Maleta> registradas,
+                                                                        final long tiempoRecojo) {
+        final InstanciaProblema instancia = new InstanciaProblema(
+                "SIM-FINAL",
+                new ArrayList<>(registradas),
+                contextoEjecucion.todosVuelosProgramados(),
+                contextoEjecucion.todosVuelosInstancia(),
+                contextoEjecucion.aeropuertos()
+        );
+        instancia.setTiempoRecojo(tiempoRecojo);
+        instancia.setMinutosConexion(DEFAULT_MINUTOS_CONEXION);
+        return instancia;
+    }
+
+    private static List<ResumenOcupacionAeropuerto> construirResumenOcupacionAeropuertos(
+            final ArrayList<Aeropuerto> aeropuertos
+    ) {
+        final List<ResumenOcupacionAeropuerto> resumen = new ArrayList<>();
+        if (aeropuertos == null || aeropuertos.isEmpty()) {
+            return resumen;
+        }
+        for (final Aeropuerto aeropuerto : aeropuertos) {
+            if (aeropuerto == null) {
+                continue;
+            }
+            final int capacidad = aeropuerto.getCapacidadAlmacen();
+            final int maletasActuales = aeropuerto.getMaletasActuales();
+            final double porcentaje = capacidad > 0 ? 100D * maletasActuales / capacidad : 0D;
+            resumen.add(new ResumenOcupacionAeropuerto(
+                    aeropuerto.getIdAeropuerto(),
+                    capacidad,
+                    maletasActuales,
+                    porcentaje
+            ));
+        }
+        resumen.sort(Comparator.comparingDouble(ResumenOcupacionAeropuerto::porcentajeOcupacion).reversed()
+                .thenComparingInt(ResumenOcupacionAeropuerto::maletasActuales).reversed()
+                .thenComparing(ResumenOcupacionAeropuerto::idAeropuerto,
+                        Comparator.nullsLast(String::compareTo)));
+        return resumen;
+    }
+
+    private static void exportarDiagnosticosTxt(final String nombre, final ResultadoSimulacion resultado) {
+        try {
+            Files.createDirectories(RESULTADOS_DIR);
+            exportarResumenOcupacionAeropuertos(nombre, resultado);
+            exportarDiagnosticoTemporal(nombre, resultado);
+            exportarMetricasAco(nombre, resultado);
+        } catch (final IOException exception) {
+            throw new IllegalStateException("No se pudieron exportar los diagnosticos TXT", exception);
+        }
+    }
+
+    private static void exportarResumenOcupacionAeropuertos(final String nombre,
+                                                            final ResultadoSimulacion resultado) throws IOException {
+        final Path archivo = RESULTADOS_DIR.resolve(construirNombreArchivo(nombre, "aeropuertos-final"));
+        final List<String> lineas = new ArrayList<>();
+        lineas.add("RESUMEN FINAL DE ALMACENAMIENTO POR AEROPUERTO");
+        lineas.add("Algoritmo: " + nombre);
+        lineas.add("Estado: " + (resultado.colapsada ? "COLAPSADA" : "COMPLETADA"));
+        lineas.add("Total enrutadas final: " + resultado.totalMaletasEnrutadas);
+        lineas.add("No ruteadas final: " + resultado.totalMaletasPendientes);
+        lineas.add("");
+        lineas.add(String.format("%-6s %-18s %-18s %-18s %-18s",
+                "Rank", "Aeropuerto", "CapacidadTotal", "MaletasActuales", "OcupacionPct"));
+        int rank = 1;
+        for (final ResumenOcupacionAeropuerto ocupacion : resultado.ocupacionFinalAeropuertos) {
+            lineas.add(String.format(
+                    java.util.Locale.US,
+                    "%-6d %-18s %-18d %-18d %-17.2f",
+                    rank,
+                    ocupacion.idAeropuerto() == null ? "-" : ocupacion.idAeropuerto(),
+                    ocupacion.capacidadTotal(),
+                    ocupacion.maletasActuales(),
+                    ocupacion.porcentajeOcupacion()
+            ));
+            rank++;
+        }
+        Files.write(archivo, lineas);
+    }
+
+    private static void exportarDiagnosticoTemporal(final String nombre,
+                                                    final ResultadoSimulacion resultado) throws IOException {
+        final Path archivo = RESULTADOS_DIR.resolve(construirNombreArchivo(nombre, "diagnostico-temporal"));
+        final List<String> lineas = new ArrayList<>();
+        lineas.add("DIAGNOSTICO TEMPORAL DE RUTAS");
+        lineas.add("Algoritmo: " + nombre);
+        lineas.add("");
+        if (resultado.diagnosticoTemporalFinal != null) {
+            lineas.add("=== RESUMEN FINAL ===");
+            agregarDiagnosticoTemporal(lineas, resultado.diagnosticoTemporalFinal);
+            lineas.add("");
+        }
+        int numeroCiclo = 1;
+        for (final ResultadoCicloAlgoritmo ciclo : resultado.ciclos) {
+            if (ciclo.diagnosticoTemporal() == null) {
+                numeroCiclo++;
+                continue;
+            }
+            lineas.add(String.format("=== CICLO %d ===", numeroCiclo));
+            lineas.add("maletasReplanificables=" + ciclo.maletasReplanificables());
+            lineas.add("rutasConfirmadas=" + ciclo.rutasConfirmadas());
+            lineas.add("rutasFallidas=" + ciclo.rutasFallidas());
+            agregarDiagnosticoTemporal(lineas, ciclo.diagnosticoTemporal());
+            lineas.add("");
+            numeroCiclo++;
+        }
+        Files.write(archivo, lineas);
+    }
+
+    private static void exportarMetricasAco(final String nombre, final ResultadoSimulacion resultado) throws IOException {
+        final boolean tieneMetricasAco = resultado.ciclos.stream().anyMatch(ciclo -> ciclo.metricasAco() != null);
+        if (!tieneMetricasAco) {
+            return;
+        }
+        final Path archivo = RESULTADOS_DIR.resolve(construirNombreArchivo(nombre, "metricas-aco"));
+        final List<String> lineas = new ArrayList<>();
+        lineas.add("METRICAS ACO POR CORRIDA");
+        lineas.add("Algoritmo: " + nombre);
+        lineas.add("Estado: " + (resultado.colapsada ? "COLAPSADA" : "COMPLETADA"));
+        lineas.add("");
+
+        ACOMetricas.Snapshot acumulado = null;
+        int numeroCiclo = 1;
+        for (final ResultadoCicloAlgoritmo ciclo : resultado.ciclos) {
+            if (ciclo.metricasAco() == null) {
+                numeroCiclo++;
+                continue;
+            }
+            acumulado = sumarMetricas(acumulado, ciclo.metricasAco());
+            lineas.add(String.format("=== CICLO %d ===", numeroCiclo));
+            lineas.add(String.format(java.util.Locale.US, "Fitness experimental: %.3f", ciclo.fitnessExp()));
+            lineas.add("TA ms: " + ciclo.tiempoMs());
+            lineas.add("maletasReplanificables=" + ciclo.maletasReplanificables());
+            lineas.add("rutasConfirmadas=" + ciclo.rutasConfirmadas());
+            lineas.add("rutasFallidas=" + ciclo.rutasFallidas());
+            if (ciclo.diagnosticoTemporal() != null) {
+                agregarDiagnosticoTemporal(lineas, ciclo.diagnosticoTemporal());
+            }
+            agregarDetalleMetricas(lineas, ciclo.metricasAco());
+            lineas.add("");
+            numeroCiclo++;
+        }
+
+        if (acumulado != null) {
+            lineas.add("=== RESUMEN ACUMULADO ===");
+            agregarDetalleMetricas(lineas, acumulado);
+        }
+        Files.write(archivo, lineas);
+    }
+
+    private static void agregarDetalleMetricas(final List<String> lineas, final ACOMetricas.Snapshot metricas) {
+        lineas.add("construirPlanTemporal.calls=" + metricas.construirPlanTemporalCalls());
+        lineas.add("construirPlanTemporal.ms=" + nanosAMilisegundos(metricas.construirPlanTemporalNanos()));
+        lineas.add("planRespetaCapacidad.calls=" + metricas.planRespetaCapacidadCalls());
+        lineas.add("planRespetaCapacidad.ms=" + nanosAMilisegundos(metricas.planRespetaCapacidadNanos()));
+        lineas.add("puedeReservar.calls=" + metricas.puedeReservarCalls());
+        lineas.add("puedeReservar.ms=" + nanosAMilisegundos(metricas.puedeReservarNanos()));
+        lineas.add("disponibleEn.calls=" + metricas.disponibleEnCalls());
+        lineas.add("disponibleEn.ms=" + nanosAMilisegundos(metricas.disponibleEnNanos()));
+        lineas.add("reconstruirCapacidades.calls=" + metricas.reconstruirCapacidadesCalls());
+        lineas.add("reconstruirCapacidades.ms=" + nanosAMilisegundos(metricas.reconstruirCapacidadesNanos()));
+        lineas.add("buscarVueloDirecto.calls=" + metricas.buscarVueloDirectoCalls());
+        lineas.add("buscarVueloDirecto.ms=" + nanosAMilisegundos(metricas.buscarVueloDirectoNanos()));
+        lineas.add("estadosExpandidos=" + metricas.estadosExpandidos());
+        lineas.add("vuelosInspeccionados=" + metricas.vuelosInspeccionados());
+        lineas.add("rechazos.capacidadVuelo=" + metricas.rutasRechazadasCapacidadVuelo());
+        lineas.add("rechazos.almacenDestino=" + metricas.rutasRechazadasAlmacenDestino());
+        lineas.add("rechazos.almacenEscala=" + metricas.rutasRechazadasAlmacenEscala());
+        lineas.add("topAeropuertosRechazo=" + formatearTopAeropuertos(metricas.topRechazosAeropuerto()));
+        lineas.add("topAeropuertosAceptados=" + formatearTopAeropuertos(metricas.topAceptadasAeropuerto()));
+        agregarFasesHormiga(lineas, metricas.fasesHormiga());
+    }
+
+    private static void agregarFasesHormiga(final List<String> lineas, final List<ACOMetricas.FaseHormiga> fases) {
+        if (fases == null || fases.isEmpty()) {
+            return;
+        }
+        lineas.add("fasesHormiga.inicio");
+        for (final ACOMetricas.FaseHormiga fase : fases) {
+            lineas.add(String.format(
+                    java.util.Locale.US,
+                    "fase=%s iter=%d hormiga=%d tiempoMs=%s estados=%d vuelos=%d rechazosVuelo=%d "
+                            + "rechazosDestino=%d rechazosEscala=%d",
+                    fase.fase(),
+                    fase.iteracion(),
+                    fase.hormiga(),
+                    nanosAMilisegundos(fase.nanos()),
+                    fase.estadosExpandidos(),
+                    fase.vuelosInspeccionados(),
+                    fase.rutasRechazadasCapacidadVuelo(),
+                    fase.rutasRechazadasAlmacenDestino(),
+                    fase.rutasRechazadasAlmacenEscala()
+            ));
+        }
+        lineas.add("fasesHormiga.fin");
+    }
+
+    private static void agregarDiagnosticoTemporal(final List<String> lineas,
+                                                   final DiagnosticoTemporal diagnosticoTemporal) {
+        lineas.add("rutasConstruidas=" + diagnosticoTemporal.rutasConstruidas());
+        lineas.add("rutasValidasTemporalmente=" + diagnosticoTemporal.rutasValidasTemporalmente());
+        lineas.add("rutasInvalidasTemporalmente=" + diagnosticoTemporal.rutasInvalidasTemporalmente());
+        lineas.add("maletasFallidas=" + diagnosticoTemporal.maletasFallidas());
+        lineas.add("intervalosInvalidosAlmacen=" + diagnosticoTemporal.intervalosInvalidosAlmacen());
+        lineas.add("aeropuertosConflictivos=" + diagnosticoTemporal.aeropuertosConflictivos());
+        lineas.add("conflictosPorAeropuerto=" + formatearTopAeropuertos(diagnosticoTemporal.conflictosPorAeropuerto()));
+    }
+
+    private static String formatearTopAeropuertos(final List<Map.Entry<String, Integer>> entradas) {
+        if (entradas == null || entradas.isEmpty()) {
+            return "-";
+        }
+        final StringBuilder builder = new StringBuilder();
+        for (int i = 0; i < entradas.size(); i++) {
+            final Map.Entry<String, Integer> entrada = entradas.get(i);
+            if (i > 0) {
+                builder.append(", ");
+            }
+            builder.append(entrada.getKey()).append('=').append(entrada.getValue());
+        }
+        return builder.toString();
+    }
+
+    private static String nanosAMilisegundos(final long nanos) {
+        return String.format(java.util.Locale.US, "%.3f", nanos / 1_000_000D);
+    }
+
+    private static String construirNombreArchivo(final String nombre, final String sufijo) {
+        final String nombreNormalizado = nombre == null
+                ? "simulacion"
+                : nombre.toLowerCase(java.util.Locale.ROOT).replaceAll("[^a-z0-9_-]+", "-");
+        return nombreNormalizado + "-" + sufijo + ".txt";
+    }
+
+    private static ACOMetricas.Snapshot sumarMetricas(final ACOMetricas.Snapshot izquierda,
+                                                      final ACOMetricas.Snapshot derecha) {
+        if (izquierda == null) {
+            return derecha;
+        }
+        final Map<String, Integer> rechazos = new HashMap<>();
+        acumularTopAeropuertos(rechazos, izquierda.topRechazosAeropuerto());
+        acumularTopAeropuertos(rechazos, derecha.topRechazosAeropuerto());
+        final Map<String, Integer> aceptadas = new HashMap<>();
+        acumularTopAeropuertos(aceptadas, izquierda.topAceptadasAeropuerto());
+        acumularTopAeropuertos(aceptadas, derecha.topAceptadasAeropuerto());
+        final List<ACOMetricas.FaseHormiga> fases = new ArrayList<>();
+        if (izquierda.fasesHormiga() != null) {
+            fases.addAll(izquierda.fasesHormiga());
+        }
+        if (derecha.fasesHormiga() != null) {
+            fases.addAll(derecha.fasesHormiga());
+        }
+        return new ACOMetricas.Snapshot(
+                List.copyOf(fases),
+                izquierda.construirPlanTemporalCalls() + derecha.construirPlanTemporalCalls(),
+                izquierda.construirPlanTemporalNanos() + derecha.construirPlanTemporalNanos(),
+                izquierda.planRespetaCapacidadCalls() + derecha.planRespetaCapacidadCalls(),
+                izquierda.planRespetaCapacidadNanos() + derecha.planRespetaCapacidadNanos(),
+                izquierda.puedeReservarCalls() + derecha.puedeReservarCalls(),
+                izquierda.puedeReservarNanos() + derecha.puedeReservarNanos(),
+                izquierda.disponibleEnCalls() + derecha.disponibleEnCalls(),
+                izquierda.disponibleEnNanos() + derecha.disponibleEnNanos(),
+                izquierda.reconstruirCapacidadesCalls() + derecha.reconstruirCapacidadesCalls(),
+                izquierda.reconstruirCapacidadesNanos() + derecha.reconstruirCapacidadesNanos(),
+                izquierda.buscarVueloDirectoCalls() + derecha.buscarVueloDirectoCalls(),
+                izquierda.buscarVueloDirectoNanos() + derecha.buscarVueloDirectoNanos(),
+                izquierda.estadosExpandidos() + derecha.estadosExpandidos(),
+                izquierda.vuelosInspeccionados() + derecha.vuelosInspeccionados(),
+                izquierda.rutasRechazadasCapacidadVuelo() + derecha.rutasRechazadasCapacidadVuelo(),
+                izquierda.rutasRechazadasAlmacenDestino() + derecha.rutasRechazadasAlmacenDestino(),
+                izquierda.rutasRechazadasAlmacenEscala() + derecha.rutasRechazadasAlmacenEscala(),
+                construirTopAeropuertos(rechazos),
+                construirTopAeropuertos(aceptadas)
+        );
+    }
+
+    private static void acumularTopAeropuertos(final Map<String, Integer> acumulado,
+                                               final List<Map.Entry<String, Integer>> entradas) {
+        if (entradas == null || entradas.isEmpty()) {
+            return;
+        }
+        for (final Map.Entry<String, Integer> entrada : entradas) {
+            acumulado.merge(entrada.getKey(), entrada.getValue(), Integer::sum);
+        }
+    }
+
+    private static List<Map.Entry<String, Integer>> construirTopAeropuertos(final Map<String, Integer> mapa) {
+        final List<Map.Entry<String, Integer>> entradas = new ArrayList<>(mapa.entrySet());
+        entradas.sort(Map.Entry.<String, Integer>comparingByValue(Comparator.reverseOrder())
+                .thenComparing(Map.Entry::getKey));
+        if (entradas.size() > 10) {
+            return List.copyOf(entradas.subList(0, 10));
+        }
+        return List.copyOf(entradas);
     }
 
     private static void reportarExperimento(final List<ResultadoIteracion> historial,
@@ -2328,6 +2837,13 @@ private static final long SEMILLA_ALEATORIA = -1L;
         );
         configuracion.setPenalizacionReplanificacion(
                 doubleParam(params, "aco.penalizacionReplanificacion", configuracion.getPenalizacionReplanificacion()));
+        configuracion.setMaxLlegadasCompetitivasPorAeropuerto(
+                intParam(
+                        params,
+                        "aco.maxLlegadasCompetitivasPorAeropuerto",
+                        configuracion.getMaxLlegadasCompetitivasPorAeropuerto()
+                )
+        );
         return configuracion;
     }
 
@@ -2437,7 +2953,46 @@ private static final long SEMILLA_ALEATORIA = -1L;
                                   LocalDateTime momento) {
     }
 
-    private record ResultadoCicloAlgoritmo(double fitnessExp, long tiempoMs) {}
+    private record ResultadoCicloAlgoritmo(double fitnessExp,
+                                           long tiempoMs,
+                                           int maletasReplanificables,
+                                           int rutasConfirmadas,
+                                           int rutasFallidas,
+                                           DiagnosticoTemporal diagnosticoTemporal,
+                                           ACOMetricas.Snapshot metricasAco) {}
+
+    private record ResumenOcupacionAeropuerto(String idAeropuerto,
+                                              int capacidadTotal,
+                                              int maletasActuales,
+                                              double porcentajeOcupacion) {
+    }
+
+    private record DiagnosticoTemporal(int rutasConstruidas,
+                                       int rutasValidasTemporalmente,
+                                       int rutasInvalidasTemporalmente,
+                                       int maletasFallidas,
+                                       int intervalosInvalidosAlmacen,
+                                       List<Map.Entry<String, Integer>> conflictosPorAeropuerto) {
+        private int aeropuertosConflictivos() {
+            return conflictosPorAeropuerto == null ? 0 : conflictosPorAeropuerto.size();
+        }
+    }
+
+    private record ReservaTemporalDiagnostico(String idAeropuerto,
+                                              LocalDateTime desde,
+                                              LocalDateTime hasta,
+                                              boolean esLiberacion) {
+        private static ReservaTemporalDiagnostico reserva(final String idAeropuerto,
+                                                          final LocalDateTime desde,
+                                                          final LocalDateTime hasta) {
+            return new ReservaTemporalDiagnostico(idAeropuerto, desde, hasta, false);
+        }
+
+        private static ReservaTemporalDiagnostico liberacion(final String idAeropuerto,
+                                                             final LocalDateTime cuando) {
+            return new ReservaTemporalDiagnostico(idAeropuerto, cuando, cuando, true);
+        }
+    }
 
     private static final class ResultadoSimulacion {
         private boolean colapsada;
@@ -2453,6 +3008,83 @@ private static final long SEMILLA_ALEATORIA = -1L;
         private List<PasoSimulacion> historial = new ArrayList<>();
         private List<MaletaNoRuteada> detalleNoRuteadas = new ArrayList<>();
         private List<TrazabilidadCiclo> trazabilidadCiclos = new ArrayList<>();
+        private List<ResumenOcupacionAeropuerto> ocupacionFinalAeropuertos = new ArrayList<>();
+        private DiagnosticoTemporal diagnosticoTemporalFinal;
+    }
+
+    private static final class CapacidadTemporalDiagnostico {
+        private final int capacidadBase;
+        private final List<long[]> intervalos = new ArrayList<>();
+        private final List<Long> liberaciones = new ArrayList<>();
+
+        private CapacidadTemporalDiagnostico(final int capacidadBase) {
+            this.capacidadBase = capacidadBase;
+        }
+
+        private boolean puedeReservar(final LocalDateTime desde, final LocalDateTime hasta) {
+            if (desde == null || hasta == null || !hasta.isAfter(desde)) {
+                return false;
+            }
+            if (capacidadBase <= 0 && liberaciones.isEmpty()) {
+                return false;
+            }
+            final long inicio = desde.atZone(java.time.ZoneOffset.UTC).toEpochSecond();
+            final long fin = hasta.atZone(java.time.ZoneOffset.UTC).toEpochSecond();
+            if (ocupacionEn(inicio, inicio, fin) > capacidadBase) {
+                return false;
+            }
+            for (final long[] intervalo : intervalos) {
+                final boolean inicioDentro = intervalo[0] >= inicio && intervalo[0] < fin;
+                final boolean finDentro = intervalo[1] >= inicio && intervalo[1] < fin;
+                if (inicioDentro && ocupacionEn(intervalo[0], inicio, fin) > capacidadBase) {
+                    return false;
+                }
+                if (finDentro && ocupacionEn(intervalo[1], inicio, fin) > capacidadBase) {
+                    return false;
+                }
+            }
+            for (final long liberacion : liberaciones) {
+                if (liberacion >= inicio && liberacion < fin && ocupacionEn(liberacion, inicio, fin) > capacidadBase) {
+                    return false;
+                }
+            }
+            return true;
+        }
+
+        private void reservar(final LocalDateTime desde, final LocalDateTime hasta) {
+            if (desde == null || hasta == null || !hasta.isAfter(desde)) {
+                return;
+            }
+            intervalos.add(new long[]{
+                    desde.atZone(java.time.ZoneOffset.UTC).toEpochSecond(),
+                    hasta.atZone(java.time.ZoneOffset.UTC).toEpochSecond()
+            });
+        }
+
+        private void liberar(final LocalDateTime cuando) {
+            if (cuando == null) {
+                return;
+            }
+            liberaciones.add(cuando.atZone(java.time.ZoneOffset.UTC).toEpochSecond());
+        }
+
+        private int ocupacionEn(final long tiempo, final long inicioCandidato, final long finCandidato) {
+            int ocupados = 0;
+            for (final long[] intervalo : intervalos) {
+                if (intervalo[0] <= tiempo && tiempo < intervalo[1]) {
+                    ocupados++;
+                }
+            }
+            for (final long liberacion : liberaciones) {
+                if (liberacion <= tiempo) {
+                    ocupados--;
+                }
+            }
+            if (inicioCandidato <= tiempo && tiempo < finCandidato) {
+                ocupados++;
+            }
+            return ocupados;
+        }
     }
 
     private static final class ExportadorFitnessExperimental {
