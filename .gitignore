@@ -54,11 +54,34 @@ hs_err_pid*
 replay_pid*
 
 #Front Adrian gei
-node_modules/
 build/
 dist/
 coverage/
+
+### react ###
+.DS_*
 .DS_Store
+
 *.log
-.env*
-!.env.example
+logs
+**/*.backup.*
+**/*.back.*
+
+node_modules
+bower_components
+
+*.sublime*
+
+psd
+thumb
+sketch
+
+#AGENTES
+.agents/
+.claude/
+
+#Base de datos
+*.db
+*.mv.db
+*.db-shm
+*.db-wal
