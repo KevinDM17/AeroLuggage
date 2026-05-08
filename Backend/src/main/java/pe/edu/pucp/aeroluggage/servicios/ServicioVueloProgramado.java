@@ -4,6 +4,8 @@ import org.springframework.core.io.ClassPathResource;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 import org.springframework.web.multipart.MultipartFile;
+
+import io.github.cdimascio.dotenv.Dotenv;
 import pe.edu.pucp.aeroluggage.cargador.CargadorPlanesVuelo;
 import pe.edu.pucp.aeroluggage.dominio.entidades.Aeropuerto;
 import pe.edu.pucp.aeroluggage.dominio.entidades.VueloProgramado;
@@ -43,7 +45,8 @@ public class ServicioVueloProgramado {
 
     @Transactional
     public List<VueloProgramado> cargarDesdeRecursos() throws IOException {
-        ClassPathResource recurso = new ClassPathResource("datos/planes_vuelo.txt");
+        final Dotenv dotenv = Dotenv.configure().ignoreIfMissing().load();
+        ClassPathResource recurso = new ClassPathResource(dotenv.get("AEROPUERTO_FILE_PATH"));
         Path temp = Files.createTempFile("planes-vuelo-", ".txt");
         try (InputStream is = recurso.getInputStream()) {
             Files.copy(is, temp, StandardCopyOption.REPLACE_EXISTING);

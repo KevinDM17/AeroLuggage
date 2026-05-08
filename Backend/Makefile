@@ -18,3 +18,6 @@ seed: ## Ejecuta el seed sin limpiar
 
 seed-clean: ## Ejecuta el seed con limpieza previa
 	$(MVN) exec:java@seed -Dargs="clean"
+
+reload-dep: ## Recargar dependencias
+	$(MVN) dependency:resolve

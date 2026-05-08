@@ -1,4 +1,4 @@
-package pe.edu.pucp.aeroluggage.controlador;
+package pe.edu.pucp.aeroluggage.controller;
 
 import org.springframework.jdbc.core.JdbcTemplate;
 import org.springframework.stereotype.Service;
@@ -10,13 +10,13 @@ import pe.edu.pucp.aeroluggage.servicios.ServicioVueloProgramado;
 import java.io.IOException;
 
 @Service
-public class ControladorCargadorDatos {
+public class DataLoaderController {
 
     private final ServicioAeropuerto servicioAeropuerto;
     private final ServicioVueloProgramado servicioVueloProgramado;
     private final JdbcTemplate jdbcTemplate;
 
-    public ControladorCargadorDatos(ServicioAeropuerto servicioAeropuerto,
+    public DataLoaderController(ServicioAeropuerto servicioAeropuerto,
                                      ServicioVueloProgramado servicioVueloProgramado,
                                      JdbcTemplate jdbcTemplate) {
         this.servicioAeropuerto = servicioAeropuerto;
