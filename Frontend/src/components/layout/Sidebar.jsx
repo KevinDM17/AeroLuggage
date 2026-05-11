@@ -1,6 +1,6 @@
 import { cn } from "../../utils/cn";
 import { Link, useLocation } from "react-router-dom";
-import { Activity, Menu, RotateCw, Spline, Calendar, Clock, Plane, Luggage, Building, Package } from "lucide-react";
+import { PanelLeftClose, RotateCw, Spline, Calendar, Clock, Plane, Building, Package } from "lucide-react";
 
 export default function Sidebar({ onClose }) {
   const location = useLocation();
@@ -20,11 +20,12 @@ export default function Sidebar({ onClose }) {
         </div>
         {onClose && (
           <button
+            type="button"
             onClick={onClose}
-            aria-label="Cerrar menú"
+            aria-label="Cerrar menú lateral"
             className="shrink-0 p-1.5 hover:bg-slate-800 rounded text-slate-400 hover:text-white transition-colors"
           >
-            <Menu className="w-5 h-5" />
+            <PanelLeftClose className="w-5 h-5" />
           </button>
         )}
       </div>
@@ -44,11 +45,27 @@ export default function Sidebar({ onClose }) {
             <span className="font-medium text-sm">Simulaciones</span>
           </div>
           <div className="flex flex-col gap-1 ml-[1.65rem] mt-1 pr-3 border-l border-slate-800 pl-4">
-            <Link to="#" className="flex items-center gap-3 px-3 py-2 rounded-lg bg-surface-2 text-slate-300 transition-colors text-sm hover:bg-slate-800">
+            <Link
+              to="/simulator/period"
+              className={cn(
+                "flex items-center gap-3 px-3 py-2 rounded-lg transition-colors text-sm",
+                location.pathname === "/simulator/period"
+                  ? "bg-blue-600/20 text-blue-400"
+                  : "bg-surface-2 text-slate-300 hover:bg-slate-800"
+              )}
+            >
               <Calendar className="w-4 h-4 text-blue-500" />
               Por periodo
             </Link>
-            <Link to="#" className="flex items-center gap-3 px-3 py-2 rounded-lg bg-surface-2 text-slate-300 transition-colors text-sm hover:bg-slate-800">
+            <Link
+              to="/simulator/collapse"
+              className={cn(
+                "flex items-center gap-3 px-3 py-2 rounded-lg transition-colors text-sm",
+                location.pathname === "/simulator/collapse"
+                  ? "bg-blue-600/20 text-blue-400"
+                  : "bg-surface-2 text-slate-300 hover:bg-slate-800"
+              )}
+            >
               <Clock className="w-4 h-4 text-blue-500" />
               Hasta colapso
             </Link>
@@ -78,7 +95,7 @@ export default function Sidebar({ onClose }) {
           </div>
           <div>
             <p className="text-sm font-bold text-slate-200">Operador 01</p>
-            <p className="text-[10px] text-slate-500 uppercase tracking-wider">Centro de Control</p>
+            <p className="text-[10px] text-slate-400 uppercase tracking-wider">Centro de Control</p>
           </div>
         </div>
       </div>

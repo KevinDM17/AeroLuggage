@@ -1,5 +1,5 @@
 import { useState } from "react";
-import { Filter, XCircle, Menu, ArrowRightCircle, MapPin, Globe } from "lucide-react";
+import { Filter, XCircle, PanelRightClose, ArrowRightCircle, MapPin, Globe } from "lucide-react";
 
 const FLIGHTS = [
   { id: "#ABC-123", status: "EN PROGRESO", capacity: 267, maxCapacity: 320, origin: "MAD", originDate: "18 JUN 2026", originTime: "16:30", originTz: "(GMT-4)", dest: "MIA", destDate: "18 JUN 2026", destTime: "18:00", destTz: "(GMT-5)", canCancel: false },
@@ -147,7 +147,7 @@ function OrderItem({ order }) {
             <div className="grid grid-cols-3 gap-2 mt-2">
               {order.bags.map(bag => (
                 <div key={bag} className="flex items-center gap-1 text-xs text-slate-300">
-                  {bag} <ArrowRightCircle className="w-3 h-3 text-slate-500" />
+                  {bag} <ArrowRightCircle className="w-3 h-3 text-slate-400" />
                 </div>
               ))}
             </div>
@@ -185,7 +185,7 @@ function RouteItem({ route }) {
               return (
                 <div key={j} className="flex items-center gap-3 my-1 relative">
                   <div className="w-[1px] h-6 bg-slate-700 absolute left-[5px] top-[-4px] z-0"></div>
-                  <div className="ml-6 text-[9px] text-slate-500 whitespace-nowrap overflow-hidden text-ellipsis">{stop.label}</div>
+                  <div className="ml-6 text-[10px] text-slate-400 whitespace-nowrap overflow-hidden text-ellipsis">{stop.label}</div>
                 </div>
               );
             }
@@ -211,7 +211,7 @@ function BagItem({ bag }) {
       {expanded && (
         <div className="cursor-default mt-2" onClick={e => e.stopPropagation()}>
           <div className="text-base font-bold text-slate-300 mb-2">{bag.location}</div>
-          <div className="text-xs text-slate-500 flex flex-col gap-0.5">
+          <div className="text-xs text-slate-400 flex flex-col gap-0.5">
             <div>Vuelo: <span className="text-slate-300">{bag.flight}</span></div>
             <div>Plan de ruta: <span className="text-slate-300">{bag.routePlan}</span></div>
             <div>Cliente: <span className="text-slate-300">{bag.client}</span></div>
@@ -234,11 +234,11 @@ function AirportItem({ apt }) {
       {expanded && (
         <div className="mt-4 flex justify-between items-start cursor-default" onClick={e => e.stopPropagation()}>
           <div className="flex flex-col gap-1 w-1/2">
-            <div className="flex items-center gap-1 text-[10px] text-slate-500"><MapPin className="w-3 h-3"/> {apt.name}</div>
-            <div className="flex items-center gap-1 text-[10px] text-slate-500"><Globe className="w-3 h-3"/> {apt.region}</div>
+            <div className="flex items-center gap-1 text-[10px] text-slate-400"><MapPin className="w-3 h-3"/> {apt.name}</div>
+            <div className="flex items-center gap-1 text-[10px] text-slate-400"><Globe className="w-3 h-3"/> {apt.region}</div>
           </div>
           <div className="flex flex-col w-1/2 pt-1">
-            <div className="text-[10px] text-slate-500 mb-2">{apt.used} de {apt.capacity} maletas</div>
+            <div className="text-[10px] text-slate-400 mb-2">{apt.used} de {apt.capacity} maletas</div>
             <div className="flex items-center gap-2">
               <div className="w-full h-2 bg-surface-2 rounded-full overflow-hidden border border-slate-800">
                 <div className={`h-full ${apt.color}`} style={{ width: `${apt.pct}%` }}></div>
@@ -259,18 +259,19 @@ export default function RightPanel({ onClose }) {
     <div className="w-[min(360px,90vw)] lg:w-[360px] shrink-0 bg-surface-1 border-l border-slate-800 h-screen flex flex-col relative z-[9999]">
       <div className="flex items-center border-b border-slate-800">
         <button
+          type="button"
           onClick={onClose}
-          aria-label="Cerrar panel"
+          aria-label="Cerrar panel de detalle"
           className="p-4 hover:bg-slate-800 text-slate-400 hover:text-white transition-colors shrink-0"
         >
-          <Menu className="w-5 h-5" />
+          <PanelRightClose className="w-5 h-5" />
         </button>
         <div className="flex flex-1 overflow-x-auto no-scrollbar">
           {tabs.map((tab) => (
             <button 
               key={tab} 
               onClick={() => setActiveTab(tab)}
-              className={`px-3 py-4 text-xs font-semibold whitespace-nowrap ${activeTab === tab ? "border-b-2 border-slate-300 text-slate-200" : "text-slate-500 hover:text-slate-300"}`}
+              className={`px-3 py-4 text-xs font-semibold whitespace-nowrap ${activeTab === tab ? "border-b-2 border-slate-300 text-slate-200" : "text-slate-400 hover:text-slate-200"}`}
             >
               {tab}
             </button>

@@ -1,6 +1,6 @@
 import { useState, useEffect } from "react";
 import { Outlet, useLocation } from "react-router-dom";
-import { Menu } from "lucide-react";
+import { PanelLeftOpen, PanelRightOpen } from "lucide-react";
 import Sidebar from "./Sidebar";
 import RightPanel from "./RightPanel";
 
@@ -17,7 +17,7 @@ export default function MainLayout() {
   const [rightOpen, setRightOpen] = useState(getIsDesktop);
   const location = useLocation();
 
-  const isSimulator = location.pathname === "/";
+  const isSimulator = location.pathname === "/" || location.pathname.startsWith("/simulator");
 
   useEffect(() => {
     const handleResize = () => {
@@ -53,11 +53,12 @@ export default function MainLayout() {
     <div className="flex h-screen overflow-hidden bg-surface-1 text-slate-200 font-sans relative">
       {showLeftHamburger && (
         <button
+          type="button"
           onClick={() => setLeftOpen(true)}
-          aria-label="Abrir menú"
+          aria-label="Abrir menú lateral"
           className="fixed top-3 left-3 z-[10001] p-2 bg-surface-1/90 backdrop-blur border border-slate-700 rounded-lg text-slate-300 hover:text-white hover:bg-surface-2 transition-colors shadow-lg"
         >
-          <Menu className="w-5 h-5" />
+          <PanelLeftOpen className="w-5 h-5" />
         </button>
       )}
 
@@ -92,11 +93,12 @@ export default function MainLayout() {
 
       {showRightHamburger && (
         <button
+          type="button"
           onClick={() => setRightOpen(true)}
-          aria-label="Abrir panel"
+          aria-label="Abrir panel de detalle"
           className="fixed top-3 right-3 z-[10001] p-2 bg-surface-1/90 backdrop-blur border border-slate-700 rounded-lg text-slate-300 hover:text-white hover:bg-surface-2 transition-colors shadow-lg"
         >
-          <Menu className="w-5 h-5" />
+          <PanelRightOpen className="w-5 h-5" />
         </button>
       )}
 

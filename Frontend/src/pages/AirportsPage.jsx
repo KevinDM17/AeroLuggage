@@ -1,5 +1,6 @@
 import { useState } from "react";
-import { Edit2, EyeOff, Search, Plus, MapPin, Search as SearchIcon, UploadCloud, X } from "lucide-react";
+import { Edit2, EyeOff, Plus } from "lucide-react";
+import Modal from "../components/ui/Modal";
 
 const AIRPORTS_DATA = [
   { iata: "LIM", city: "Lima, Perú", continent: "Sudamérica", used: 3200, capacity: 5000, pct: 64, color: "bg-success" },
@@ -11,7 +12,6 @@ const AIRPORTS_DATA = [
 
 export default function AirportsPage() {
   const [showAddModal, setShowAddModal] = useState(false);
-  const [showUploadModal, setShowUploadModal] = useState(false);
 
   return (
     <div className="flex-1 bg-surface-0 flex flex-col min-h-0 overflow-y-auto w-full h-full p-4 sm:p-8 text-slate-200">
@@ -22,6 +22,7 @@ export default function AirportsPage() {
           <p className="text-slate-400 text-base sm:text-lg">Gestiona la capacidad y estado de los nodos logísticos globales.</p>
         </div>
         <button
+          type="button"
           onClick={() => setShowAddModal(true)}
           className="bg-blue-600 hover:bg-blue-500 text-white px-5 py-2.5 rounded-lg flex items-center gap-2 font-medium transition-colors shrink-0 w-full sm:w-auto justify-center"
         >
@@ -60,14 +61,14 @@ export default function AirportsPage() {
                     </div>
                     <div className="w-full h-1.5 bg-surface-2 border border-slate-800 rounded-full overflow-hidden flex items-center pr-12 relative">
                       <div className={`h-full ${apt.color}`} style={{ width: `${apt.pct}%` }}></div>
-                      <span className="absolute right-0 text-[10px] text-slate-500">{apt.capacity}</span>
+                      <span className="absolute right-0 text-[10px] text-slate-400">{apt.capacity}</span>
                     </div>
                   </div>
                 </td>
                 <td className="py-4 px-6 text-right">
-                  <div className="flex justify-end gap-3 opacity-0 group-hover:opacity-100 transition-opacity text-slate-500">
-                     <button className="hover:text-blue-400 transition-colors"><Edit2 className="w-4 h-4" /></button>
-                     <button className="hover:text-red-400 transition-colors"><EyeOff className="w-4 h-4" /></button>
+                  <div className="flex justify-end gap-1 opacity-60 sm:opacity-0 sm:group-hover:opacity-100 transition-opacity text-slate-400">
+                     <button type="button" aria-label={`Editar ${apt.iata}`} className="p-2 rounded-lg hover:bg-surface-2 hover:text-blue-400 transition-colors"><Edit2 className="w-4 h-4" /></button>
+                     <button type="button" aria-label={`Ocultar ${apt.iata}`} className="p-2 rounded-lg hover:bg-surface-2 hover:text-red-400 transition-colors"><EyeOff className="w-4 h-4" /></button>
                   </div>
                 </td>
               </tr>
@@ -76,15 +77,9 @@ export default function AirportsPage() {
         </table>
       </div>
 
-      {showAddModal && (
-        <div className="fixed inset-0 z-[10000] flex items-center justify-center bg-black/60 backdrop-blur-sm p-4">
-          <div className="bg-surface-1 border border-slate-800 rounded-xl w-full max-w-4xl overflow-hidden shadow-2xl flex flex-col max-h-full">
-            <div className="p-8 overflow-y-auto">
-              <button onClick={() => setShowAddModal(false)} className="mb-6 flex items-center gap-2 bg-surface-2 hover:bg-slate-800 px-4 py-2 rounded-lg text-sm transition-colors text-slate-300 border border-slate-800">
-                &larr; Volver al listado
-              </button>
-
-              <h2 className="text-3xl font-bold text-white mb-2">Nuevo Aeropuerto</h2>
+      <Modal open={showAddModal} onClose={() => setShowAddModal(false)} title="Nuevo Aeropuerto" maxWidth="max-w-4xl">
+        <div className="p-8 overflow-y-auto">
+              <h2 className="text-2xl sm:text-3xl font-bold text-white mb-2">Nuevo Aeropuerto</h2>
               <div className="grid grid-cols-1 md:grid-cols-2 gap-x-12 gap-y-6 mt-8">
                 <div className="flex flex-col gap-2">
                   <label className="font-bold text-slate-200">Código IATA (3 dígitos)</label>
@@ -94,10 +89,10 @@ export default function AirportsPage() {
                 <div className="flex flex-col gap-2">
                   <label className="font-bold text-blue-400">Latitud</label>
                   <div className="flex gap-2">
-                     <div className="flex-1 flex flex-col gap-1"><span className="text-[10px] text-slate-500 uppercase">Grados</span><input className="bg-surface-2 border border-slate-800 rounded-lg px-3 py-2 outline-none w-full" placeholder="0" /></div>
-                     <div className="flex-1 flex flex-col gap-1"><span className="text-[10px] text-slate-500 uppercase">Minutos</span><input className="bg-surface-2 border border-slate-800 rounded-lg px-3 py-2 outline-none w-full" placeholder="0" /></div>
-                     <div className="flex-1 flex flex-col gap-1"><span className="text-[10px] text-slate-500 uppercase">Segundos</span><input className="bg-surface-2 border border-slate-800 rounded-lg px-3 py-2 outline-none w-full" placeholder="0" /></div>
-                     <div className="w-16 flex flex-col gap-1"><span className="text-[10px] text-slate-500 uppercase">Dir</span><input className="bg-surface-2 border border-slate-800 rounded-lg px-3 py-2 outline-none w-full text-center" placeholder="N" /></div>
+                     <div className="flex-1 flex flex-col gap-1"><span className="text-[10px] text-slate-400 uppercase">Grados</span><input className="bg-surface-2 border border-slate-800 rounded-lg px-3 py-2 outline-none w-full" placeholder="0" /></div>
+                     <div className="flex-1 flex flex-col gap-1"><span className="text-[10px] text-slate-400 uppercase">Minutos</span><input className="bg-surface-2 border border-slate-800 rounded-lg px-3 py-2 outline-none w-full" placeholder="0" /></div>
+                     <div className="flex-1 flex flex-col gap-1"><span className="text-[10px] text-slate-400 uppercase">Segundos</span><input className="bg-surface-2 border border-slate-800 rounded-lg px-3 py-2 outline-none w-full" placeholder="0" /></div>
+                     <div className="w-16 flex flex-col gap-1"><span className="text-[10px] text-slate-400 uppercase">Dir</span><input className="bg-surface-2 border border-slate-800 rounded-lg px-3 py-2 outline-none w-full text-center" placeholder="N" /></div>
                   </div>
                 </div>
 
@@ -109,10 +104,10 @@ export default function AirportsPage() {
                 <div className="flex flex-col gap-2">
                   <label className="font-bold text-blue-400">Longitud</label>
                   <div className="flex gap-2">
-                     <div className="flex-1 flex flex-col gap-1"><span className="text-[10px] text-slate-500 uppercase">Grados</span><input className="bg-surface-2 border border-slate-800 rounded-lg px-3 py-2 outline-none w-full" placeholder="0" /></div>
-                     <div className="flex-1 flex flex-col gap-1"><span className="text-[10px] text-slate-500 uppercase">Minutos</span><input className="bg-surface-2 border border-slate-800 rounded-lg px-3 py-2 outline-none w-full" placeholder="0" /></div>
-                     <div className="flex-1 flex flex-col gap-1"><span className="text-[10px] text-slate-500 uppercase">Segundos</span><input className="bg-surface-2 border border-slate-800 rounded-lg px-3 py-2 outline-none w-full" placeholder="0" /></div>
-                     <div className="w-16 flex flex-col gap-1"><span className="text-[10px] text-slate-500 uppercase">Dir</span><input className="bg-surface-2 border border-slate-800 rounded-lg px-3 py-2 outline-none w-full text-center" placeholder="E" /></div>
+                     <div className="flex-1 flex flex-col gap-1"><span className="text-[10px] text-slate-400 uppercase">Grados</span><input className="bg-surface-2 border border-slate-800 rounded-lg px-3 py-2 outline-none w-full" placeholder="0" /></div>
+                     <div className="flex-1 flex flex-col gap-1"><span className="text-[10px] text-slate-400 uppercase">Minutos</span><input className="bg-surface-2 border border-slate-800 rounded-lg px-3 py-2 outline-none w-full" placeholder="0" /></div>
+                     <div className="flex-1 flex flex-col gap-1"><span className="text-[10px] text-slate-400 uppercase">Segundos</span><input className="bg-surface-2 border border-slate-800 rounded-lg px-3 py-2 outline-none w-full" placeholder="0" /></div>
+                     <div className="w-16 flex flex-col gap-1"><span className="text-[10px] text-slate-400 uppercase">Dir</span><input className="bg-surface-2 border border-slate-800 rounded-lg px-3 py-2 outline-none w-full text-center" placeholder="E" /></div>
                   </div>
                 </div>
 
@@ -139,14 +134,12 @@ export default function AirportsPage() {
               </div>
 
               <div className="mt-12 flex justify-end gap-4 border-t border-slate-800 pt-6">
-                 <button onClick={() => setShowAddModal(false)} className="font-bold text-slate-300 hover:text-white px-4 py-2">Cancelar</button>
-                 <button className="bg-blue-600 hover:bg-blue-500 text-white font-bold px-8 py-3 rounded-lg transition-colors">Guardar Aeropuerto</button>
+                 <button type="button" onClick={() => setShowAddModal(false)} className="font-bold text-slate-300 hover:text-white px-4 py-2">Cancelar</button>
+                 <button type="button" className="bg-blue-600 hover:bg-blue-500 text-white font-bold px-6 py-2.5 rounded-lg transition-colors">Guardar Aeropuerto</button>
               </div>
 
-            </div>
-          </div>
         </div>
-      )}
+      </Modal>
     </div>
   );
 }
