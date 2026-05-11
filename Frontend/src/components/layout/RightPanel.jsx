@@ -256,9 +256,13 @@ export default function RightPanel({ onClose }) {
   const tabs = ["Vuelos", "Pedidos", "Rutas", "Maletas", "Aerop."];
 
   return (
-    <div className="w-[360px] shrink-0 bg-[#0B0E14] border-l border-slate-800 h-screen flex flex-col relative z-[9999]">
+    <div className="w-[min(360px,90vw)] lg:w-[360px] shrink-0 bg-[#0B0E14] border-l border-slate-800 h-screen flex flex-col relative z-[9999]">
       <div className="flex items-center border-b border-slate-800">
-        <button onClick={onClose} className="p-4 hover:bg-slate-800 text-slate-400 transition-colors">
+        <button
+          onClick={onClose}
+          aria-label="Cerrar panel"
+          className="p-4 hover:bg-slate-800 text-slate-400 hover:text-white transition-colors shrink-0"
+        >
           <Menu className="w-5 h-5" />
         </button>
         <div className="flex flex-1 overflow-x-auto no-scrollbar">

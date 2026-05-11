@@ -18,34 +18,34 @@ export default function OrdersPage() {
   const [showAddModal, setShowAddModal] = useState(false);
 
   return (
-    <div className="flex-1 bg-[#050810] flex flex-col min-h-0 overflow-y-auto w-full h-full p-8 text-slate-200">
-      <div className="flex justify-between items-start mb-8">
+    <div className="flex-1 bg-[#050810] flex flex-col min-h-0 overflow-y-auto w-full h-full p-4 sm:p-8 text-slate-200">
+      <div className="flex flex-col sm:flex-row justify-between sm:items-start gap-4 mb-8 pl-12 sm:pl-14">
         <div>
-          <h1 className="text-4xl font-extrabold text-white mb-2">Tabla de Pedidos</h1>
-          <p className="text-slate-400 text-lg">Administra y registra los envíos masivos de maletas por cliente.</p>
+          <h1 className="text-2xl sm:text-4xl font-extrabold text-white mb-2">Tabla de Pedidos</h1>
+          <p className="text-slate-400 text-base sm:text-lg">Administra y registra los envíos masivos de maletas por cliente.</p>
         </div>
-        <button 
+        <button
           onClick={() => setShowAddModal(true)}
-          className="bg-blue-600 hover:bg-blue-500 text-white px-5 py-2.5 rounded-lg flex items-center gap-2 font-medium transition-colors"
+          className="bg-blue-600 hover:bg-blue-500 text-white px-5 py-2.5 rounded-lg flex items-center gap-2 font-medium transition-colors shrink-0 w-full sm:w-auto justify-center"
         >
           <Plus className="w-5 h-5" /> Registrar Envío
         </button>
       </div>
 
-      <div className="bg-[#0B0E14] border border-slate-800 rounded-xl overflow-hidden p-6 pb-2">
+      <div className="bg-[#0B0E14] border border-slate-800 rounded-xl overflow-x-auto p-4 sm:p-6 pb-2">
         {/* Search Bar */}
         <div className="mb-6 max-w-xl">
            <div className="relative">
               <SearchIcon className="absolute left-4 top-1/2 -translate-y-1/2 w-4 h-4 text-slate-500" />
-              <input 
-                 type="text" 
-                 placeholder="Buscar por ID, cliente o ruta..." 
+              <input
+                 type="text"
+                 placeholder="Buscar por ID, cliente o ruta..."
                  className="w-full bg-[#151b2b] border border-slate-800 rounded-full pl-11 pr-4 py-2.5 text-sm outline-none focus:border-blue-500 text-white placeholder-slate-500"
               />
            </div>
         </div>
 
-        <table className="w-full text-left border-collapse">
+        <table className="w-full text-left border-collapse min-w-[640px]">
           <thead>
             <tr className="border-b border-slate-800 text-slate-400 text-sm">
               <th className="py-4 px-4 font-medium">ID Envío</th>

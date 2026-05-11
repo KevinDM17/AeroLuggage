@@ -20,30 +20,30 @@ export default function FlightsPage() {
   const [showUploadModal, setShowUploadModal] = useState(false);
 
   return (
-    <div className="flex-1 bg-[#050810] flex flex-col min-h-0 overflow-y-auto w-full h-full p-8 text-slate-200">
-      <div className="flex justify-between items-start mb-8">
+    <div className="flex-1 bg-[#050810] flex flex-col min-h-0 overflow-y-auto w-full h-full p-4 sm:p-8 text-slate-200">
+      <div className="flex flex-col lg:flex-row justify-between lg:items-start gap-4 mb-8 pl-12 sm:pl-14">
         <div>
-          <h1 className="text-4xl font-extrabold text-white mb-2">Tabla de Vuelos</h1>
-          <p className="text-slate-400 text-lg">Monitorea y programa la capacidad de los vuelos operativos.</p>
+          <h1 className="text-2xl sm:text-4xl font-extrabold text-white mb-2">Tabla de Vuelos</h1>
+          <p className="text-slate-400 text-base sm:text-lg">Monitorea y programa la capacidad de los vuelos operativos.</p>
         </div>
-        <div className="flex items-center gap-3">
-          <button 
+        <div className="flex flex-col sm:flex-row items-stretch sm:items-center gap-3 shrink-0">
+          <button
              onClick={() => setShowUploadModal(true)}
-             className="bg-white hover:bg-slate-100 text-slate-900 px-5 py-2.5 rounded-lg flex items-center gap-2 font-medium transition-colors border border-transparent shadow-sm"
+             className="bg-white hover:bg-slate-100 text-slate-900 px-5 py-2.5 rounded-lg flex items-center gap-2 font-medium transition-colors border border-transparent shadow-sm justify-center"
           >
             <UploadCloud className="w-5 h-5 text-slate-500" /> Carga Masiva
           </button>
-          <button 
+          <button
              onClick={() => setShowAddModal(true)}
-             className="bg-blue-600 hover:bg-blue-500 text-white px-5 py-2.5 rounded-lg flex items-center gap-2 font-medium transition-colors"
+             className="bg-blue-600 hover:bg-blue-500 text-white px-5 py-2.5 rounded-lg flex items-center gap-2 font-medium transition-colors justify-center"
           >
             <Plus className="w-5 h-5" /> Programar Vuelo
           </button>
         </div>
       </div>
 
-      <div className="bg-[#0B0E14] border border-slate-800 rounded-xl overflow-hidden">
-        <table className="w-full text-left border-collapse">
+      <div className="bg-[#0B0E14] border border-slate-800 rounded-xl overflow-x-auto">
+        <table className="w-full text-left border-collapse min-w-[720px]">
           <thead>
             <tr className="border-b border-slate-800 text-slate-400 text-sm">
               <th className="py-4 px-6 font-medium">Vuelo</th>

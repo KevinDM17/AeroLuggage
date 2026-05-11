@@ -7,24 +7,24 @@ export default function Sidebar({ onClose }) {
 
   return (
     <div className="w-64 shrink-0 bg-[#0B0E14] border-r border-slate-800 h-screen flex flex-col text-slate-300 relative z-[9999]">
-      <div className="px-6 py-5 flex items-center justify-between border-b border-transparent">
-        <div className="flex items-center gap-3">
-          <div className="text-blue-500">
-            {/* Hexagon approximation */}
+      <div className="px-4 py-5 flex items-center justify-between gap-2 border-b border-transparent">
+        <div className="flex items-center gap-3 min-w-0">
+          <div className="text-blue-500 shrink-0">
             <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" className="w-7 h-7">
               <path d="M21 16V8a2 2 0 0 0-1-1.73l-7-4a2 2 0 0 0-2 0l-7 4A2 2 0 0 0 3 8v8a2 2 0 0 0 1 1.73l7 4a2 2 0 0 0 2 0l7-4A2 2 0 0 0 21 16z"></path>
               <polyline points="3.27 6.96 12 12.01 20.73 6.96"></polyline>
               <line x1="12" y1="22.08" x2="12" y2="12"></line>
             </svg>
           </div>
-          <span className="text-lg font-bold text-white tracking-wide">AeroLuggage</span>
+          <span className="text-lg font-bold text-white tracking-wide truncate">AeroLuggage</span>
         </div>
-      </div>
-
-      <div className="px-4 pb-2 flex justify-end min-h-[36px]">
         {onClose && (
-          <button onClick={onClose} className="p-1 hover:bg-slate-800 rounded">
-            <Menu className="w-5 h-5 text-slate-400" />
+          <button
+            onClick={onClose}
+            aria-label="Cerrar menú"
+            className="shrink-0 p-1.5 hover:bg-slate-800 rounded text-slate-400 hover:text-white transition-colors"
+          >
+            <Menu className="w-5 h-5" />
           </button>
         )}
       </div>
