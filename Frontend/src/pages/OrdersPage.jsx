@@ -8,8 +8,8 @@ const ORDERS_DATA = [
 ];
 
 function getStatusBadge(status) {
-   if (status === 'Enviado') return 'border-[#00ff88]/30 text-[#00ff88] bg-transparent';
-   if (status === 'Pendiente') return 'border-[#ffd700]/30 text-[#ffd700] bg-transparent';
+   if (status === 'Enviado') return 'border-success/30 text-success bg-transparent';
+   if (status === 'Pendiente') return 'border-warning/30 text-warning bg-transparent';
    if (status === 'Procesando') return 'border-blue-500/30 text-blue-400 bg-transparent';
    return 'border-slate-700 text-slate-400';
 }
@@ -18,7 +18,7 @@ export default function OrdersPage() {
   const [showAddModal, setShowAddModal] = useState(false);
 
   return (
-    <div className="flex-1 bg-[#050810] flex flex-col min-h-0 overflow-y-auto w-full h-full p-4 sm:p-8 text-slate-200">
+    <div className="flex-1 bg-surface-0 flex flex-col min-h-0 overflow-y-auto w-full h-full p-4 sm:p-8 text-slate-200">
       <div className="flex flex-col sm:flex-row justify-between sm:items-start gap-4 mb-8 pl-12 sm:pl-14">
         <div>
           <h1 className="text-2xl sm:text-4xl font-extrabold text-white mb-2">Tabla de Pedidos</h1>
@@ -32,7 +32,7 @@ export default function OrdersPage() {
         </button>
       </div>
 
-      <div className="bg-[#0B0E14] border border-slate-800 rounded-xl overflow-x-auto p-4 sm:p-6 pb-2">
+      <div className="bg-surface-1 border border-slate-800 rounded-xl overflow-x-auto p-4 sm:p-6 pb-2">
         {/* Search Bar */}
         <div className="mb-6 max-w-xl">
            <div className="relative">
@@ -40,7 +40,7 @@ export default function OrdersPage() {
               <input
                  type="text"
                  placeholder="Buscar por ID, cliente o ruta..."
-                 className="w-full bg-[#151b2b] border border-slate-800 rounded-full pl-11 pr-4 py-2.5 text-sm outline-none focus:border-blue-500 text-white placeholder-slate-500"
+                 className="w-full bg-surface-2 border border-slate-800 rounded-full pl-11 pr-4 py-2.5 text-sm outline-none focus:border-blue-500 text-white placeholder-slate-500"
               />
            </div>
         </div>
@@ -58,7 +58,7 @@ export default function OrdersPage() {
           </thead>
           <tbody>
             {ORDERS_DATA.map((ord, i) => (
-              <tr key={i} className="border-b border-slate-800/50 hover:bg-[#151b2b] transition-colors">
+              <tr key={i} className="border-b border-slate-800/50 hover:bg-surface-2 transition-colors">
                 <td className="py-5 px-4 font-bold text-blue-400">{ord.id}</td>
                 <td className="py-5 px-4 font-bold text-slate-200 text-sm">{ord.client}</td>
                 <td className="py-5 px-4 text-slate-300 text-sm font-medium">{ord.route}</td>
@@ -85,7 +85,7 @@ export default function OrdersPage() {
 
       {showAddModal && (
         <div className="fixed inset-0 z-[10000] flex items-center justify-center bg-black/60 backdrop-blur-sm p-4">
-          <div className="bg-[#151b2b] border border-slate-800 rounded-2xl w-full max-w-lg overflow-hidden shadow-2xl flex flex-col p-8 relative">
+          <div className="bg-surface-2 border border-slate-800 rounded-2xl w-full max-w-lg overflow-hidden shadow-2xl flex flex-col p-8 relative">
              <button onClick={() => setShowAddModal(false)} className="absolute top-6 right-6 text-slate-500 hover:text-white">✕</button>
 
              <div className="flex items-center gap-2 mb-2 text-blue-400 font-bold">
@@ -98,13 +98,13 @@ export default function OrdersPage() {
                 <div className="grid grid-cols-2 gap-4">
                    <div className="flex flex-col gap-1.5">
                      <label className="font-bold text-slate-200 text-xs">Origen</label>
-                     <select className="bg-[#0B0E14] border border-slate-800 rounded-lg px-4 py-2.5 outline-none focus:border-blue-500 text-slate-400 text-sm appearance-none">
+                     <select className="bg-surface-1 border border-slate-800 rounded-lg px-4 py-2.5 outline-none focus:border-blue-500 text-slate-400 text-sm appearance-none">
                        <option>Origen</option>
                      </select>
                    </div>
                    <div className="flex flex-col gap-1.5">
                      <label className="font-bold text-slate-200 text-xs">Destino</label>
-                     <select className="bg-[#0B0E14] border border-slate-800 rounded-lg px-4 py-2.5 outline-none focus:border-blue-500 text-slate-400 text-sm appearance-none">
+                     <select className="bg-surface-1 border border-slate-800 rounded-lg px-4 py-2.5 outline-none focus:border-blue-500 text-slate-400 text-sm appearance-none">
                        <option>Destino</option>
                      </select>
                    </div>
@@ -112,23 +112,23 @@ export default function OrdersPage() {
 
                 <div className="flex flex-col gap-1.5">
                   <label className="font-bold text-slate-200 text-xs">Cantidad de Maletas</label>
-                  <input type="text" className="bg-[#0B0E14] border border-slate-800 rounded-lg px-4 py-2.5 outline-none focus:border-blue-500 text-sm text-white" placeholder="0" />
+                  <input type="text" className="bg-surface-1 border border-slate-800 rounded-lg px-4 py-2.5 outline-none focus:border-blue-500 text-sm text-white" placeholder="0" />
                 </div>
 
                 <div className="grid grid-cols-2 gap-4">
                    <div className="flex flex-col gap-1.5 relative">
                      <label className="font-bold text-slate-200 text-xs">Fecha de Registro</label>
-                     <input type="date" className="bg-[#0B0E14] border border-slate-800 rounded-lg px-4 py-2.5 outline-none focus:border-blue-500 text-slate-400 text-sm" value="2026-04-14" readOnly />
+                     <input type="date" className="bg-surface-1 border border-slate-800 rounded-lg px-4 py-2.5 outline-none focus:border-blue-500 text-slate-400 text-sm" value="2026-04-14" readOnly />
                    </div>
                    <div className="flex flex-col gap-1.5 relative">
                      <label className="font-bold text-slate-200 text-xs">Hora de Registro</label>
-                     <input type="time" className="bg-[#0B0E14] border border-slate-800 rounded-lg px-4 py-2.5 outline-none focus:border-blue-500 text-slate-400 text-sm" value="17:27" readOnly />
+                     <input type="time" className="bg-surface-1 border border-slate-800 rounded-lg px-4 py-2.5 outline-none focus:border-blue-500 text-slate-400 text-sm" value="17:27" readOnly />
                    </div>
                 </div>
 
                 <div className="flex flex-col gap-1.5">
                   <label className="font-bold text-slate-200 text-xs">ID de Cliente</label>
-                  <input type="text" className="bg-[#0B0E14] border border-slate-800 rounded-lg px-4 py-2.5 outline-none focus:border-blue-500 text-sm text-slate-400" placeholder="  CUST-000" />
+                  <input type="text" className="bg-surface-1 border border-slate-800 rounded-lg px-4 py-2.5 outline-none focus:border-blue-500 text-sm text-slate-400" placeholder="  CUST-000" />
                 </div>
              </div>
 

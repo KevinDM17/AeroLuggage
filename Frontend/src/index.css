@@ -1,15 +1,32 @@
 @import "tailwindcss";
 @import "leaflet/dist/leaflet.css";
 
+@theme {
+  /* Surfaces — niveles de elevación, del más profundo al más alto */
+  --color-surface-0: #050810;
+  --color-surface-1: #0B0E14;
+  --color-surface-2: #151b2b;
+  --color-surface-3: #1a2235;
+
+  /* Canvas — fondo especial del simulador (mapa) */
+  --color-canvas: #1e1b4b;
+
+  /* Semantic — colores de semáforo y estados */
+  --color-success: #00ff88;
+  --color-warning: #ffd700;
+  --color-danger:  #ff3b30;
+  --color-info:    #3abff8;
+}
+
 /* Leaflet map styles overriding reset defaults if necessary */
 .leaflet-container {
   font-family: inherit;
-  background-color: #1e1b4b !important; /* dark blue to match default tiles absence somewhat */
+  background-color: var(--color-canvas) !important;
 }
 
 @layer base {
   body {
-    @apply bg-[#0B0E14] text-slate-200 overflow-hidden;
+    @apply bg-surface-1 text-slate-200 overflow-hidden;
   }
 }
 
@@ -18,8 +35,7 @@
     display: none;
   }
   .no-scrollbar {
-    -ms-overflow-style: none;  /* IE and Edge */
-    scrollbar-width: none;  /* Firefox */
+    -ms-overflow-style: none;
+    scrollbar-width: none;
   }
 }
-

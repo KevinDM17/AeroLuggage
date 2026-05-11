@@ -6,7 +6,7 @@ export default function Sidebar({ onClose }) {
   const location = useLocation();
 
   return (
-    <div className="w-64 shrink-0 bg-[#0B0E14] border-r border-slate-800 h-screen flex flex-col text-slate-300 relative z-[9999]">
+    <div className="w-64 shrink-0 bg-surface-1 border-r border-slate-800 h-screen flex flex-col text-slate-300 relative z-[9999]">
       <div className="px-4 py-5 flex items-center justify-between gap-2 border-b border-transparent">
         <div className="flex items-center gap-3 min-w-0">
           <div className="text-blue-500 shrink-0">
@@ -44,11 +44,11 @@ export default function Sidebar({ onClose }) {
             <span className="font-medium text-sm">Simulaciones</span>
           </div>
           <div className="flex flex-col gap-1 ml-[1.65rem] mt-1 pr-3 border-l border-slate-800 pl-4">
-            <Link to="#" className="flex items-center gap-3 px-3 py-2 rounded-lg bg-[#151b2b] text-slate-300 transition-colors text-sm hover:bg-slate-800">
+            <Link to="#" className="flex items-center gap-3 px-3 py-2 rounded-lg bg-surface-2 text-slate-300 transition-colors text-sm hover:bg-slate-800">
               <Calendar className="w-4 h-4 text-blue-500" />
               Por periodo
             </Link>
-            <Link to="#" className="flex items-center gap-3 px-3 py-2 rounded-lg bg-[#151b2b] text-slate-300 transition-colors text-sm hover:bg-slate-800">
+            <Link to="#" className="flex items-center gap-3 px-3 py-2 rounded-lg bg-surface-2 text-slate-300 transition-colors text-sm hover:bg-slate-800">
               <Clock className="w-4 h-4 text-blue-500" />
               Hasta colapso
             </Link>

@@ -2,15 +2,15 @@ import { useState } from "react";
 import { Edit2, Plus, UploadCloud, PieChart, Clock } from "lucide-react";
 
 const FLIGHTS_DATA = [
-  { id: "LA201", route: "LIM ➔ MIA", depTime: "10:00 (GMT -5)", arrTime: "16:30 (GMT -5)", status: "Finalizado", used: 280, capacity: 300, pct: 93, color: "bg-[#ff3b30]" },
-  { id: "AV105", route: "BOG ➔ MAD", depTime: "14:00 (GMT -5)", arrTime: "06:00 (GMT +1)", status: "Cancelado", used: 395, capacity: 400, pct: 99, color: "bg-[#ff3b30]" },
-  { id: "G3102", route: "GRU ➔ LIM", depTime: "08:00 (GMT -3)", arrTime: "11:30 (GMT -5)", status: "En progreso", used: 150, capacity: 250, pct: 60, color: "bg-[#00ff88]" },
-  { id: "AA908", route: "MIA ➔ MAD", depTime: "18:00 (GMT -5)", arrTime: "08:30 (GMT +1)", status: "Confirmado", used: 300, capacity: 350, pct: 86, color: "bg-[#ffd700]" },
+  { id: "LA201", route: "LIM ➔ MIA", depTime: "10:00 (GMT -5)", arrTime: "16:30 (GMT -5)", status: "Finalizado", used: 280, capacity: 300, pct: 93, color: "bg-danger" },
+  { id: "AV105", route: "BOG ➔ MAD", depTime: "14:00 (GMT -5)", arrTime: "06:00 (GMT +1)", status: "Cancelado", used: 395, capacity: 400, pct: 99, color: "bg-danger" },
+  { id: "G3102", route: "GRU ➔ LIM", depTime: "08:00 (GMT -3)", arrTime: "11:30 (GMT -5)", status: "En progreso", used: 150, capacity: 250, pct: 60, color: "bg-success" },
+  { id: "AA908", route: "MIA ➔ MAD", depTime: "18:00 (GMT -5)", arrTime: "08:30 (GMT +1)", status: "Confirmado", used: 300, capacity: 350, pct: 86, color: "bg-warning" },
 ];
 
 function getStatusBadge(status) {
-  if (status === 'Finalizado' || status === 'Confirmado') return 'bg-[#00ff88]/10 text-[#00ff88] border-[#00ff88]/20';
-  if (status === 'Cancelado') return 'bg-[#ff3b30]/10 text-[#ff3b30] border-[#ff3b30]/20';
+  if (status === 'Finalizado' || status === 'Confirmado') return 'bg-success/10 text-success border-success/20';
+  if (status === 'Cancelado') return 'bg-danger/10 text-danger border-danger/20';
   if (status === 'En progreso') return 'bg-blue-500/10 text-blue-400 border-blue-500/20';
   return 'bg-slate-800 text-slate-300 border-slate-700';
 }
@@ -20,7 +20,7 @@ export default function FlightsPage() {
   const [showUploadModal, setShowUploadModal] = useState(false);
 
   return (
-    <div className="flex-1 bg-[#050810] flex flex-col min-h-0 overflow-y-auto w-full h-full p-4 sm:p-8 text-slate-200">
+    <div className="flex-1 bg-surface-0 flex flex-col min-h-0 overflow-y-auto w-full h-full p-4 sm:p-8 text-slate-200">
       <div className="flex flex-col lg:flex-row justify-between lg:items-start gap-4 mb-8 pl-12 sm:pl-14">
         <div>
           <h1 className="text-2xl sm:text-4xl font-extrabold text-white mb-2">Tabla de Vuelos</h1>
@@ -42,7 +42,7 @@ export default function FlightsPage() {
         </div>
       </div>
 
-      <div className="bg-[#0B0E14] border border-slate-800 rounded-xl overflow-x-auto">
+      <div className="bg-surface-1 border border-slate-800 rounded-xl overflow-x-auto">
         <table className="w-full text-left border-collapse min-w-[720px]">
           <thead>
             <tr className="border-b border-slate-800 text-slate-400 text-sm">
@@ -56,7 +56,7 @@ export default function FlightsPage() {
           </thead>
           <tbody>
             {FLIGHTS_DATA.map((fl, i) => (
-              <tr key={i} className="border-b border-slate-800/50 hover:bg-[#151b2b] transition-colors group">
+              <tr key={i} className="border-b border-slate-800/50 hover:bg-surface-2 transition-colors group">
                 <td className="py-4 px-6 font-bold text-blue-400">{fl.id}</td>
                 <td className="py-4 px-6 text-slate-300 font-medium">
                   {fl.route}
@@ -76,7 +76,7 @@ export default function FlightsPage() {
                       <span>{fl.used} / {fl.capacity}</span>
                       <span className="font-bold border-white/10">{fl.pct}%</span>
                     </div>
-                    <div className="w-full h-1.5 bg-[#151b2b] border border-slate-800 rounded-full overflow-hidden">
+                    <div className="w-full h-1.5 bg-surface-2 border border-slate-800 rounded-full overflow-hidden">
                       <div className={`h-full ${fl.color}`} style={{ width: `${fl.pct}%` }}></div>
                     </div>
                   </div>
@@ -94,7 +94,7 @@ export default function FlightsPage() {
 
       {showUploadModal && (
         <div className="fixed inset-0 z-[10000] flex items-center justify-center bg-black/60 backdrop-blur-sm p-4">
-          <div className="bg-[#151b2b] border border-slate-800 rounded-2xl w-full max-w-sm overflow-hidden shadow-2xl flex flex-col p-6">
+          <div className="bg-surface-2 border border-slate-800 rounded-2xl w-full max-w-sm overflow-hidden shadow-2xl flex flex-col p-6">
              <div className="flex justify-between items-start mb-6">
                 <div>
                    <h3 className="text-xl font-bold text-white mb-1">Carga Masiva de Vuelos</h3>
@@ -107,8 +107,8 @@ export default function FlightsPage() {
              </div>
              
              <div className="mb-2 text-sm font-bold text-white">Seleccionar Archivo (.txt)</div>
-             <div className="bg-[#0B0E14] border border-slate-800 rounded-lg p-2 flex items-center gap-3">
-                <button className="bg-[#1a2235] px-3 py-1.5 text-xs rounded text-slate-300">Seleccionar archivo</button>
+             <div className="bg-surface-1 border border-slate-800 rounded-lg p-2 flex items-center gap-3">
+                <button className="bg-surface-3 px-3 py-1.5 text-xs rounded text-slate-300">Seleccionar archivo</button>
                 <span className="text-xs text-slate-500">Ningún archivo seleccionado</span>
              </div>
           </div>
@@ -117,9 +117,9 @@ export default function FlightsPage() {
 
       {showAddModal && (
         <div className="fixed inset-0 z-[10000] flex items-center justify-center bg-black/60 backdrop-blur-sm p-4">
-          <div className="bg-[#0B0E14] border border-slate-800 rounded-xl w-full max-w-3xl overflow-hidden shadow-2xl flex flex-col">
+          <div className="bg-surface-1 border border-slate-800 rounded-xl w-full max-w-3xl overflow-hidden shadow-2xl flex flex-col">
             <div className="p-8 overflow-y-auto">
-              <button onClick={() => setShowAddModal(false)} className="mb-6 flex items-center gap-2 bg-[#151b2b] hover:bg-slate-800 px-4 py-2 rounded-lg text-sm transition-colors text-slate-300 border border-slate-800 w-fit">
+              <button onClick={() => setShowAddModal(false)} className="mb-6 flex items-center gap-2 bg-surface-2 hover:bg-slate-800 px-4 py-2 rounded-lg text-sm transition-colors text-slate-300 border border-slate-800 w-fit">
                 &larr; Volver al listado
               </button>
 
@@ -127,32 +127,32 @@ export default function FlightsPage() {
               <div className="grid grid-cols-1 md:grid-cols-3 gap-x-6 gap-y-6">
                 <div className="flex flex-col gap-2">
                   <label className="font-bold text-slate-200">Código de Vuelo</label>
-                  <input type="text" className="bg-[#151b2b] border border-slate-800 rounded-lg px-4 py-3 outline-none focus:border-blue-500 text-sm" placeholder="LA201" />
+                  <input type="text" className="bg-surface-2 border border-slate-800 rounded-lg px-4 py-3 outline-none focus:border-blue-500 text-sm" placeholder="LA201" />
                 </div>
                 <div className="flex flex-col gap-2 relative">
                   <label className="font-bold text-slate-200">Aeropuerto de Salida</label>
-                  <select className="bg-[#151b2b] border border-slate-800 rounded-lg px-4 py-3 outline-none focus:border-blue-500 appearance-none text-slate-400 text-sm">
+                  <select className="bg-surface-2 border border-slate-800 rounded-lg px-4 py-3 outline-none focus:border-blue-500 appearance-none text-slate-400 text-sm">
                     <option>Seleccionar origen</option>
                   </select>
                 </div>
                 <div className="flex flex-col gap-2 relative">
                   <label className="font-bold text-slate-200">Hora de Salida</label>
-                  <input type="time" className="bg-[#151b2b] border border-slate-800 rounded-lg px-4 py-3 outline-none focus:border-blue-500 text-slate-400 text-sm appearance-none" />
+                  <input type="time" className="bg-surface-2 border border-slate-800 rounded-lg px-4 py-3 outline-none focus:border-blue-500 text-slate-400 text-sm appearance-none" />
                 </div>
 
                 <div className="flex flex-col gap-2">
                   <label className="font-bold text-slate-200">Capacidad de Maletas</label>
-                  <input type="text" className="bg-[#151b2b] border border-slate-800 rounded-lg px-4 py-3 outline-none focus:border-blue-500 text-sm" placeholder="0" />
+                  <input type="text" className="bg-surface-2 border border-slate-800 rounded-lg px-4 py-3 outline-none focus:border-blue-500 text-sm" placeholder="0" />
                 </div>
                 <div className="flex flex-col gap-2 relative">
                   <label className="font-bold text-slate-200">Aeropuerto de Llegada</label>
-                  <select className="bg-[#151b2b] border border-slate-800 rounded-lg px-4 py-3 outline-none focus:border-blue-500 appearance-none text-slate-400 text-sm">
+                  <select className="bg-surface-2 border border-slate-800 rounded-lg px-4 py-3 outline-none focus:border-blue-500 appearance-none text-slate-400 text-sm">
                     <option>Seleccionar destino</option>
                   </select>
                 </div>
                 <div className="flex flex-col gap-2 relative">
                   <label className="font-bold text-slate-200">Hora de Llegada</label>
-                  <input type="time" className="bg-[#151b2b] border border-slate-800 rounded-lg px-4 py-3 outline-none focus:border-blue-500 text-slate-400 text-sm" />
+                  <input type="time" className="bg-surface-2 border border-slate-800 rounded-lg px-4 py-3 outline-none focus:border-blue-500 text-slate-400 text-sm" />
                 </div>
               </div>
 

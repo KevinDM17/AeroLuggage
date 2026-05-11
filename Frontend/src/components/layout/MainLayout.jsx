@@ -50,12 +50,12 @@ export default function MainLayout() {
   const closeRight = () => setRightOpen(false);
 
   return (
-    <div className="flex h-screen overflow-hidden bg-[#0B0E14] text-slate-200 font-sans relative">
+    <div className="flex h-screen overflow-hidden bg-surface-1 text-slate-200 font-sans relative">
       {showLeftHamburger && (
         <button
           onClick={() => setLeftOpen(true)}
           aria-label="Abrir menú"
-          className="fixed top-3 left-3 z-[10001] p-2 bg-[#0B0E14]/90 backdrop-blur border border-slate-700 rounded-lg text-slate-300 hover:text-white hover:bg-[#151b2b] transition-colors shadow-lg"
+          className="fixed top-3 left-3 z-[10001] p-2 bg-surface-1/90 backdrop-blur border border-slate-700 rounded-lg text-slate-300 hover:text-white hover:bg-surface-2 transition-colors shadow-lg"
         >
           <Menu className="w-5 h-5" />
         </button>
@@ -85,7 +85,7 @@ export default function MainLayout() {
       )}
 
       <div className="flex-1 flex flex-col h-full overflow-hidden relative border-r border-slate-800 min-w-0">
-        <main className="flex-1 overflow-hidden bg-[#1e1b4b]">
+        <main className="flex-1 overflow-hidden bg-canvas">
           <Outlet />
         </main>
       </div>
@@ -94,7 +94,7 @@ export default function MainLayout() {
         <button
           onClick={() => setRightOpen(true)}
           aria-label="Abrir panel"
-          className="fixed top-3 right-3 z-[10001] p-2 bg-[#0B0E14]/90 backdrop-blur border border-slate-700 rounded-lg text-slate-300 hover:text-white hover:bg-[#151b2b] transition-colors shadow-lg"
+          className="fixed top-3 right-3 z-[10001] p-2 bg-surface-1/90 backdrop-blur border border-slate-700 rounded-lg text-slate-300 hover:text-white hover:bg-surface-2 transition-colors shadow-lg"
         >
           <Menu className="w-5 h-5" />
         </button>

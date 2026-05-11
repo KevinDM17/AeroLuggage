@@ -120,7 +120,7 @@ function FlightItem({ flight }) {
           </div>
 
           {flight.canCancel && (
-            <button className="mt-4 flex flex-row items-center justify-center gap-2 bg-[#ff3b30]/10 hover:bg-[#ff3b30]/20 text-[#ff3b30] border border-[#ff3b30]/30 py-1.5 px-3 rounded-lg text-xs font-bold transition-colors w-full">
+            <button className="mt-4 flex flex-row items-center justify-center gap-2 bg-danger/10 hover:bg-danger/20 text-danger border border-danger/30 py-1.5 px-3 rounded-lg text-xs font-bold transition-colors w-full">
               <XCircle className="w-3.5 h-3.5" /> CANCELAR VUELO
             </button>
           )}
@@ -172,8 +172,8 @@ function RouteItem({ route }) {
           {route.stops.map((stop, j) => {
             if (stop.type === 'node') {
               let dotColor = 'bg-slate-600';
-              if (stop.status === 'past') dotColor = 'bg-[#00ff88]';
-              else if (stop.status === 'current') dotColor = 'bg-[#ffd700]';
+              if (stop.status === 'past') dotColor = 'bg-success';
+              else if (stop.status === 'current') dotColor = 'bg-warning';
               
               return (
                 <div key={j} className="flex items-center gap-3 relative z-10">
@@ -240,7 +240,7 @@ function AirportItem({ apt }) {
           <div className="flex flex-col w-1/2 pt-1">
             <div className="text-[10px] text-slate-500 mb-2">{apt.used} de {apt.capacity} maletas</div>
             <div className="flex items-center gap-2">
-              <div className="w-full h-2 bg-[#151b2b] rounded-full overflow-hidden border border-slate-800">
+              <div className="w-full h-2 bg-surface-2 rounded-full overflow-hidden border border-slate-800">
                 <div className={`h-full ${apt.color}`} style={{ width: `${apt.pct}%` }}></div>
               </div>
             </div>
@@ -256,7 +256,7 @@ export default function RightPanel({ onClose }) {
   const tabs = ["Vuelos", "Pedidos", "Rutas", "Maletas", "Aerop."];
 
   return (
-    <div className="w-[min(360px,90vw)] lg:w-[360px] shrink-0 bg-[#0B0E14] border-l border-slate-800 h-screen flex flex-col relative z-[9999]">
+    <div className="w-[min(360px,90vw)] lg:w-[360px] shrink-0 bg-surface-1 border-l border-slate-800 h-screen flex flex-col relative z-[9999]">
       <div className="flex items-center border-b border-slate-800">
         <button
           onClick={onClose}
@@ -284,7 +284,7 @@ export default function RightPanel({ onClose }) {
           <input 
             type="text" 
             placeholder={`Buscar ${activeTab.toLowerCase()}...`} 
-            className="w-full bg-[#151b2b] border border-slate-800 rounded-lg py-1.5 pl-3 pr-8 text-sm text-slate-200 placeholder:text-slate-500 focus:outline-none focus:border-slate-600"
+            className="w-full bg-surface-2 border border-slate-800 rounded-lg py-1.5 pl-3 pr-8 text-sm text-slate-200 placeholder:text-slate-500 focus:outline-none focus:border-slate-600"
           />
         </div>
       </div>

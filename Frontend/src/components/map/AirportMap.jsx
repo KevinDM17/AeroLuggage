@@ -1,6 +1,7 @@
 import { useEffect, useState } from "react";
 import { MapContainer, TileLayer, Marker, Polyline } from "react-leaflet";
 import L from "leaflet";
+import { tokens, semaphoreColor } from "../../utils/tokens";
 
 const AIRPORTS = [
   { id: 'JFK', lat: 40.6413, lng: -73.7781, status: 'green' },
@@ -14,21 +15,14 @@ const AIRPORTS = [
 ];
 
 const ROUTES = [
-  { id: 1, origin: 'JFK', dest: 'MIA', color: '#00ff88', planeColor: '#00ff88' },
-  { id: 2, origin: 'MIA', dest: 'MAD', color: '#00ff88', planeColor: '#00ff88' },
-  { id: 3, origin: 'MIA', dest: 'GRU', color: '#00ff88', planeColor: '#00ff88' },
-  { id: 4, origin: 'LIM', dest: 'BOG', color: '#00ff88', planeColor: '#00ff88' },
-  { id: 5, origin: 'LHR', dest: 'DXB', color: '#00ff88', planeColor: '#ff2a2a' },
+  { id: 1, origin: 'JFK', dest: 'MIA', color: tokens.success, planeColor: tokens.success },
+  { id: 2, origin: 'MIA', dest: 'MAD', color: tokens.success, planeColor: tokens.success },
+  { id: 3, origin: 'MIA', dest: 'GRU', color: tokens.success, planeColor: tokens.success },
+  { id: 4, origin: 'LIM', dest: 'BOG', color: tokens.success, planeColor: tokens.success },
+  { id: 5, origin: 'LHR', dest: 'DXB', color: tokens.success, planeColor: tokens.danger },
 ];
 
-const getStatusColor = (status) => {
-  switch (status) {
-    case 'green': return '#00ff88';
-    case 'red': return '#ff2a2a';
-    case 'yellow': return '#ffd700';
-    default: return '#ffffff';
-  }
-};
+const getStatusColor = semaphoreColor;
 
 const createAirportIcon = (airport) => {
   const color = getStatusColor(airport.status);
@@ -92,7 +86,7 @@ export default function AirportMap() {
   }, []);
 
   return (
-    <div className="w-full h-full bg-[#1e1b4b]">
+    <div className="w-full h-full bg-canvas">
        <MapContainer center={center} zoom={zoom} style={{ height: "100%", width: "100%", background: "transparent" }} zoomControl={false} attributionControl={false}>
           <TileLayer
              url="https://{s}.basemaps.cartocdn.com/dark_nolabels/{z}/{x}/{y}{r}.png"
@@ -118,7 +112,7 @@ export default function AirportMap() {
                <div key={route.id}>
                  <Polyline 
                     positions={[[origin.lat, origin.lng], [destination.lat, destination.lng]]}
-                    color="#00ff88"
+                    color={tokens.success}
                     weight={1.5}
                     opacity={0.3}
                     dashArray="4, 6"
