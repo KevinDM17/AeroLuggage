@@ -1,44 +1,56 @@
-import { useEffect, useRef, useState } from "react";
+import { useEffect, useState } from "react";
 import { Play, Square } from "lucide-react";
 import MapDashboard from "../components/simulator/MapDashboard";
+import { usePolling } from "../hooks/usePolling";
+import { useToast } from "../components/ui/Toast";
+import { getStatus } from "../api/status";
+import { startPeriodSim, stopPeriodSim, getPeriodSimState } from "../api/simulator";
 
 const PERIOD_DAYS = 5;
-/** Mock: la simulación tarda 30-90 min en backend real. Aquí 60s para demo visual. */
-const MOCK_DURATION_MS = 60_000;
 
 export default function PeriodSimulatorPage() {
+  const toast = useToast();
   const [startDate, setStartDate] = useState(() => new Date().toISOString().slice(0, 10));
-  const [status, setStatus] = useState("idle"); // idle | running | done
-  const [progress, setProgress] = useState(0);
-  const startedAtRef = useRef(null);
-  const rafRef = useRef(null);
+  const [simStatus, setSimStatus] = useState("idle"); // refleja respuesta del back
 
+  // Pollea el estado de la sim solo cuando esta corriendo
+  const { data: simState } = usePolling(getPeriodSimState, {
+    enabled: simStatus === "running",
+    intervalMs: 1000,
+  });
+
+  // Status global para los KPIs (siempre)
+  const { data: status } = usePolling(getStatus);
+
+  // Sincroniza el estado local con el del back
   useEffect(() => {
-    if (status !== "running") return;
-    startedAtRef.current = performance.now();
+    if (!simState || simState.status === simStatus) return;
+    setSimStatus(simState.status);
+    if (simState.status === "done") {
+      toast.push({ type: "success", title: "Simulación completada", message: `Periodo de ${PERIOD_DAYS} días procesado.` });
+    }
+  }, [simState, simStatus, toast]);
 
-    const tick = (now) => {
-      const elapsed = now - startedAtRef.current;
-      const pct = Math.min(100, (elapsed / MOCK_DURATION_MS) * 100);
-      setProgress(pct);
-      if (pct >= 100) {
-        setStatus("done");
-        return;
-      }
-      rafRef.current = requestAnimationFrame(tick);
-    };
-    rafRef.current = requestAnimationFrame(tick);
-    return () => cancelAnimationFrame(rafRef.current);
-  }, [status]);
+  const progress = simState?.progress ?? 0;
 
-  const handleStart = () => {
-    setProgress(0);
-    setStatus("running");
+  const handleStart = async () => {
+    try {
+      const result = await startPeriodSim(startDate);
+      setSimStatus(result.status);
+      toast.push({ type: "info", title: "Simulación iniciada", message: `Inicio: ${startDate} · ${PERIOD_DAYS} días` });
+    } catch (err) {
+      toast.push({ type: "error", title: "No se pudo iniciar", message: err.message });
+    }
   };
-  const handleStop = () => {
-    cancelAnimationFrame(rafRef.current);
-    setStatus("idle");
-    setProgress(0);
+
+  const handleStop = async () => {
+    try {
+      const result = await stopPeriodSim();
+      setSimStatus(result.status);
+      toast.push({ type: "warning", title: "Simulación detenida" });
+    } catch (err) {
+      toast.push({ type: "error", title: "No se pudo detener", message: err.message });
+    }
   };
 
   const header = (
@@ -52,7 +64,7 @@ export default function PeriodSimulatorPage() {
           type="date"
           value={startDate}
           onChange={(e) => setStartDate(e.target.value)}
-          disabled={status === "running"}
+          disabled={simStatus === "running"}
           className="bg-surface-2 border border-slate-700 rounded-lg px-3 py-1.5 text-sm text-slate-200 outline-none focus:border-blue-500 disabled:opacity-50"
         />
       </div>
@@ -64,7 +76,7 @@ export default function PeriodSimulatorPage() {
         </span>
       </div>
 
-      {status !== "running" ? (
+      {simStatus !== "running" ? (
         <button
           type="button"
           onClick={handleStart}
@@ -82,7 +94,7 @@ export default function PeriodSimulatorPage() {
         </button>
       )}
 
-      {status !== "idle" && (
+      {simStatus !== "idle" && (
         <div className="flex flex-col w-44 self-end">
           <div className="flex justify-between text-[10px] text-slate-400 mb-1">
             <span>Progreso</span>
@@ -90,7 +102,7 @@ export default function PeriodSimulatorPage() {
           </div>
           <div className="h-2 bg-surface-2 rounded-full overflow-hidden border border-slate-700">
             <div
-              className={`h-full transition-all ${status === "done" ? "bg-success" : "bg-info"}`}
+              className={`h-full transition-all ${simStatus === "done" ? "bg-success" : "bg-info"}`}
               style={{ width: `${progress}%` }}
             />
           </div>
@@ -103,6 +115,9 @@ export default function PeriodSimulatorPage() {
     <MapDashboard
       title={`Simulación de Periodo · ${PERIOD_DAYS} días`}
       header={header}
+      date={status?.date}
+      time={status?.time}
+      metrics={status ?? undefined}
     />
   );
 }

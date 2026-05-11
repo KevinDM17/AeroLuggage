@@ -1,13 +1,15 @@
-import { useEffect, useRef, useState } from "react";
+import { useEffect, useState } from "react";
 import { Play, Square, AlertTriangle } from "lucide-react";
 import MapDashboard from "../components/simulator/MapDashboard";
+import { usePolling } from "../hooks/usePolling";
+import { useToast } from "../components/ui/Toast";
+import { getStatus } from "../api/status";
+import { startCollapseSim, stopCollapseSim, getCollapseSimState } from "../api/simulator";
 
-/** Mock: umbrales hasta colapso. En backend real vienen del planificador. */
-const COLLAPSE_AT_MS = 90_000;
-const WARNING_AT_MS = 60_000;
+const WARNING_AT_MS  = 60_000;
 
 const formatElapsed = (ms) => {
-  const totalSec = Math.floor(ms / 1000);
+  const totalSec = Math.floor((ms ?? 0) / 1000);
   const h = Math.floor(totalSec / 3600);
   const m = Math.floor((totalSec % 3600) / 60);
   const s = totalSec % 60;
@@ -15,45 +17,53 @@ const formatElapsed = (ms) => {
 };
 
 export default function CollapseSimulatorPage() {
+  const toast = useToast();
   const [startDate, setStartDate] = useState(() => new Date().toISOString().slice(0, 10));
-  const [status, setStatus] = useState("idle"); // idle | running | collapsed
-  const [elapsed, setElapsed] = useState(0);
-  const startedAtRef = useRef(null);
-  const rafRef = useRef(null);
+  const [simStatus, setSimStatus] = useState("idle");
+
+  const { data: simState } = usePolling(getCollapseSimState, {
+    enabled: simStatus === "running",
+    intervalMs: 1000,
+  });
+
+  const { data: status } = usePolling(getStatus);
 
   useEffect(() => {
-    if (status !== "running") return;
-    startedAtRef.current = performance.now();
+    if (!simState || simState.status === simStatus) return;
+    setSimStatus(simState.status);
+    if (simState.status === "collapsed") {
+      toast.push({ type: "error", title: "Colapso detectado", message: "Las operaciones colapsaron en la simulación." });
+    }
+  }, [simState, simStatus, toast]);
 
-    const tick = (now) => {
-      const e = now - startedAtRef.current;
-      setElapsed(e);
-      if (e >= COLLAPSE_AT_MS) {
-        setStatus("collapsed");
-        return;
-      }
-      rafRef.current = requestAnimationFrame(tick);
-    };
-    rafRef.current = requestAnimationFrame(tick);
-    return () => cancelAnimationFrame(rafRef.current);
-  }, [status]);
+  const elapsed = simState?.elapsedMs ?? 0;
 
-  const handleStart = () => {
-    setElapsed(0);
-    setStatus("running");
+  const handleStart = async () => {
+    try {
+      const result = await startCollapseSim(startDate);
+      setSimStatus(result.status);
+      toast.push({ type: "info", title: "Simulación iniciada", message: `Inicio: ${startDate} · sin límite hasta colapso` });
+    } catch (err) {
+      toast.push({ type: "error", title: "No se pudo iniciar", message: err.message });
+    }
   };
-  const handleStop = () => {
-    cancelAnimationFrame(rafRef.current);
-    setStatus("idle");
-    setElapsed(0);
+
+  const handleStop = async () => {
+    try {
+      const result = await stopCollapseSim();
+      setSimStatus(result.status);
+      toast.push({ type: "warning", title: "Simulación detenida" });
+    } catch (err) {
+      toast.push({ type: "error", title: "No se pudo detener", message: err.message });
+    }
   };
 
   const operationalState =
-    status === "collapsed"
+    simStatus === "collapsed"
       ? { label: "Colapso", color: "text-danger", bg: "bg-danger/15 border-danger/40" }
       : elapsed >= WARNING_AT_MS
       ? { label: "Próximo al colapso", color: "text-warning", bg: "bg-warning/15 border-warning/40" }
-      : status === "running"
+      : simStatus === "running"
       ? { label: "Operativo", color: "text-success", bg: "bg-success/15 border-success/40" }
       : { label: "En espera", color: "text-slate-300", bg: "bg-surface-2 border-slate-700" };
 
@@ -68,7 +78,7 @@ export default function CollapseSimulatorPage() {
           type="date"
           value={startDate}
           onChange={(e) => setStartDate(e.target.value)}
-          disabled={status === "running"}
+          disabled={simStatus === "running"}
           className="bg-surface-2 border border-slate-700 rounded-lg px-3 py-1.5 text-sm text-slate-200 outline-none focus:border-blue-500 disabled:opacity-50"
         />
       </div>
@@ -83,12 +93,12 @@ export default function CollapseSimulatorPage() {
       <div className="flex flex-col">
         <span className="text-[10px] text-slate-400 uppercase tracking-wider font-medium">Estado</span>
         <span className={`px-3 py-1.5 border rounded-lg text-sm font-bold flex items-center gap-2 ${operationalState.bg} ${operationalState.color}`}>
-          {status === "collapsed" && <AlertTriangle className="w-4 h-4" />}
+          {simStatus === "collapsed" && <AlertTriangle className="w-4 h-4" />}
           {operationalState.label}
         </span>
       </div>
 
-      {status !== "running" ? (
+      {simStatus !== "running" ? (
         <button
           type="button"
           onClick={handleStart}
@@ -108,5 +118,13 @@ export default function CollapseSimulatorPage() {
     </div>
   );
 
-  return <MapDashboard title="Simulación hasta Colapso" header={header} />;
+  return (
+    <MapDashboard
+      title="Simulación hasta Colapso"
+      header={header}
+      date={status?.date}
+      time={status?.time}
+      metrics={status ?? undefined}
+    />
+  );
 }
