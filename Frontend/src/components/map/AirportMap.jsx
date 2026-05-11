@@ -44,15 +44,15 @@ const createAirportIcon = (airport) => {
 const createPlaneIcon = (angle, color) => {
   return L.divIcon({
     html: `
-      <div style="transform: rotate(${angle}deg) translate(-50%, -50%); transform-origin: 0 0; width: 24px; height: 24px; display: flex; align-items: center; justify-content: center;">
+      <div style="width: 24px; height: 24px; display: flex; align-items: center; justify-content: center; transform: rotate(${angle}deg);">
         <svg xmlns="http://www.w3.org/2000/svg" width="20" height="20" viewBox="0 0 24 24" fill="${color}" stroke="${color}" stroke-width="1" stroke-linecap="round" stroke-linejoin="round">
           <path d="M17.8 19.2 16 11l3.5-3.5C21 6 21.5 4 21 3c-1-.5-3 0-4.5 1.5L13 8 4.8 6.2c-.5-.1-.9.2-1.1.5l-1.3 1.5c-.3.4-.1 1 .4 1.2L9 12l-4 4-2.2-.6c-.4-.1-.8.1-1.1.4l-.8.8c-.3.4-.1 1 .4 1.2l4 1.5 1.5 4c.2.5.8.7 1.2.4l.8-.8c.3-.3.5-.7.4-1.1L8 19l4-4 2.6 6.2c.2.5.8.7 1.2.4l1.5-1.3c.3-.2.6-.6.5-1.1z"/>
         </svg>
       </div>
     `,
     className: '',
-    iconSize: [0, 0], // Handled by transform
-    iconAnchor: [0, 0],
+    iconSize: [24, 24],
+    iconAnchor: [12, 12],
   });
 };
 
@@ -103,10 +103,12 @@ export default function AirportMap() {
              const lat = origin.lat + (destination.lat - origin.lat) * progress;
              const lng = origin.lng + (destination.lng - origin.lng) * progress;
              
-             // Calculate angle
-             const angle = Math.atan2(destination.lng - origin.lng, destination.lat - origin.lat) * 180 / Math.PI;
-             // Leaflet uses slightly different coordinate system rotation, adjusting:
-             const planeAngle = angle + 45; 
+             // Bearing aprox (norte=0, este=90, sur=180, oeste=270) usando lat/lng como cartesiano.
+             // Suficiente para visualización a zoom global; no es navegación real.
+             const bearing = Math.atan2(destination.lng - origin.lng, destination.lat - origin.lat) * 180 / Math.PI;
+             // El icono Plane de lucide apunta nativamente al NE (~45° CW desde el norte),
+             // así que restamos 45° para alinear la punta con el bearing.
+             const planeAngle = bearing - 45;
 
              return (
                <div key={route.id}>
