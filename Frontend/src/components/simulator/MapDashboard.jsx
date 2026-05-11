@@ -1,23 +1,66 @@
+import { Luggage, Plane, Warehouse, AlertTriangle } from "lucide-react";
 import AirportMap from "../map/AirportMap";
 
 /**
  * Capa común para los 3 escenarios (día a día, periodo, colapso):
- * mapa + overlays de fecha/hora (top-left) y stats (bottom-center).
- * El header de la página se compone fuera con la prop `header`.
+ * - Header con título + controles opcionales (prop `header`)
+ * - Strip de KPIs globales (siempre visible — son la métrica central de un command center)
+ * - Mapa con overlay de fecha/hora (top-left)
+ * Las props `pl-14 sm:pl-16` y `pr-14 sm:pr-16` dejan espacio a los hamburger de
+ * izquierda/derecha que `MainLayout` pone como `fixed`.
  */
 export default function MapDashboard({
   title,
   header = null,
   date = "18-03-26",
   time = "12:34:16 UTC",
-  bagsInTransit = 825,
-  activeFlights = 3,
+  metrics = {},
 }) {
+  const {
+    bagsInTransit = 825,
+    activeFlights = 3,
+    freeCapacityPct = 42,
+    activeAlerts = 2,
+  } = metrics;
+
+  const capacityTone =
+    freeCapacityPct < 15 ? "danger" : freeCapacityPct < 35 ? "warning" : "success";
+  const alertsTone = activeAlerts === 0 ? "success" : activeAlerts < 5 ? "warning" : "danger";
+
   return (
     <div className="flex flex-col h-full bg-canvas">
-      <div className="px-4 sm:px-8 pt-4 pl-14 sm:pl-16 flex items-center justify-between gap-4 flex-wrap">
+      <div className="px-4 sm:px-8 pt-4 pl-14 sm:pl-16 pr-14 sm:pr-16 flex items-center justify-between gap-4 flex-wrap">
         <h1 className="text-lg sm:text-xl font-bold tracking-tight text-white mb-2">{title}</h1>
         {header}
+      </div>
+
+      <div className="px-4 sm:px-8 pl-14 sm:pl-16 pr-14 sm:pr-16 pb-2">
+        <div className="grid grid-cols-2 lg:grid-cols-4 gap-2 sm:gap-3">
+          <Kpi
+            icon={Luggage}
+            label="Maletas en Tránsito"
+            value={bagsInTransit.toLocaleString()}
+            tone="info"
+          />
+          <Kpi
+            icon={Plane}
+            label="Vuelos Activos"
+            value={activeFlights}
+            tone="fuchsia"
+          />
+          <Kpi
+            icon={Warehouse}
+            label="Capacidad Libre Global"
+            value={`${freeCapacityPct}%`}
+            tone={capacityTone}
+          />
+          <Kpi
+            icon={AlertTriangle}
+            label="Alertas Activas"
+            value={activeAlerts}
+            tone={alertsTone}
+          />
+        </div>
       </div>
 
       <div className="flex-1 relative w-full h-full bg-canvas p-2 sm:p-4 min-h-0">
@@ -36,19 +79,33 @@ export default function MapDashboard({
               </div>
             </div>
           </div>
+        </div>
+      </div>
+    </div>
+  );
+}
 
-          <div className="absolute bottom-4 sm:bottom-6 left-1/2 -translate-x-1/2 z-[1000] max-w-[calc(100%-2rem)]">
-            <div className="bg-surface-2/75 backdrop-blur px-4 sm:px-6 py-3 rounded-xl border border-slate-700 flex gap-6 sm:gap-8 items-center">
-              <div>
-                <div className="text-xs text-slate-400 font-medium whitespace-nowrap">Maletas en Tránsito</div>
-                <div className="text-lg font-bold text-info mt-0.5">{bagsInTransit}</div>
-              </div>
-              <div>
-                <div className="text-xs text-slate-400 font-medium whitespace-nowrap">Vuelos Activos</div>
-                <div className="text-lg font-bold text-fuchsia-500 mt-0.5">{activeFlights}</div>
-              </div>
-            </div>
-          </div>
+const TONE_CLASSES = {
+  info:    "text-info",
+  fuchsia: "text-fuchsia-400",
+  success: "text-success",
+  warning: "text-warning",
+  danger:  "text-danger",
+};
+
+function Kpi({ icon: Icon, label, value, tone = "info" }) {
+  const valueClass = TONE_CLASSES[tone] ?? TONE_CLASSES.info;
+  return (
+    <div className="bg-surface-1/70 backdrop-blur border border-slate-800 rounded-xl px-3 sm:px-4 py-2.5 flex items-center gap-3">
+      <div className={`shrink-0 ${valueClass}`}>
+        <Icon className="w-5 h-5" />
+      </div>
+      <div className="min-w-0">
+        <div className="text-[10px] sm:text-xs text-slate-400 font-medium uppercase tracking-wider truncate">
+          {label}
+        </div>
+        <div className={`text-xl sm:text-2xl font-bold tabular-nums leading-none mt-1 ${valueClass}`}>
+          {value}
         </div>
       </div>
     </div>
