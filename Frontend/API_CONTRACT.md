@@ -119,7 +119,6 @@ Pollea cada 5s desde todas las vistas con mapa.
   bagsInTransit: number;
   activeFlights: number;
   freeCapacityPct: number;  // 0-100
-  activeAlerts: number;
 }
 ```
 

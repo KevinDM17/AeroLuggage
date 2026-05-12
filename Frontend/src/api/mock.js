@@ -92,7 +92,6 @@ export async function mockGetStatus() {
     bagsInTransit:    jitter(825, 30),
     activeFlights:    jitter(7, 2),
     freeCapacityPct:  Math.min(100, Math.max(0, jitter(42, 4))),
-    activeAlerts:     jitter(2, 2),
   };
 }
 
