@@ -1,4 +1,4 @@
-import { Luggage, Plane, Warehouse, AlertTriangle } from "lucide-react";
+import { Luggage, Plane, Warehouse } from "lucide-react";
 import AirportMap from "../map/AirportMap";
 
 /**
@@ -20,12 +20,10 @@ export default function MapDashboard({
     bagsInTransit = 825,
     activeFlights = 3,
     freeCapacityPct = 42,
-    activeAlerts = 2,
   } = metrics;
 
   const capacityTone =
     freeCapacityPct < 15 ? "danger" : freeCapacityPct < 35 ? "warning" : "success";
-  const alertsTone = activeAlerts === 0 ? "success" : activeAlerts < 5 ? "warning" : "danger";
 
   return (
     <div className="flex flex-col h-full bg-canvas">
@@ -35,7 +33,7 @@ export default function MapDashboard({
       </div>
 
       <div className="px-4 sm:px-8 pl-14 sm:pl-16 pr-14 sm:pr-16 pb-2">
-        <div className="grid grid-cols-2 lg:grid-cols-4 gap-2 sm:gap-3">
+        <div className="grid grid-cols-1 sm:grid-cols-3 gap-2 sm:gap-3">
           <Kpi
             icon={Luggage}
             label="Maletas en Tránsito"
@@ -53,12 +51,6 @@ export default function MapDashboard({
             label="Capacidad Libre Global"
             value={`${freeCapacityPct}%`}
             tone={capacityTone}
-          />
-          <Kpi
-            icon={AlertTriangle}
-            label="Alertas Activas"
-            value={activeAlerts}
-            tone={alertsTone}
           />
         </div>
       </div>
