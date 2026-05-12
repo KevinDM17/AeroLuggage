@@ -1,4 +1,4 @@
-import { apiGet, apiPost, USE_MOCK } from "./client";
+import { apiPost, USE_MOCK } from "./client";
 import {
   mockStartPeriodSim,
   mockStopPeriodSim,
@@ -8,30 +8,59 @@ import {
   mockGetCollapseSimState,
 } from "./mock";
 
-/**
- * Simulacion por periodo (5 dias fijos por decision del curso).
- * State shape:
- *   { status: "idle" | "running" | "done", startDate, progress: 0..100 }
+/* =========================================================================
+ * SIMULACION POR PERIODO
+ * Back: SimulacionRestController.iniciar + SimulacionController (STOMP)
+ * =========================================================================
+ *
+ * REST (lo que el front llama directo):
+ *   POST /api/simulacion/periodo/iniciar
+ *     Body: SimulacionIniciarDTO { fechaInicio: "YYYY-MM-DD", totalDias, intervaloTickMs }
+ *     Response: SimulacionEstadoDTO { sessionId, estado, mensaje }
+ *
+ * WebSocket (STOMP) — manejado por hooks/useStomp:
+ *   SEND /app/simulacion/periodo/{pausar|reanudar|detener}   con { sessionId }
+ *   SUB  /topic/simulacion/{sessionId}                       -> PeriodoTickDTO
+ *   SUB  /topic/simulacion/{sessionId}/estado                -> SimulacionEstadoDTO
  */
-export const startPeriodSim = (startDate) =>
-  USE_MOCK ? mockStartPeriodSim(startDate) : apiPost("/simulator/period/start", { startDate });
 
+export const iniciarSimulacionPeriodo = (payload) =>
+  USE_MOCK
+    ? mockStartPeriodSim(payload.fechaInicio)
+    : apiPost("/simulacion/periodo/iniciar", payload);
+
+/* Wrapper legacy para no romper imports actuales. */
+export const startPeriodSim = (startDate) =>
+  iniciarSimulacionPeriodo({
+    fechaInicio: startDate,
+    totalDias: 5,
+    intervaloTickMs: 1000,
+  });
+
+/* Stop/state legacy: en modo real ya no se usan; pausar/reanudar/detener van
+ * por WS y el estado llega por suscripcion. Mantengo el shim para mocks. */
 export const stopPeriodSim = () =>
-  USE_MOCK ? mockStopPeriodSim() : apiPost("/simulator/period/stop");
+  USE_MOCK ? mockStopPeriodSim() : Promise.reject(new Error("Usar WS /app/simulacion/periodo/detener"));
 
 export const getPeriodSimState = () =>
-  USE_MOCK ? mockGetPeriodSimState() : apiGet("/simulator/period/state");
+  USE_MOCK ? mockGetPeriodSimState() : Promise.reject(new Error("Usar WS /topic/simulacion/{sessionId}/estado"));
 
-/**
- * Simulacion hasta colapso.
- * State shape:
- *   { status: "idle" | "running" | "collapsed", startDate, elapsedMs }
- */
+/* =========================================================================
+ * SIMULACION HASTA COLAPSO
+ * Back: NO IMPLEMENTADO TODAVIA en esta rama (existe solo el ColapsoTickDTO).
+ * Cuando el back exponga endpoints, replicamos el patron de periodo.
+ * ========================================================================= */
+
+export const iniciarSimulacionColapso = (payload) =>
+  USE_MOCK
+    ? mockStartCollapseSim(payload.fechaInicio)
+    : apiPost("/simulacion/colapso/iniciar", payload);
+
 export const startCollapseSim = (startDate) =>
-  USE_MOCK ? mockStartCollapseSim(startDate) : apiPost("/simulator/collapse/start", { startDate });
+  iniciarSimulacionColapso({ fechaInicio: startDate, intervaloTickMs: 1000 });
 
 export const stopCollapseSim = () =>
-  USE_MOCK ? mockStopCollapseSim() : apiPost("/simulator/collapse/stop");
+  USE_MOCK ? mockStopCollapseSim() : Promise.reject(new Error("Pendiente en back"));
 
 export const getCollapseSimState = () =>
-  USE_MOCK ? mockGetCollapseSimState() : apiGet("/simulator/collapse/state");
+  USE_MOCK ? mockGetCollapseSimState() : Promise.reject(new Error("Pendiente en back"));
