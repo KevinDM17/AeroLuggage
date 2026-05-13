@@ -46,7 +46,7 @@ public class ServicioVueloProgramado {
     @Transactional
     public List<VueloProgramado> cargarDesdeRecursos() throws IOException {
         final Dotenv dotenv = Dotenv.configure().ignoreIfMissing().load();
-        ClassPathResource recurso = new ClassPathResource(dotenv.get("AEROPUERTO_FILE_PATH"));
+        ClassPathResource recurso = new ClassPathResource(dotenv.get("PLANES_VUELO_FILE_PATH"));
         Path temp = Files.createTempFile("planes-vuelo-", ".txt");
         try (InputStream is = recurso.getInputStream()) {
             Files.copy(is, temp, StandardCopyOption.REPLACE_EXISTING);
