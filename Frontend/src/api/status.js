@@ -3,19 +3,32 @@ import { mockGetStatus } from "./mock";
 
 /**
  * Estado en tiempo real del sistema (KPIs globales + fecha/hora actual).
- * Pensado para polling cada VITE_POLL_INTERVAL_MS.
+ * Polling cada VITE_POLL_INTERVAL_MS.
  *
- * Shape esperado:
- * {
- *   date: "18-03-26",
- *   time: "12:34:16 UTC",
- *   bagsInTransit: number,
- *   bagsDelivered: number,
- *   bagsUnassigned: number,
- *   activeFlights: number,
- *   freeCapacityPct: number,     // 0-100
- *   activeAlerts: number,
- * }
+ * Shape que consumen los componentes:
+ *   { date, time, bagsInTransit, bagsDelivered, bagsUnassigned,
+ *     activeFlights, freeCapacityPct }
+ *
+ * El back puede devolver:
+ *   a) Mismos nombres en ingles (acordado en API_CONTRACT.md), o
+ *   b) Nombres en espanol (maletasEnTransito, vuelosActivos, capacidadLibrePct, ...)
+ * El adapter tolera ambos.
  */
-export const getStatus = () =>
-  USE_MOCK ? mockGetStatus() : apiGet("/status");
+const adaptStatus = (s) => {
+  if (!s || typeof s !== "object") return s;
+  return {
+    date:            s.date ?? s.fechaActual ?? s.fecha ?? "",
+    time:            s.time ?? s.horaActual  ?? s.hora  ?? "",
+    bagsInTransit:   s.bagsInTransit   ?? s.maletasEnTransito   ?? 0,
+    bagsDelivered:   s.bagsDelivered   ?? s.maletasEntregadas   ?? 0,
+    bagsUnassigned:  s.bagsUnassigned  ?? s.maletasNoAsignadas  ?? s.maletasSinRuta ?? 0,
+    activeFlights:   s.activeFlights   ?? s.vuelosActivos       ?? 0,
+    freeCapacityPct: s.freeCapacityPct ?? s.capacidadLibrePct   ?? s.porcentajeCapacidadLibre ?? 0,
+  };
+};
+
+export const getStatus = async () => {
+  if (USE_MOCK) return mockGetStatus();
+  const data = await apiGet("/status");
+  return adaptStatus(data);
+};

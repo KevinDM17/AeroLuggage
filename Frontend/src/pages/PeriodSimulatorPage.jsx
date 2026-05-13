@@ -5,7 +5,6 @@ import { usePolling } from "../hooks/usePolling";
 import { useElapsedTimer } from "../hooks/useElapsedTimer";
 import { useStompPublish, useStompSubscribe } from "../hooks/useStomp";
 import { useToast } from "../components/ui/Toast";
-import { getStatus } from "../api/status";
 import { iniciarSimulacionPeriodo, stopPeriodSim, getPeriodSimState } from "../api/simulator";
 import { USE_MOCK } from "../api/client";
 import { formatDateTimeDisplay, formatElapsedHMS, formatTimeZoneOffset } from "../utils/formatting";
@@ -66,8 +65,7 @@ export default function PeriodSimulatorPage() {
     intervalMs: 1000,
   });
 
-  /* KPIs globales del topbar (siempre con polling — vienen de /status que no es del WS) */
-  const { data: status } = usePolling(getStatus);
+  /* KPIs vienen del tick WS cuando hay sim activa; en idle, defaults del MapDashboard */
   const executionElapsedMs = useElapsedTimer(simStatus, runId);
   const hasActiveRun = simStatus !== "idle";
 
@@ -107,18 +105,26 @@ export default function PeriodSimulatorPage() {
     return formatDateTimeDisplay(buildSimulatedDateTime(startDate, progress));
   }, [tick, startDate, progress]);
 
-  /* Metricas en vivo (sobreescriben las de /status cuando el tick las trae) */
+  /* Metricas en vivo solo desde el tick WS (cero polling) */
   const liveMetrics = useMemo(() => {
-    if (USE_MOCK || !tick) return status ?? undefined;
+    if (USE_MOCK) {
+      return mockState ? {
+        bagsInTransit:   mockState.bagsInTransit   ?? 0,
+        bagsDelivered:   mockState.bagsDelivered   ?? 0,
+        bagsUnassigned:  mockState.bagsUnassigned  ?? 0,
+        activeFlights:   mockState.activeFlights   ?? 0,
+        freeCapacityPct: mockState.freeCapacityPct ?? 0,
+      } : undefined;
+    }
+    if (!tick) return undefined;
     return {
-      ...(status ?? {}),
-      bagsInTransit:  tick.maletasEnTransito,
-      bagsDelivered:  tick.maletasEntregadas ?? tick.maletasEntregadasATiempo ?? status?.bagsDelivered ?? 0,
-      bagsUnassigned: tick.maletasNoAsignadas ?? tick.maletasSinRuta ?? status?.bagsUnassigned ?? 0,
-      activeFlights:  status?.activeFlights ?? 0,
-      freeCapacityPct: status?.freeCapacityPct ?? 0,
+      bagsInTransit:   tick.maletasEnTransito ?? 0,
+      bagsDelivered:   tick.maletasEntregadas ?? tick.maletasEntregadasATiempo ?? 0,
+      bagsUnassigned:  tick.maletasNoAsignadas ?? tick.maletasSinRuta ?? 0,
+      activeFlights:   tick.vuelosActivos ?? 0,
+      freeCapacityPct: tick.capacidadLibrePct ?? 0,
     };
-  }, [tick, status]);
+  }, [tick, mockState]);
 
   /* ============ Handlers ============ */
   const handleStart = async () => {
@@ -275,8 +281,8 @@ export default function PeriodSimulatorPage() {
       mapOverlay={mapOverlay}
       showMapClock={false}
       showMapFlights={hasActiveRun}
-      date={status?.date}
-      time={status?.time}
+      date={simulationClock?.date}
+      time={simulationClock?.time}
       metrics={liveMetrics}
     />
   );
