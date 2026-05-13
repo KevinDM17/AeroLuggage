@@ -92,6 +92,15 @@ public class MaletaRepositorio {
         return jdbcTemplate.update("DELETE FROM maleta WHERE id_maleta=?", id);
     }
 
+    public int contarPorEstado(final EstadoMaleta estado) {
+        final Integer count = jdbcTemplate.queryForObject(
+                "SELECT COUNT(*) FROM maleta WHERE estado = ?",
+                Integer.class,
+                estado.name()
+        );
+        return count != null ? count : 0;
+    }
+
     private static Aeropuerto mapAeropuerto(ResultSet rs, String prefijo, String prefijoCiudad)
             throws SQLException {
         Ciudad ciudad = new Ciudad(

@@ -27,6 +27,7 @@ application-*.local.properties
 .classpath
 .project
 .settings/
+.antigravity
 bin/
 
 # OS files

@@ -7,7 +7,7 @@ import org.springframework.boot.builder.SpringApplicationBuilder;
 import org.springframework.context.ConfigurableApplicationContext;
 
 import pe.edu.pucp.aeroluggage.AeroLuggageApplication;
-import pe.edu.pucp.aeroluggage.controlador.ControladorCargadorDatos;
+import pe.edu.pucp.aeroluggage.controller.DataLoaderController;
 
 @RestController
 @RequestMapping("/api/seed")
@@ -21,7 +21,7 @@ public class Seed {
                 );
 
         try {
-            ControladorCargadorDatos cargador = context.getBean(ControladorCargadorDatos.class);
+            DataLoaderController cargador = context.getBean(DataLoaderController.class);
 
             cargador.seed(args.length > 0 && args[0].equals("clean"));
             System.out.println("Seed completado con éxito.");

@@ -5,6 +5,8 @@ import org.springframework.jdbc.core.JdbcTemplate;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 import org.springframework.web.multipart.MultipartFile;
+
+import io.github.cdimascio.dotenv.Dotenv;
 import pe.edu.pucp.aeroluggage.cargador.CargadorAeropuertos;
 import pe.edu.pucp.aeroluggage.dominio.entidades.Aeropuerto;
 import pe.edu.pucp.aeroluggage.repositorio.AeropuertoRepositorio;
@@ -18,6 +20,8 @@ import java.util.List;
 
 @Service
 public class ServicioAeropuerto {
+
+    private static final String AEROPUERTO_FILE = "AEROPUERTO_FILE_PATH";
 
     private final AeropuertoRepositorio aeropuertoRepositorio;
     private final JdbcTemplate jdbcTemplate;
@@ -40,7 +44,8 @@ public class ServicioAeropuerto {
 
     @Transactional
     public List<Aeropuerto> cargarDesdeRecursos() throws IOException {
-        ClassPathResource recurso = new ClassPathResource("datos/Aeropuertos.txt");
+        final Dotenv dotevn = Dotenv.configure().ignoreIfMissing().load();
+        ClassPathResource recurso = new ClassPathResource(dotevn.get(AEROPUERTO_FILE));
         Path temp = Files.createTempFile("aeropuertos-", ".txt");
         try (InputStream is = recurso.getInputStream()) {
             Files.copy(is, temp, StandardCopyOption.REPLACE_EXISTING);
