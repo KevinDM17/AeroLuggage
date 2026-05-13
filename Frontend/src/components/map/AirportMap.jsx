@@ -15,14 +15,21 @@ const AIRPORTS = [
 ];
 
 const ROUTES = [
-  { id: 1, origin: 'JFK', dest: 'MIA', color: tokens.success, planeColor: tokens.success },
-  { id: 2, origin: 'MIA', dest: 'MAD', color: tokens.success, planeColor: tokens.success },
-  { id: 3, origin: 'MIA', dest: 'GRU', color: tokens.success, planeColor: tokens.success },
-  { id: 4, origin: 'LIM', dest: 'BOG', color: tokens.success, planeColor: tokens.success },
-  { id: 5, origin: 'LHR', dest: 'DXB', color: tokens.success, planeColor: tokens.danger },
+  { id: 1, origin: 'JFK', dest: 'MIA', used: 60, capacity: 250 },
+  { id: 2, origin: 'MIA', dest: 'MAD', used: 300, capacity: 350 },
+  { id: 3, origin: 'MIA', dest: 'GRU', used: 150, capacity: 200 },
+  { id: 4, origin: 'LIM', dest: 'BOG', used: 45, capacity: 220 },
+  { id: 5, origin: 'LHR', dest: 'DXB', used: 380, capacity: 400 },
 ];
 
 const getStatusColor = semaphoreColor;
+
+const getFlightLoadColor = (used, capacity) => {
+  const pct = capacity > 0 ? (used / capacity) * 100 : 0;
+  if (pct >= 85) return tokens.danger;
+  if (pct >= 60) return tokens.warning;
+  return tokens.success;
+};
 
 const createAirportIcon = (airport) => {
   const color = getStatusColor(airport.status);
@@ -57,7 +64,7 @@ const createPlaneIcon = (angle, color) => {
 };
 
 
-export default function AirportMap() {
+export default function AirportMap({ showFlights = true }) {
   const center = [20, -40];
   const zoom = 3;
 
@@ -92,7 +99,7 @@ export default function AirportMap() {
              url="https://{s}.basemaps.cartocdn.com/dark_nolabels/{z}/{x}/{y}{r}.png"
           />
           
-          {ROUTES.map((route, i) => {
+          {showFlights && ROUTES.map((route, i) => {
              const origin = AIRPORTS.find(a => a.id === route.origin);
              const destination = AIRPORTS.find(a => a.id === route.dest);
              if (!origin || !destination) return null;
@@ -121,7 +128,7 @@ export default function AirportMap() {
                  />
                  <Marker 
                     position={[lat, lng]} 
-                    icon={createPlaneIcon(planeAngle, route.planeColor)} 
+                    icon={createPlaneIcon(planeAngle, getFlightLoadColor(route.used, route.capacity))} 
                  />
                </div>
              );

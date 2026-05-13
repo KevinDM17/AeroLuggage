@@ -1,5 +1,5 @@
 import { useMemo, useState } from "react";
-import { Filter, PanelRightClose, ArrowRightCircle, MapPin, Globe } from "lucide-react";
+import { Filter, PanelRightClose, MapPin, Globe, Info, ChevronDown, Plane } from "lucide-react";
 import { useFetch } from "../../hooks/useFetch";
 import { listFlights } from "../../api/flights";
 import { listOrders } from "../../api/orders";
@@ -191,6 +191,56 @@ function AirportItem({ apt }) {
   );
 }
 
+function ColorLegend() {
+  return (
+    <details className="group border-t border-slate-800 bg-surface-1/95 px-4 py-3">
+      <summary className="flex cursor-pointer list-none items-center justify-between gap-3 rounded-lg border border-slate-800 bg-surface-2 px-3 py-2 text-xs font-bold uppercase tracking-wider text-slate-300 transition-colors hover:border-slate-700 hover:text-white">
+        <span className="flex items-center gap-2">
+          <Info className="h-4 w-4 text-info" />
+          Leyenda
+        </span>
+        <ChevronDown className="h-4 w-4 text-slate-500 transition-transform group-open:rotate-180" />
+      </summary>
+
+      <div className="mt-3 grid gap-3 text-xs text-slate-300">
+        <div>
+          <div className="mb-2 font-semibold text-slate-200">Aeropuertos</div>
+          <LegendRow color="bg-success shadow-[0_0_10px_rgba(0,255,136,0.7)]" label="Verde" value="operativo / capacidad disponible" />
+          <LegendRow color="bg-warning shadow-[0_0_10px_rgba(255,221,0,0.7)]" label="Amarillo" value="alta ocupacion / alerta" />
+          <LegendRow color="bg-danger shadow-[0_0_10px_rgba(255,59,48,0.7)]" label="Rojo" value="critico / colapso" />
+        </div>
+
+        <div>
+          <div className="mb-2 font-semibold text-slate-200">Carga de vuelos</div>
+          <FlightLegendRow color="text-success" label="Verde" value="menos de 60% ocupado" />
+          <FlightLegendRow color="text-warning" label="Amarillo" value="60% a 84% ocupado" />
+          <FlightLegendRow color="text-danger" label="Rojo" value="85% o mas ocupado" />
+        </div>
+      </div>
+    </details>
+  );
+}
+
+function LegendRow({ color, label, value }) {
+  return (
+    <div className="mb-1.5 flex items-center gap-2 last:mb-0">
+      <span className={`h-3 w-3 shrink-0 rounded-full ${color}`} />
+      <span className="font-semibold text-slate-200">{label}</span>
+      <span className="text-slate-400">{value}</span>
+    </div>
+  );
+}
+
+function FlightLegendRow({ color, label, value }) {
+  return (
+    <div className="mb-1.5 flex items-center gap-2 last:mb-0">
+      <Plane className={`h-4 w-4 shrink-0 ${color}`} />
+      <span className="font-semibold text-slate-200">{label}</span>
+      <span className="text-slate-400">{value}</span>
+    </div>
+  );
+}
+
 // --- panel principal ---
 export default function RightPanel({ onClose }) {
   const [activeTab, setActiveTab] = useState("Vuelos");
@@ -262,6 +312,8 @@ export default function RightPanel({ onClose }) {
         {activeTab === "Rutas"   && routesFiltered.length === 0 && <EmptyState title="Sin resultados" message={`Nada coincide con "${query}".`} />}
         {activeTab === "Maletas" && bagsFiltered.length === 0   && <EmptyState title="Sin resultados" message={`Nada coincide con "${query}".`} />}
       </div>
+
+      <ColorLegend />
     </div>
   );
 }

@@ -1,4 +1,4 @@
-import { Luggage, Plane, Warehouse } from "lucide-react";
+import { CheckCircle2, CircleAlert, Luggage, Plane, Warehouse } from "lucide-react";
 import AirportMap from "../map/AirportMap";
 
 /**
@@ -12,12 +12,17 @@ import AirportMap from "../map/AirportMap";
 export default function MapDashboard({
   title,
   header = null,
+  mapOverlay = null,
+  showMapClock = true,
+  showMapFlights = true,
   date = "18-03-26",
   time = "12:34:16 UTC",
   metrics = {},
 }) {
   const {
     bagsInTransit = 825,
+    bagsDelivered = 0,
+    bagsUnassigned = 0,
     activeFlights = 3,
     freeCapacityPct = 42,
   } = metrics;
@@ -33,12 +38,24 @@ export default function MapDashboard({
       </div>
 
       <div className="px-4 sm:px-8 pl-14 sm:pl-16 pr-14 sm:pr-16 pb-2">
-        <div className="grid grid-cols-1 sm:grid-cols-3 gap-2 sm:gap-3">
+        <div className="grid grid-cols-1 sm:grid-cols-2 xl:grid-cols-5 gap-2 sm:gap-3">
           <Kpi
             icon={Luggage}
             label="Maletas en Tránsito"
             value={bagsInTransit.toLocaleString()}
             tone="info"
+          />
+          <Kpi
+            icon={CheckCircle2}
+            label="Maletas Entregadas"
+            value={bagsDelivered.toLocaleString()}
+            tone="success"
+          />
+          <Kpi
+            icon={CircleAlert}
+            label="Maletas No Asignadas"
+            value={bagsUnassigned.toLocaleString()}
+            tone={bagsUnassigned > 0 ? "danger" : "success"}
           />
           <Kpi
             icon={Plane}
@@ -57,9 +74,9 @@ export default function MapDashboard({
 
       <div className="flex-1 relative w-full h-full bg-canvas p-2 sm:p-4 min-h-0">
         <div className="w-full h-full rounded-2xl overflow-hidden relative shadow-[0_0_40px_rgba(0,0,0,0.5)] border border-slate-700/50">
-          <AirportMap />
+          <AirportMap showFlights={showMapFlights} />
 
-          <div className="absolute top-4 left-1/2 -translate-x-1/2 sm:left-6 sm:translate-x-0 z-[1000]">
+          {showMapClock && <div className="absolute top-4 left-1/2 -translate-x-1/2 sm:left-6 sm:translate-x-0 z-[1000]">
             <div className="bg-surface-2/75 backdrop-blur pl-4 pr-6 py-2.5 rounded-xl border border-slate-700 flex gap-4 sm:gap-6">
               <div>
                 <div className="text-[10px] text-slate-400 font-medium">Fecha</div>
@@ -70,7 +87,13 @@ export default function MapDashboard({
                 <div className="text-sm font-bold text-success">{time}</div>
               </div>
             </div>
-          </div>
+          </div>}
+
+          {mapOverlay && (
+            <div className="absolute left-1/2 bottom-4 z-[1000] w-[min(92%,28rem)] -translate-x-1/2">
+              {mapOverlay}
+            </div>
+          )}
         </div>
       </div>
     </div>

@@ -1,25 +1,20 @@
-import { useEffect, useState } from "react";
+import { useEffect, useMemo, useState } from "react";
 import { Play, Square, AlertTriangle } from "lucide-react";
 import MapDashboard from "../components/simulator/MapDashboard";
 import { usePolling } from "../hooks/usePolling";
+import { useElapsedTimer } from "../hooks/useElapsedTimer";
 import { useToast } from "../components/ui/Toast";
 import { getStatus } from "../api/status";
 import { startCollapseSim, stopCollapseSim, getCollapseSimState } from "../api/simulator";
+import { formatDateTimeDisplay, formatElapsedHMS } from "../utils/formatting";
 
 const WARNING_AT_MS  = 60_000;
-
-const formatElapsed = (ms) => {
-  const totalSec = Math.floor((ms ?? 0) / 1000);
-  const h = Math.floor(totalSec / 3600);
-  const m = Math.floor((totalSec % 3600) / 60);
-  const s = totalSec % 60;
-  return `${String(h).padStart(2, "0")}:${String(m).padStart(2, "0")}:${String(s).padStart(2, "0")}`;
-};
 
 export default function CollapseSimulatorPage() {
   const toast = useToast();
   const [startDate, setStartDate] = useState(() => new Date().toISOString().slice(0, 10));
   const [simStatus, setSimStatus] = useState("idle");
+  const [runId, setRunId] = useState(0);
 
   const { data: simState } = usePolling(getCollapseSimState, {
     enabled: simStatus === "running",
@@ -27,6 +22,7 @@ export default function CollapseSimulatorPage() {
   });
 
   const { data: status } = usePolling(getStatus);
+  const executionElapsedMs = useElapsedTimer(simStatus, runId);
 
   useEffect(() => {
     if (!simState || simState.status === simStatus) return;
@@ -37,10 +33,17 @@ export default function CollapseSimulatorPage() {
   }, [simState, simStatus, toast]);
 
   const elapsed = simState?.elapsedMs ?? 0;
+  const simulationClock = useMemo(() => {
+    const baseDate = simState?.startDate ?? startDate;
+    const start = new Date(`${baseDate}T00:00:00`);
+    if (Number.isNaN(start.getTime())) return formatDateTimeDisplay(null);
+    return formatDateTimeDisplay(new Date(start.getTime() + elapsed));
+  }, [elapsed, simState?.startDate, startDate]);
 
   const handleStart = async () => {
     try {
       const result = await startCollapseSim(startDate);
+      setRunId((current) => current + 1);
       setSimStatus(result.status);
       toast.push({ type: "info", title: "Simulación iniciada", message: `Inicio: ${startDate} · sin límite hasta colapso` });
     } catch (err) {
@@ -67,6 +70,24 @@ export default function CollapseSimulatorPage() {
       ? { label: "Operativo", color: "text-success", bg: "bg-success/15 border-success/40" }
       : { label: "En espera", color: "text-slate-300", bg: "bg-surface-2 border-slate-700" };
 
+  const hasActiveRun = simStatus !== "idle";
+
+  const mapOverlay = hasActiveRun ? (
+    <div className="bg-surface-2/85 backdrop-blur border border-slate-700 shadow-[0_12px_35px_rgba(0,0,0,0.45)] rounded-xl px-4 py-3 flex items-center justify-center gap-6">
+      <div>
+        <div className="text-[10px] text-slate-400 font-medium uppercase tracking-wider">Cronometro</div>
+        <div className="text-lg font-bold text-slate-100 tabular-nums">{formatElapsedHMS(executionElapsedMs)}</div>
+      </div>
+      <div className="h-9 w-px bg-slate-700" />
+      <div>
+        <div className="text-[10px] text-slate-400 font-medium uppercase tracking-wider">Fecha/hora simulada</div>
+        <div className="text-lg font-bold text-info tabular-nums">
+          {simulationClock.date} - {simulationClock.time} {simulationClock.timeZone}
+        </div>
+      </div>
+    </div>
+  ) : null;
+
   const header = (
     <div className="flex items-center gap-3 flex-wrap">
       <div className="flex flex-col">
@@ -83,12 +104,19 @@ export default function CollapseSimulatorPage() {
         />
       </div>
 
-      <div className="flex flex-col">
-        <span className="text-[10px] text-slate-400 uppercase tracking-wider font-medium">Tiempo simulado</span>
+      {false && <div className="flex flex-col">
+        <span className="text-[10px] text-slate-400 uppercase tracking-wider font-medium">Cronometro</span>
         <span className="px-3 py-1.5 bg-surface-2 border border-slate-700 rounded-lg text-sm font-bold text-slate-200 tabular-nums">
-          {formatElapsed(elapsed)}
+          {formatElapsedHMS(executionElapsedMs)}
         </span>
-      </div>
+      </div>}
+
+      {false && <div className="flex flex-col">
+        <span className="text-[10px] text-slate-400 uppercase tracking-wider font-medium">Fecha/hora simulada</span>
+        <span className="px-3 py-1.5 bg-surface-2 border border-slate-700 rounded-lg text-sm font-bold text-info tabular-nums">
+          {simulationClock.date} - {simulationClock.time}
+        </span>
+      </div>}
 
       <div className="flex flex-col">
         <span className="text-[10px] text-slate-400 uppercase tracking-wider font-medium">Estado</span>
@@ -122,6 +150,9 @@ export default function CollapseSimulatorPage() {
     <MapDashboard
       title="Simulación hasta Colapso"
       header={header}
+      mapOverlay={mapOverlay}
+      showMapClock={false}
+      showMapFlights={hasActiveRun}
       date={status?.date}
       time={status?.time}
       metrics={status ?? undefined}

@@ -2,11 +2,13 @@ import { useEffect, useMemo, useState } from "react";
 import { Play, Pause, Square, RotateCw } from "lucide-react";
 import MapDashboard from "../components/simulator/MapDashboard";
 import { usePolling } from "../hooks/usePolling";
+import { useElapsedTimer } from "../hooks/useElapsedTimer";
 import { useStompPublish, useStompSubscribe } from "../hooks/useStomp";
 import { useToast } from "../components/ui/Toast";
 import { getStatus } from "../api/status";
 import { iniciarSimulacionPeriodo, stopPeriodSim, getPeriodSimState } from "../api/simulator";
 import { USE_MOCK } from "../api/client";
+import { formatDateTimeDisplay, formatElapsedHMS, formatTimeZoneOffset } from "../utils/formatting";
 
 const PERIOD_DAYS = 5;
 const INTERVAL_TICK_MS = 1000;
@@ -19,6 +21,28 @@ const ESTADO_BACK_A_LOCAL = {
   FINALIZADA: "done",
 };
 
+const buildSimulatedDateTime = (startDate, progress) => {
+  const start = new Date(`${startDate}T00:00:00`);
+  if (Number.isNaN(start.getTime())) return null;
+  const safeProgress = Math.min(100, Math.max(0, progress));
+  const simulatedMs = (safeProgress / 100) * PERIOD_DAYS * 24 * 60 * 60 * 1000;
+  return new Date(start.getTime() + simulatedMs);
+};
+
+const getTickClock = (tick) => {
+  const rawDateTime = tick?.fechaHoraSimulada ?? tick?.fechaSimulada;
+  if (!rawDateTime) return null;
+
+  const value = String(rawDateTime);
+  if (value.includes("T") || value.includes(" ")) return formatDateTimeDisplay(value);
+
+  return {
+    date: value,
+    time: tick?.horaSimulada ?? tick?.horaActual ?? "00:00:00",
+    timeZone: tick?.husoHorario ?? tick?.zonaHoraria ?? tick?.timeZone ?? formatTimeZoneOffset(),
+  };
+};
+
 export default function PeriodSimulatorPage() {
   const toast = useToast();
   const publish = useStompPublish();
@@ -26,6 +50,8 @@ export default function PeriodSimulatorPage() {
   const [startDate, setStartDate] = useState(() => new Date().toISOString().slice(0, 10));
   const [sessionId, setSessionId] = useState(null);
   const [simStatus, setSimStatus] = useState("idle"); // idle | running | paused | done
+  const [runId, setRunId] = useState(0);
+  const [lastMockState, setLastMockState] = useState(null);
 
   /* ============ MODO REAL: STOMP ============ */
   const tickTopic   = !USE_MOCK && sessionId ? `/topic/simulacion/${sessionId}` : null;
@@ -42,11 +68,14 @@ export default function PeriodSimulatorPage() {
 
   /* KPIs globales del topbar (siempre con polling — vienen de /status que no es del WS) */
   const { data: status } = usePolling(getStatus);
+  const executionElapsedMs = useElapsedTimer(simStatus, runId);
+  const hasActiveRun = simStatus !== "idle";
 
   /* Sincronizo simStatus segun el origen activo */
   useEffect(() => {
     if (USE_MOCK) {
       if (!mockState || mockState.status === simStatus) return;
+      setLastMockState(mockState);
       setSimStatus(mockState.status);
       if (mockState.status === "done") {
         toast.push({ type: "success", title: "Simulación completada", message: `Periodo de ${PERIOD_DAYS} días procesado.` });
@@ -66,11 +95,17 @@ export default function PeriodSimulatorPage() {
 
   /* Progreso */
   const progress = useMemo(() => {
-    if (USE_MOCK) return mockState?.progress ?? 0;
+    if (USE_MOCK) return mockState?.progress ?? lastMockState?.progress ?? 0;
     if (!tick) return 0;
     const dia = tick.diaActual ?? 0;
     return Math.min(100, (dia / PERIOD_DAYS) * 100);
-  }, [tick, mockState]);
+  }, [tick, mockState, lastMockState]);
+
+  const simulationClock = useMemo(() => {
+    const tickClock = getTickClock(tick);
+    if (tickClock) return tickClock;
+    return formatDateTimeDisplay(buildSimulatedDateTime(startDate, progress));
+  }, [tick, startDate, progress]);
 
   /* Metricas en vivo (sobreescriben las de /status cuando el tick las trae) */
   const liveMetrics = useMemo(() => {
@@ -78,6 +113,8 @@ export default function PeriodSimulatorPage() {
     return {
       ...(status ?? {}),
       bagsInTransit:  tick.maletasEnTransito,
+      bagsDelivered:  tick.maletasEntregadas ?? tick.maletasEntregadasATiempo ?? status?.bagsDelivered ?? 0,
+      bagsUnassigned: tick.maletasNoAsignadas ?? tick.maletasSinRuta ?? status?.bagsUnassigned ?? 0,
       activeFlights:  status?.activeFlights ?? 0,
       freeCapacityPct: status?.freeCapacityPct ?? 0,
     };
@@ -93,6 +130,8 @@ export default function PeriodSimulatorPage() {
       });
       const newSessionId = result.sessionId ?? null;
       setSessionId(newSessionId);
+      setLastMockState(null);
+      setRunId((current) => current + 1);
       setSimStatus(USE_MOCK ? (result.status ?? "running") : (ESTADO_BACK_A_LOCAL[result.estado] ?? "running"));
       toast.push({ type: "info", title: "Simulación iniciada", message: `Inicio: ${startDate} · ${PERIOD_DAYS} días` });
     } catch (err) {
@@ -137,6 +176,23 @@ export default function PeriodSimulatorPage() {
   };
 
   /* ============ UI ============ */
+  const mapOverlay = hasActiveRun ? (
+    <div className="bg-surface-2/85 backdrop-blur border border-slate-700 shadow-[0_12px_35px_rgba(0,0,0,0.45)] rounded-xl px-4 py-3 flex items-center justify-center gap-6">
+      <div>
+        <div className="text-[10px] text-slate-400 font-medium uppercase tracking-wider">Cronometro</div>
+        <div className="text-lg font-bold text-slate-100 tabular-nums">{formatElapsedHMS(executionElapsedMs)}</div>
+      </div>
+      <div className="h-9 w-px bg-slate-700" />
+      <div>
+        <div className="text-[10px] text-slate-400 font-medium uppercase tracking-wider">Fecha/hora simulada</div>
+        <div className="text-lg font-bold text-info tabular-nums">
+          {simulationClock.date} - {simulationClock.time} {simulationClock.timeZone}
+          {tick?.diaActual ? ` - dia ${tick.diaActual}/${PERIOD_DAYS}` : ""}
+        </div>
+      </div>
+    </div>
+  ) : null;
+
   const header = (
     <div className="flex items-center gap-3 flex-wrap">
       <div className="flex flex-col">
@@ -160,7 +216,7 @@ export default function PeriodSimulatorPage() {
         </span>
       </div>
 
-      {tick?.fechaSimulada && (
+      {false && tick?.fechaSimulada && (
         <div className="flex flex-col">
           <span className="text-[10px] text-slate-400 uppercase tracking-wider font-medium">Día simulado</span>
           <span className="px-3 py-1.5 bg-surface-2 border border-slate-700 rounded-lg text-sm font-bold text-info tabular-nums">
@@ -216,6 +272,9 @@ export default function PeriodSimulatorPage() {
     <MapDashboard
       title={`Simulación de Periodo · ${PERIOD_DAYS} días`}
       header={header}
+      mapOverlay={mapOverlay}
+      showMapClock={false}
+      showMapFlights={hasActiveRun}
       date={status?.date}
       time={status?.time}
       metrics={liveMetrics}

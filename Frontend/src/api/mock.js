@@ -90,6 +90,8 @@ export async function mockGetStatus() {
     date: "18-03-26",
     time: new Date().toUTCString().slice(17, 25) + " UTC",
     bagsInTransit:    jitter(825, 30),
+    bagsDelivered:    jitter(1240, 45),
+    bagsUnassigned:   jitter(18, 8),
     activeFlights:    jitter(7, 2),
     freeCapacityPct:  Math.min(100, Math.max(0, jitter(42, 4))),
   };

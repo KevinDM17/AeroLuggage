@@ -10,6 +10,8 @@ import { mockGetStatus } from "./mock";
  *   date: "18-03-26",
  *   time: "12:34:16 UTC",
  *   bagsInTransit: number,
+ *   bagsDelivered: number,
+ *   bagsUnassigned: number,
  *   activeFlights: number,
  *   freeCapacityPct: number,     // 0-100
  *   activeAlerts: number,
