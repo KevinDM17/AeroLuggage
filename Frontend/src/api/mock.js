@@ -81,6 +81,56 @@ export async function mockCreateOrder(payload) {
   return created;
 }
 
+// ---------- MALETAS ----------
+// Shape alineado con el back: { idMaleta, idPedido, fechaRegistro, fechaLlegada, estado, ubicacionActual }
+let _maletas = (() => {
+  const out = [];
+  _orders.forEach((o) => {
+    const total = Math.min(o.bags ?? 1, 8); // capamos a 8 para el demo
+    for (let i = 1; i <= total; i++) {
+      const idMaleta = `${o.id}-${String(i).padStart(3, "0")}`;
+      const estados = ["EN_ALMACEN", "EN_TRASLADO", "EN_VUELO", "ENTREGADA"];
+      const estado = i === total ? "ENTREGADA" : estados[i % estados.length];
+      const ubicacionActual = estado === "EN_VUELO" ? null : (estado === "ENTREGADA" ? o.dest : o.origin);
+      out.push({
+        idMaleta,
+        idPedido: o.id,
+        fechaRegistro: `${o.date}T${o.time}:00`,
+        fechaLlegada: estado === "ENTREGADA" ? `${o.date}T18:36:00` : null,
+        estado,
+        ubicacionActual,
+      });
+    }
+  });
+  return out;
+})();
+
+export async function mockListMaletas() { await delay(); return [..._maletas]; }
+
+// ---------- RUTAS (planes de viaje, output del Planificador) ----------
+let _rutas = _maletas.slice(0, 6).map((m, i) => {
+  const o = _orders.find((or) => or.id === m.idPedido);
+  return {
+    idRuta: `R-${String(i + 1).padStart(6, "0")}`,
+    idMaleta: m.idMaleta,
+    plazoMaximoDias: 1.0,
+    duracion: 0.5,
+    estado: "PLANIFICADA",
+    vuelos: [
+      {
+        idVueloInstancia: `VI${String(i + 1).padStart(6, "0")}`,
+        codigo: `${o.origin}-${o.dest}-10:00`,
+        fechaSalida: `${o.date}T10:00:00`,
+        fechaLlegada: `${o.date}T16:30:00`,
+        aeropuertoOrigen: o.origin,
+        aeropuertoDestino: o.dest,
+      },
+    ],
+  };
+});
+
+export async function mockListRutas() { await delay(); return [..._rutas]; }
+
 // ---------- STATUS / KPIs en tiempo real ----------
 export async function mockGetStatus() {
   await delay(120);

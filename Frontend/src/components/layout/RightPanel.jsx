@@ -4,31 +4,9 @@ import { useFetch } from "../../hooks/useFetch";
 import { listFlights } from "../../api/flights";
 import { listOrders } from "../../api/orders";
 import { listAirports } from "../../api/airports";
+import { listMaletas } from "../../api/maletas";
+import { listRutas } from "../../api/rutas";
 import { LoadingState, EmptyState, ErrorState } from "../ui/States";
-
-// --- Mock data para tabs sin endpoint todavía (Rutas y Maletas) ---
-const ROUTES_DATA = [
-  {
-    id: "#PR-001", bag: "M-0001",
-    stops: [
-      { type: "node", label: "LIM", status: "past" },
-      { type: "edge", label: "LA201 (16:30 - 18:00)" },
-      { type: "node", label: "BOG", status: "current" },
-      { type: "edge", label: "AV105 (22:00 - 01:30+1)" },
-      { type: "node", label: "MIA", status: "future" },
-    ],
-  },
-  { id: "#PR-002", bag: "M-0002" },
-  { id: "#PR-003", bag: "M-0003" },
-];
-
-const BAGS = [
-  { id: "M-0001", status: "EN ESPERA",   location: "MIA",       flight: "LA201",  routePlan: "#PR-001", client: "Cliente A" },
-  { id: "M-0002", status: "EN TRASLADO", location: "MIA - GRU", flight: "AV105",  routePlan: "#PR-002", client: "Cliente A" },
-  { id: "M-0003", status: "REGISTRADO", location: "MIA - BOG", flight: "G3102",  routePlan: "#PR-001", client: "Cliente B" },
-  { id: "M-0004", status: "LLEGÓ",      location: "JFK",       flight: "--",     routePlan: "#PR-001", client: "Cliente C" },
-  { id: "M-0005", status: "ENTREGADO",  location: "18/04 18:36", flight: "--",   routePlan: "#PR-001", client: "Cliente D" },
-];
 
 // --- helpers de estilo ---
 const flightStatusColor = (s) => {
@@ -41,14 +19,28 @@ const flightStatusColor = (s) => {
   }
 };
 const occupancyColor = (pct) => pct >= 85 ? "bg-danger" : pct >= 60 ? "bg-warning" : "bg-success";
+
+// Estados del back: EN_ALMACEN | EN_TRASLADO | EN_VUELO | ENTREGADA | EXTRAVIADA
 const bagStatusColor = (s) => {
   switch (s) {
-    case "EN ESPERA":   return "bg-slate-300 text-slate-800";
-    case "EN TRASLADO": return "bg-warning text-yellow-900";
-    case "REGISTRADO":  return "bg-indigo-600 text-white";
-    case "LLEGÓ":       return "bg-cyan-500 text-white";
-    case "ENTREGADO":   return "bg-success text-emerald-900";
+    case "EN_ALMACEN":  return "bg-slate-300 text-slate-800";
+    case "EN_TRASLADO": return "bg-warning text-yellow-900";
+    case "EN_VUELO":    return "bg-info text-slate-900";
+    case "ENTREGADA":   return "bg-success text-emerald-900";
+    case "EXTRAVIADA":  return "bg-danger text-white";
     default:            return "bg-slate-500 text-white";
+  }
+};
+const bagStatusLabel = (s) => (s ?? "").replace(/_/g, " ");
+
+// Estados del back para rutas: PLANIFICADA | EN_CURSO | COMPLETADA | FALLIDA
+const routeStatusColor = (s) => {
+  switch (s) {
+    case "PLANIFICADA": return "border-info/40 text-info";
+    case "EN_CURSO":    return "border-warning/40 text-warning";
+    case "COMPLETADA":  return "border-success/40 text-success";
+    case "FALLIDA":     return "border-danger/40 text-danger";
+    default:            return "border-slate-700 text-slate-400";
   }
 };
 
@@ -109,33 +101,58 @@ function OrderItem({ order }) {
 
 function RouteItem({ route }) {
   const [expanded, setExpanded] = useState(false);
+  const vuelos = route.vuelos ?? [];
+
+  // Convertir vuelos [{ origen, destino }] en una secuencia de nodos (aeropuertos)
+  // intercalada con edges (vuelos). El primer nodo es el origen del primer vuelo.
+  const stops = useMemo(() => {
+    if (vuelos.length === 0) return [];
+    const out = [];
+    out.push({ type: "node", icao: vuelos[0].aeropuertoOrigen });
+    vuelos.forEach((v) => {
+      out.push({
+        type: "edge",
+        label: `${v.codigo} · ${(v.fechaSalida ?? "").slice(11, 16)} → ${(v.fechaLlegada ?? "").slice(11, 16)}`,
+      });
+      out.push({ type: "node", icao: v.aeropuertoDestino });
+    });
+    return out;
+  }, [vuelos]);
+
   return (
     <div className="flex flex-col border-b border-slate-800/50 pb-4 mb-4 last:border-0 last:pb-0 cursor-pointer" onClick={() => setExpanded(!expanded)}>
-      <div className="flex justify-between items-center mb-4">
-        <h4 className="font-bold text-lg text-slate-200">{route.id}</h4>
-        <span className="text-xs text-slate-400">Maleta: {route.bag}</span>
+      <div className="flex justify-between items-center mb-2">
+        <div>
+          <h4 className="font-bold text-lg text-slate-200">{route.idRuta}</h4>
+          <span className="text-xs text-slate-400">Maleta: {route.idMaleta}</span>
+        </div>
+        <span className={`text-[10px] font-bold px-2 py-1 rounded tracking-wider border bg-transparent ${routeStatusColor(route.estado)}`}>
+          {(route.estado ?? "").replace(/_/g, " ")}
+        </span>
       </div>
-      {expanded && route.stops && (
+      {expanded && (
         <div className="flex flex-col pl-2 mt-2 cursor-default" onClick={(e) => e.stopPropagation()}>
-          {route.stops.map((stop, j) => {
+          {stops.map((stop, j) => {
             if (stop.type === "node") {
-              let dotColor = "bg-slate-600";
-              if (stop.status === "past")     dotColor = "bg-success";
-              else if (stop.status === "current") dotColor = "bg-warning";
               return (
                 <div key={j} className="flex items-center gap-3 relative z-10">
-                  <div className={`w-3 h-3 rounded-full ${dotColor}`}></div>
-                  <span className="text-xs font-bold text-slate-200">{stop.label}</span>
+                  <div className="w-3 h-3 rounded-full bg-success" />
+                  <span className="text-xs font-bold text-slate-200">{stop.icao}</span>
                 </div>
               );
             }
             return (
               <div key={j} className="flex items-center gap-3 my-1 relative">
-                <div className="w-[1px] h-6 bg-slate-700 absolute left-[5px] top-[-4px] z-0"></div>
-                <div className="ml-6 text-[10px] text-slate-400 whitespace-nowrap overflow-hidden text-ellipsis">{stop.label}</div>
+                <div className="w-[1px] h-6 bg-slate-700 absolute left-[5px] top-[-4px] z-0" />
+                <div className="ml-6 text-[10px] text-slate-400 whitespace-nowrap overflow-hidden text-ellipsis">
+                  {stop.label}
+                </div>
               </div>
             );
           })}
+          <div className="text-[10px] text-slate-400 mt-3 pt-2 border-t border-slate-800">
+            Plazo máximo: <span className="text-slate-200">{route.plazoMaximoDias}d</span> · Duración: <span className="text-slate-200">{route.duracion}d</span>
+          </div>
         </div>
       )}
     </div>
@@ -144,19 +161,26 @@ function RouteItem({ route }) {
 
 function BagItem({ bag }) {
   const [expanded, setExpanded] = useState(false);
+  const label = bagStatusLabel(bag.estado);
   return (
     <div className="flex flex-col border-b border-slate-800/50 pb-4 mb-4 last:border-0 last:pb-0 cursor-pointer" onClick={() => setExpanded(!expanded)}>
       <div className="flex justify-between items-start mb-2">
-        <h4 className="font-bold text-lg text-slate-200">{bag.id}</h4>
-        <span className={`text-[10px] font-bold px-2 py-1 rounded tracking-wider ${bagStatusColor(bag.status)}`}>{bag.status}</span>
+        <h4 className="font-bold text-sm text-slate-200 break-all pr-2">{bag.idMaleta}</h4>
+        <span className={`text-[10px] font-bold px-2 py-1 rounded tracking-wider whitespace-nowrap ${bagStatusColor(bag.estado)}`}>
+          {label}
+        </span>
       </div>
       {expanded && (
         <div className="cursor-default mt-2" onClick={(e) => e.stopPropagation()}>
-          <div className="text-base font-bold text-slate-300 mb-2">{bag.location}</div>
+          {bag.ubicacionActual && (
+            <div className="text-base font-bold text-slate-300 mb-2">{bag.ubicacionActual}</div>
+          )}
           <div className="text-xs text-slate-400 flex flex-col gap-0.5">
-            <div>Vuelo: <span className="text-slate-200">{bag.flight}</span></div>
-            <div>Plan de ruta: <span className="text-slate-200">{bag.routePlan}</span></div>
-            <div>Cliente: <span className="text-slate-200">{bag.client}</span></div>
+            <div>Pedido: <span className="text-slate-200">{bag.idPedido}</span></div>
+            <div>Registro: <span className="text-slate-200">{(bag.fechaRegistro ?? "").replace("T", " ").slice(0, 16)}</span></div>
+            {bag.fechaLlegada && (
+              <div>Entregada: <span className="text-slate-200">{bag.fechaLlegada.replace("T", " ").slice(0, 16)}</span></div>
+            )}
           </div>
         </div>
       )}
@@ -253,6 +277,8 @@ export default function RightPanel({ onClose }) {
   const flights  = useFetch(listFlights);
   const orders   = useFetch(listOrders);
   const airports = useFetch(listAirports);
+  const maletas  = useFetch(listMaletas);
+  const rutas    = useFetch(listRutas);
 
   const filterByText = (rows, fields) => {
     const q = query.trim().toLowerCase();
@@ -260,11 +286,11 @@ export default function RightPanel({ onClose }) {
     return rows.filter((r) => fields.some((f) => String(r[f] ?? "").toLowerCase().includes(q)));
   };
 
-  const flightsFiltered = useMemo(() => filterByText(flights.data ?? [], ["id", "origin", "dest", "status"]), [flights.data, query]);
-  const ordersFiltered  = useMemo(() => filterByText(orders.data  ?? [], ["id", "clientId", "origin", "dest", "status"]), [orders.data, query]);
-  const airportsFiltered = useMemo(() => filterByText(airports.data ?? [], ["iata", "city", "continent"]), [airports.data, query]);
-  const routesFiltered = useMemo(() => filterByText(ROUTES_DATA, ["id", "bag"]), [query]);
-  const bagsFiltered   = useMemo(() => filterByText(BAGS, ["id", "location", "client", "status"]), [query]);
+  const flightsFiltered  = useMemo(() => filterByText(flights.data  ?? [], ["id", "origin", "dest", "status"]),     [flights.data, query]);
+  const ordersFiltered   = useMemo(() => filterByText(orders.data   ?? [], ["id", "clientId", "origin", "dest", "status"]), [orders.data, query]);
+  const airportsFiltered = useMemo(() => filterByText(airports.data ?? [], ["iata", "city", "continent"]),          [airports.data, query]);
+  const maletasFiltered  = useMemo(() => filterByText(maletas.data  ?? [], ["idMaleta", "idPedido", "estado", "ubicacionActual"]), [maletas.data, query]);
+  const rutasFiltered    = useMemo(() => filterByText(rutas.data    ?? [], ["idRuta", "idMaleta", "estado"]),       [rutas.data, query]);
 
   return (
     <div className="w-[min(360px,90vw)] lg:w-[360px] shrink-0 bg-surface-1 border-l border-slate-800 h-screen flex flex-col relative z-[9999]">
@@ -304,13 +330,11 @@ export default function RightPanel({ onClose }) {
       </div>
 
       <div className="flex-1 overflow-y-auto px-4 py-4 no-scrollbar">
-        {activeTab === "Vuelos"  && <TabBody {...flights}  empty="No hay vuelos." rows={flightsFiltered}  renderItem={(f) => <FlightItem key={f.id} flight={f} />} />}
-        {activeTab === "Pedidos" && <TabBody {...orders}   empty="No hay pedidos." rows={ordersFiltered}  renderItem={(o) => <OrderItem  key={o.id} order={o}  />} />}
-        {activeTab === "Aerop."  && <TabBody {...airports} empty="No hay aeropuertos." rows={airportsFiltered} renderItem={(a) => <AirportItem key={a.iata} apt={a} />} />}
-        {activeTab === "Rutas"   && routesFiltered.map((r) => <RouteItem key={r.id} route={r} />)}
-        {activeTab === "Maletas" && bagsFiltered.map((b) => <BagItem key={b.id} bag={b} />)}
-        {activeTab === "Rutas"   && routesFiltered.length === 0 && <EmptyState title="Sin resultados" message={`Nada coincide con "${query}".`} />}
-        {activeTab === "Maletas" && bagsFiltered.length === 0   && <EmptyState title="Sin resultados" message={`Nada coincide con "${query}".`} />}
+        {activeTab === "Vuelos"  && <TabBody {...flights}  empty="No hay vuelos."        rows={flightsFiltered}  renderItem={(f) => <FlightItem  key={f.id}        flight={f} />} />}
+        {activeTab === "Pedidos" && <TabBody {...orders}   empty="No hay pedidos."       rows={ordersFiltered}   renderItem={(o) => <OrderItem   key={o.id}        order={o}  />} />}
+        {activeTab === "Rutas"   && <TabBody {...rutas}    empty="Sin rutas planificadas. Inicia una simulación para que el Planificador las genere." rows={rutasFiltered} renderItem={(r) => <RouteItem key={r.idRuta} route={r} />} />}
+        {activeTab === "Maletas" && <TabBody {...maletas}  empty="No hay maletas."       rows={maletasFiltered}  renderItem={(b) => <BagItem     key={b.idMaleta}  bag={b}    />} />}
+        {activeTab === "Aerop."  && <TabBody {...airports} empty="No hay aeropuertos."   rows={airportsFiltered} renderItem={(a) => <AirportItem key={a.iata}      apt={a}    />} />}
       </div>
 
       <ColorLegend />
