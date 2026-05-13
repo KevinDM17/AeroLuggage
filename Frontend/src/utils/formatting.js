@@ -4,6 +4,8 @@ export const formatTime = (timeInMinutes) => {
   return `${hours.toString().padStart(2, '0')}:${minutes.toString().padStart(2, '0')}`;
 };
 
+const padDatePart = (value) => String(value).padStart(2, "0");
+
 export const formatElapsedHMS = (ms) => {
   const totalSec = Math.floor((ms ?? 0) / 1000);
   const hours = Math.floor(totalSec / 3600);
@@ -43,6 +45,18 @@ export const formatDateTimeDisplay = (value) => {
       hour12: false,
     }),
     timeZone: formatTimeZoneOffset(date),
+  };
+};
+
+export const formatUtcDateTimeDisplay = (value) => {
+  if (!value) return { date: "--", time: "--:--:--", timeZone: "UTC" };
+  const date = value instanceof Date ? value : new Date(value);
+  if (Number.isNaN(date.getTime())) return { date: "--", time: "--:--:--", timeZone: "UTC" };
+
+  return {
+    date: `${date.getUTCFullYear()}-${padDatePart(date.getUTCMonth() + 1)}-${padDatePart(date.getUTCDate())}`,
+    time: `${padDatePart(date.getUTCHours())}:${padDatePart(date.getUTCMinutes())}:${padDatePart(date.getUTCSeconds())}`,
+    timeZone: "UTC",
   };
 };
 

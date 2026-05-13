@@ -1,6 +1,6 @@
 import { useEffect, useRef, useState } from "react";
 
-export function useElapsedTimer(status, resetKey) {
+export function useElapsedTimer(status, resetKey, intervalMs = 1000) {
   const [elapsedMs, setElapsedMs] = useState(0);
   const accumulatedMsRef = useRef(0);
   const runningSinceRef = useRef(null);
@@ -35,7 +35,7 @@ export function useElapsedTimer(status, resetKey) {
 
     const intervalId = window.setInterval(() => {
       setElapsedMs(accumulatedMsRef.current + Date.now() - runningSinceRef.current);
-    }, 1000);
+    }, intervalMs);
 
     return () => {
       window.clearInterval(intervalId);
@@ -45,7 +45,7 @@ export function useElapsedTimer(status, resetKey) {
         setElapsedMs(accumulatedMsRef.current);
       }
     };
-  }, [status, resetKey]);
+  }, [status, resetKey, intervalMs]);
 
   return elapsedMs;
 }

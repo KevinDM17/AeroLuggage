@@ -6,7 +6,7 @@ import org.springframework.messaging.simp.SimpMessagingTemplate;
 import org.springframework.stereotype.Component;
 import pe.edu.pucp.aeroluggage.simulacion.DataTransferObject.PeriodoTickDTO;
 import pe.edu.pucp.aeroluggage.simulacion.DataTransferObject.SimulacionEstadoDTO;
-import pe.edu.pucp.aeroluggage.simulacion.DataTransferObject.SimulacionIniciarDTO;
+import pe.edu.pucp.aeroluggage.dto.rest.simulacion.SimulacionIniciarRequest;
 
 import java.time.LocalDate;
 import java.util.Map;
@@ -30,6 +30,7 @@ public class SimulacionSesionManager {
     private static final String ESTADO_REANUDADA = "REANUDADA";
     private static final String ESTADO_DETENIDA = "DETENIDA";
     private static final String ESTADO_FINALIZADA = "FINALIZADA";
+    private static final long TICK_INTERVAL_MS = 250L;
 
     private final SimulacionPeriodoService periodoService;
     private final Map<String, SimulacionSesion> sesionesActivas = new ConcurrentHashMap<>();
@@ -37,7 +38,7 @@ public class SimulacionSesionManager {
     private final ScheduledExecutorService scheduler = Executors.newScheduledThreadPool(4);
 
     public SimulacionEstadoDTO iniciar(
-            final SimulacionIniciarDTO params,
+            final SimulacionIniciarRequest params,
             final SimpMessagingTemplate broker) {
 
         final String sessionId = UUID.randomUUID().toString();
@@ -46,7 +47,7 @@ public class SimulacionSesionManager {
                 sessionId,
                 fechaInicio,
                 params.getTotalDias(),
-                params.getIntervaloTickMs()
+                params.getDuracionDiaSimuladoMs()
         );
 
         sesionesActivas.put(sessionId, sesion);
@@ -126,6 +127,10 @@ public class SimulacionSesionManager {
         wsSessionIdASimSessionId.put(wsSessionId, simSessionId);
     }
 
+    public SimulacionSesion obtenerSesion(final String sessionId) {
+        return sesionesActivas.get(sessionId);
+    }
+
     public void limpiarPorWsSession(final String wsSessionId, final SimpMessagingTemplate broker) {
         final String simSessionId = wsSessionIdASimSessionId.remove(wsSessionId);
         if (simSessionId == null) {
@@ -145,8 +150,8 @@ public class SimulacionSesionManager {
     private void programarTarea(final SimulacionSesion sesion, final SimpMessagingTemplate broker) {
         final ScheduledFuture<?> tarea = scheduler.scheduleAtFixedRate(
                 () -> ejecutarIteracion(sesion, broker),
-                sesion.getIntervaloTickMs(),
-                sesion.getIntervaloTickMs(),
+                0L,
+                TICK_INTERVAL_MS,
                 TimeUnit.MILLISECONDS
         );
         sesion.setTareaScheduled(tarea);

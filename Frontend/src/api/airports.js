@@ -16,7 +16,7 @@ import { mockListAirports, mockCreateAirport } from "./mock";
  * Lo normalizamos al shape que ya consumen las pages/components:
  *   { iata, name, city, continent, gmt, capacity, used, lat, lng }
  */
-const normalizeContinente = (c) => {
+export const normalizeContinente = (c) => {
   if (!c) return "";
   return c
     .toLowerCase()
@@ -25,7 +25,7 @@ const normalizeContinente = (c) => {
     .join(" ");
 };
 
-const adaptAirport = (a) => ({
+export const adaptAirport = (a) => ({
   iata:      a.idAeropuerto,
   name:      a.idAeropuerto,
   city:      a?.ciudad?.nombre ?? "",
