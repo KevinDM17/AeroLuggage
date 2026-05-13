@@ -30,6 +30,7 @@ public class SimulacionSesionManager {
     private static final String ESTADO_REANUDADA = "REANUDADA";
     private static final String ESTADO_DETENIDA = "DETENIDA";
     private static final String ESTADO_FINALIZADA = "FINALIZADA";
+    private static final long TICK_INTERVAL_MS = 250L;
 
     private final SimulacionPeriodoService periodoService;
     private final Map<String, SimulacionSesion> sesionesActivas = new ConcurrentHashMap<>();
@@ -126,6 +127,10 @@ public class SimulacionSesionManager {
         wsSessionIdASimSessionId.put(wsSessionId, simSessionId);
     }
 
+    public SimulacionSesion obtenerSesion(final String sessionId) {
+        return sesionesActivas.get(sessionId);
+    }
+
     public void limpiarPorWsSession(final String wsSessionId, final SimpMessagingTemplate broker) {
         final String simSessionId = wsSessionIdASimSessionId.remove(wsSessionId);
         if (simSessionId == null) {
@@ -145,8 +150,8 @@ public class SimulacionSesionManager {
     private void programarTarea(final SimulacionSesion sesion, final SimpMessagingTemplate broker) {
         final ScheduledFuture<?> tarea = scheduler.scheduleAtFixedRate(
                 () -> ejecutarIteracion(sesion, broker),
-                sesion.getDuracionDiaSimuladoMs(),
-                sesion.getDuracionDiaSimuladoMs(),
+                0L,
+                TICK_INTERVAL_MS,
                 TimeUnit.MILLISECONDS
         );
         sesion.setTareaScheduled(tarea);

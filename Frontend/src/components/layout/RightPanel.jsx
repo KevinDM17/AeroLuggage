@@ -1,4 +1,4 @@
-import { useMemo, useState } from "react";
+import { useEffect, useMemo, useState } from "react";
 import { useLocation } from "react-router-dom";
 import { Filter, PanelRightClose, MapPin, Globe, Info, ChevronDown, Plane, RefreshCw } from "lucide-react";
 import { useFetch } from "../../hooks/useFetch";
@@ -9,8 +9,16 @@ import { listMaletas } from "../../api/maletas";
 import { listRutas } from "../../api/rutas";
 import { LoadingState, EmptyState, ErrorState } from "../ui/States";
 
+const FLIGHT_STATUS_FILTERS = [
+  { value: "ALL", label: "Todos" },
+  { value: "PROGRAMADO", label: "Programado" },
+  { value: "EN_PROGRESO", label: "En progreso" },
+  { value: "FINALIZADO", label: "Finalizado" },
+  { value: "CANCELADO", label: "Cancelado" },
+];
+
 const flightStatusColor = (s) => {
-  switch ((s ?? "").toUpperCase()) {
+  switch ((s ?? "").toUpperCase().replace(/_/g, " ")) {
     case "EN PROGRESO": return "bg-warning text-yellow-900";
     case "CONFIRMADO": return "bg-indigo-600 text-white";
     case "CANCELADO": return "bg-danger text-white";
@@ -37,7 +45,10 @@ const bagStatusLabel = (s) => (s ?? "").replace(/_/g, " ");
 const routeStatusColor = (s) => {
   switch (s) {
     case "PLANIFICADA": return "border-info/40 text-info";
-    case "EN_CURSO": return "border-warning/40 text-warning";
+    case "EN_CURSO":
+    case "ACTIVA":
+    case "REPLANIFICADA": return "border-warning/40 text-warning";
+    case "CONFIRMADA": return "border-indigo-500/40 text-indigo-300";
     case "COMPLETADA": return "border-success/40 text-success";
     case "FALLIDA": return "border-danger/40 text-danger";
     default: return "border-slate-700 text-slate-400";
@@ -57,7 +68,7 @@ function FlightItem({ flight }) {
           </div>
         </div>
         <span className={`text-[10px] font-bold px-2 py-1 rounded tracking-wider ${flightStatusColor(flight.status === "En progreso" ? "EN PROGRESO" : flight.status?.toUpperCase())}`}>
-          {(flight.status ?? "").toUpperCase()}
+          {(flight.status ?? "").toUpperCase().replace(/_/g, " ")}
         </span>
       </div>
       {expanded && (
@@ -293,9 +304,18 @@ function sortFlightsByDepartureAsc(rows = []) {
   });
 }
 
+function normalizeFlightStatus(status) {
+  return String(status ?? "")
+    .trim()
+    .toUpperCase()
+    .replace(/\s+/g, "_");
+}
+
 export default function RightPanel({ onClose, simulationPanelData }) {
   const [activeTab, setActiveTab] = useState("Vuelos");
   const [query, setQuery] = useState("");
+  const [flightStatusFilter, setFlightStatusFilter] = useState("ALL");
+  const [visibleFlights, setVisibleFlights] = useState([]);
   const location = useLocation();
   const tabs = ["Vuelos", "Pedidos", "Rutas", "Maletas", "Aerop."];
   const isSimulator = location.pathname === "/" || location.pathname.startsWith("/simulator");
@@ -303,6 +323,9 @@ export default function RightPanel({ onClose, simulationPanelData }) {
   const onTabChange = (tab) => {
     setActiveTab(tab);
     setQuery("");
+    if (tab !== "Vuelos") {
+      setFlightStatusFilter("ALL");
+    }
   };
 
   const flightsFetch = useFetch(() => (isSimulator ? Promise.resolve([]) : listFlights()), [isSimulator]);
@@ -313,9 +336,9 @@ export default function RightPanel({ onClose, simulationPanelData }) {
 
   const flights = isSimulator ? createStaticSource(simulationPanelData?.flights ?? []) : flightsFetch;
   const airports = isSimulator ? createStaticSource(simulationPanelData?.airports ?? []) : airportsFetch;
-  const orders = isSimulator ? createStaticSource([]) : ordersFetch;
-  const maletas = isSimulator ? createStaticSource([]) : maletasFetch;
-  const rutas = isSimulator ? createStaticSource([]) : rutasFetch;
+  const orders = isSimulator ? createStaticSource(simulationPanelData?.orders ?? []) : ordersFetch;
+  const maletas = isSimulator ? createStaticSource(simulationPanelData?.bags ?? []) : maletasFetch;
+  const rutas = isSimulator ? createStaticSource(simulationPanelData?.routes ?? []) : rutasFetch;
 
   const activeSource = {
     Vuelos: flights,
@@ -331,10 +354,14 @@ export default function RightPanel({ onClose, simulationPanelData }) {
     return rows.filter((r) => fields.some((f) => String(r[f] ?? "").toLowerCase().includes(q)));
   };
 
-  const flightsFiltered = useMemo(
-    () => sortFlightsByDepartureAsc(filterByText(flights.data ?? [], ["id", "origin", "dest", "status"])),
-    [flights.data, query]
-  );
+  useEffect(() => {
+    const sourceFlights = Array.isArray(flights.data) ? flights.data : [];
+    const byStatus = flightStatusFilter === "ALL"
+      ? sourceFlights
+      : sourceFlights.filter((flight) => normalizeFlightStatus(flight?.status) === flightStatusFilter);
+    setVisibleFlights(sortFlightsByDepartureAsc(byStatus));
+  }, [flights.data, flightStatusFilter]);
+
   const ordersFiltered = useMemo(() => filterByText(orders.data ?? [], ["id", "clientId", "origin", "dest", "status"]), [orders.data, query]);
   const airportsFiltered = useMemo(() => filterByText(airports.data ?? [], ["iata", "city", "continent"]), [airports.data, query]);
   const maletasFiltered = useMemo(() => filterByText(maletas.data ?? [], ["idMaleta", "idPedido", "estado", "ubicacionActual"]), [maletas.data, query]);
@@ -366,15 +393,34 @@ export default function RightPanel({ onClose, simulationPanelData }) {
       </div>
 
       <div className="p-4 border-b border-slate-800 flex items-center gap-2">
-        <Filter className="w-5 h-5 text-slate-400 shrink-0" />
-        <input
-          type="text"
-          value={query}
-          onChange={(e) => setQuery(e.target.value)}
-          placeholder={`Buscar ${activeTab.toLowerCase()}...`}
-          aria-label={`Buscar ${activeTab.toLowerCase()}`}
-          className="w-full bg-surface-2 border border-slate-800 rounded-lg py-1.5 pl-3 pr-3 text-sm text-slate-200 placeholder:text-slate-400 focus:outline-none focus:border-slate-600"
-        />
+        {activeTab === "Vuelos" ? (
+          <div className="flex items-center gap-2 flex-1 min-w-0">
+            <div className="relative flex-1 min-w-0">
+              <Filter className="pointer-events-none absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-slate-400" />
+              <select
+                value={flightStatusFilter}
+                onChange={(e) => setFlightStatusFilter(e.target.value)}
+                aria-label="Filtrar vuelos por estado"
+                className="w-full appearance-none rounded-lg border border-slate-800 bg-surface-2 py-1.5 pl-9 pr-8 text-sm text-slate-200 focus:border-slate-600 focus:outline-none"
+              >
+                {FLIGHT_STATUS_FILTERS.map((option) => (
+                  <option key={option.value} value={option.value}>
+                    {option.label}
+                  </option>
+                ))}
+              </select>
+            </div>
+          </div>
+        ) : (
+          <input
+            type="text"
+            value={query}
+            onChange={(e) => setQuery(e.target.value)}
+            placeholder={`Buscar ${activeTab.toLowerCase()}...`}
+            aria-label={`Buscar ${activeTab.toLowerCase()}`}
+            className="w-full bg-surface-2 border border-slate-800 rounded-lg py-1.5 pl-3 pr-3 text-sm text-slate-200 placeholder:text-slate-400 focus:outline-none focus:border-slate-600"
+          />
+        )}
         <button
           type="button"
           onClick={() => activeSource?.refetch?.()}
@@ -388,10 +434,10 @@ export default function RightPanel({ onClose, simulationPanelData }) {
       </div>
 
       <div className="flex-1 overflow-y-auto px-4 py-4 no-scrollbar">
-        {activeTab === "Vuelos" && <TabBody {...flights} empty="Ejecuta la simulacion para cargar los vuelos del periodo." rows={flightsFiltered} renderItem={(f) => <FlightItem key={f.id} flight={f} />} />}
-        {activeTab === "Pedidos" && <TabBody {...orders} empty="Pedidos pendientes para una siguiente fase de la simulacion." rows={ordersFiltered} renderItem={(o) => <OrderItem key={o.id} order={o} />} />}
-        {activeTab === "Rutas" && <TabBody {...rutas} empty="Rutas pendientes para una siguiente fase de la simulacion." rows={rutasFiltered} renderItem={(r) => <RouteItem key={r.idRuta} route={r} />} />}
-        {activeTab === "Maletas" && <TabBody {...maletas} empty="Maletas pendientes para una siguiente fase de la simulacion." rows={maletasFiltered} renderItem={(b) => <BagItem key={b.idMaleta} bag={b} />} />}
+        {activeTab === "Vuelos" && <TabBody {...flights} empty="Ejecuta la simulacion para cargar los vuelos del periodo." rows={visibleFlights} renderItem={(f) => <FlightItem key={f.id} flight={f} />} />}
+        {activeTab === "Pedidos" && <TabBody {...orders} empty="Ejecuta la simulacion para cargar los pedidos de la ventana activa." rows={ordersFiltered} renderItem={(o) => <OrderItem key={o.id} order={o} />} />}
+        {activeTab === "Rutas" && <TabBody {...rutas} empty="Ejecuta la simulacion para cargar las rutas de la ventana activa." rows={rutasFiltered} renderItem={(r) => <RouteItem key={r.idRuta} route={r} />} />}
+        {activeTab === "Maletas" && <TabBody {...maletas} empty="Ejecuta la simulacion para cargar las maletas de la ventana activa." rows={maletasFiltered} renderItem={(b) => <BagItem key={b.idMaleta} bag={b} />} />}
         {activeTab === "Aerop." && <TabBody {...airports} empty="Ejecuta la simulacion para cargar los aeropuertos del periodo." rows={airportsFiltered} renderItem={(a) => <AirportItem key={a.iata} apt={a} />} />}
       </div>
 

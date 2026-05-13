@@ -18,6 +18,9 @@ export default function MainLayout() {
   const [simulationPanelData, setSimulationPanelData] = useState({
     airports: [],
     flights: [],
+    orders: [],
+    bags: [],
+    routes: [],
     loaded: false,
   });
   const location = useLocation();

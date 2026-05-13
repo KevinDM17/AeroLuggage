@@ -1,4 +1,4 @@
-import { apiPost, USE_MOCK } from "./client";
+import { apiGet, apiPost, USE_MOCK } from "./client";
 import {
   mockStartPeriodSim,
   mockStopPeriodSim,
@@ -30,6 +30,9 @@ export const iniciarSimulacionPeriodo = (payload) =>
   USE_MOCK
     ? mockStartPeriodSim(payload.fechaInicio)
     : apiPost("/simulacion/periodo/iniciar", payload);
+
+export const obtenerSnapshotSimulacionPeriodo = (sessionId) =>
+  apiGet(`/simulacion/periodo/${sessionId}/snapshot`);
 
 /* Wrapper legacy para no romper imports actuales. */
 export const startPeriodSim = (startDate) =>
