@@ -19,12 +19,14 @@ export default function MapDashboard({
   time = "12:34:16 UTC",
   metrics = {},
 }) {
+  // Cuando no hay tick del back todavia, los KPIs muestran 0. NUNCA hardcodear
+  // valores "demo" — eso confunde al usuario haciendole creer que son datos reales.
   const {
-    bagsInTransit = 825,
+    bagsInTransit = 0,
     bagsDelivered = 0,
     bagsUnassigned = 0,
-    activeFlights = 3,
-    freeCapacityPct = 42,
+    activeFlights = 0,
+    freeCapacityPct = 0,
   } = metrics;
 
   const capacityTone =
@@ -37,8 +39,8 @@ export default function MapDashboard({
         {header}
       </div>
 
-      <div className="px-4 sm:px-8 pl-14 sm:pl-16 pr-14 sm:pr-16 pb-2">
-        <div className="grid grid-cols-1 sm:grid-cols-2 xl:grid-cols-5 gap-2 sm:gap-3">
+      <div className="px-4 sm:px-8 pl-14 sm:pl-16 pr-14 sm:pr-16 pb-1.5">
+        <div className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-5 gap-1.5 sm:gap-2">
           <Kpi
             icon={Luggage}
             label="Maletas en Tránsito"
@@ -111,15 +113,15 @@ const TONE_CLASSES = {
 function Kpi({ icon: Icon, label, value, tone = "info" }) {
   const valueClass = TONE_CLASSES[tone] ?? TONE_CLASSES.info;
   return (
-    <div className="bg-surface-1/70 backdrop-blur border border-slate-800 rounded-xl px-3 sm:px-4 py-2.5 flex items-center gap-3">
+    <div className="bg-surface-1/70 backdrop-blur border border-slate-800 rounded-lg px-2.5 py-1.5 flex items-center gap-2">
       <div className={`shrink-0 ${valueClass}`}>
-        <Icon className="w-5 h-5" />
+        <Icon className="w-4 h-4" />
       </div>
-      <div className="min-w-0">
-        <div className="text-[10px] sm:text-xs text-slate-400 font-medium uppercase tracking-wider truncate">
+      <div className="min-w-0 flex-1">
+        <div className="text-[9px] text-slate-400 font-medium uppercase tracking-wide leading-tight break-words whitespace-normal">
           {label}
         </div>
-        <div className={`text-xl sm:text-2xl font-bold tabular-nums leading-none mt-1 ${valueClass}`}>
+        <div className={`text-base sm:text-lg font-bold tabular-nums leading-none mt-0.5 ${valueClass}`}>
           {value}
         </div>
       </div>
