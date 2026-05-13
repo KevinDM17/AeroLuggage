@@ -1,4 +1,4 @@
-package pe.edu.pucp.aeroluggage.controller;
+package pe.edu.pucp.aeroluggage.controller.ws;
 
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
@@ -12,7 +12,7 @@ import pe.edu.pucp.aeroluggage.simulacion.DataTransferObject.SimulacionComandoDT
 @Slf4j
 @Controller
 @RequiredArgsConstructor
-public class SimulacionController {
+public class SimulacionPeriodoWsController {
 
     private final SimulacionSesionManager sesionManager;
     private final SimpMessagingTemplate broker;

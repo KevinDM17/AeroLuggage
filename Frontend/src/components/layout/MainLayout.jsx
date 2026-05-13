@@ -15,6 +15,11 @@ export default function MainLayout() {
   const [isDesktop, setIsDesktop] = useState(getIsDesktop);
   const [leftOpen, setLeftOpen] = useState(getIsDesktop);
   const [rightOpen, setRightOpen] = useState(getIsDesktop);
+  const [simulationPanelData, setSimulationPanelData] = useState({
+    airports: [],
+    flights: [],
+    loaded: false,
+  });
   const location = useLocation();
 
   const isSimulator = location.pathname === "/" || location.pathname.startsWith("/simulator");
@@ -87,7 +92,7 @@ export default function MainLayout() {
 
       <div className="flex-1 flex flex-col h-full overflow-hidden relative border-r border-slate-800 min-w-0">
         <main className="flex-1 overflow-hidden bg-canvas">
-          <Outlet />
+          <Outlet context={{ simulationPanelData, setSimulationPanelData }} />
         </main>
       </div>
 
@@ -110,7 +115,7 @@ export default function MainLayout() {
               : "fixed inset-y-0 right-0 z-[9995] max-w-[90%] shadow-2xl"
           }
         >
-          <RightPanel onClose={closeRight} />
+          <RightPanel onClose={closeRight} simulationPanelData={simulationPanelData} />
         </div>
       )}
     </div>

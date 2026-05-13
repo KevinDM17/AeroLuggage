@@ -15,8 +15,10 @@ import {
  *
  * REST (lo que el front llama directo):
  *   POST /api/simulacion/periodo/iniciar
- *     Body: SimulacionIniciarDTO { fechaInicio: "YYYY-MM-DD", totalDias, intervaloTickMs }
- *     Response: SimulacionEstadoDTO { sessionId, estado, mensaje }
+ *     Body: SimulacionIniciarDTO { fechaInicio: "YYYY-MM-DD", totalDias, duracionDiaSimuladoMs }
+ *     Response: SimulacionInicioResponse {
+ *       sessionId, estado, mensaje, fechaInicio, totalDias, aeropuertos, vuelosInstancia
+ *     }
  *
  * WebSocket (STOMP) — manejado por hooks/useStomp:
  *   SEND /app/simulacion/periodo/{pausar|reanudar|detener}   con { sessionId }
@@ -34,7 +36,7 @@ export const startPeriodSim = (startDate) =>
   iniciarSimulacionPeriodo({
     fechaInicio: startDate,
     totalDias: 5,
-    intervaloTickMs: 1000,
+    duracionDiaSimuladoMs: 1000,
   });
 
 /* Stop/state legacy: en modo real ya no se usan; pausar/reanudar/detener van

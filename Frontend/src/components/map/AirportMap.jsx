@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useRef, useState } from "react";
+import { useEffect, useMemo, useState } from "react";
 import { MapContainer, TileLayer, Marker, Polyline } from "react-leaflet";
 import L from "leaflet";
 import { tokens, semaphoreColor } from "../../utils/tokens";
@@ -6,9 +6,6 @@ import { useFetch } from "../../hooks/useFetch";
 import { listAirports } from "../../api/airports";
 import { listFlights } from "../../api/flights";
 
-/**
- * Convierte porcentaje de ocupación a estado de semáforo.
- */
 const occupancyStatus = (used, capacity) => {
   const pct = capacity > 0 ? (used / capacity) * 100 : 0;
   if (pct >= 85) return "red";
@@ -22,6 +19,15 @@ const flightLoadColor = (used, capacity) => {
   if (pct >= 60) return tokens.warning;
   return tokens.success;
 };
+
+const parseUtcDateTime = (value) => {
+  if (!value) return Number.NaN;
+  const raw = String(value).trim();
+  const normalized = /z$/i.test(raw) ? raw : `${raw}Z`;
+  return Date.parse(normalized);
+};
+
+const clamp = (value, min, max) => Math.min(max, Math.max(min, value));
 
 const createAirportIcon = (airport) => {
   const color = semaphoreColor(occupancyStatus(airport.used, airport.capacity));
@@ -54,32 +60,45 @@ const createPlaneIcon = (angle, color) =>
     iconAnchor: [12, 12],
   });
 
-const MAX_FLIGHTS_ON_MAP = 30;
+const getFlightsOnMap = (flights, airportsByIata) => {
+  return [...(flights ?? [])]
+    .filter((flight) => airportsByIata.has(flight.origin) && airportsByIata.has(flight.dest))
+    .sort((left, right) => {
+      const leftTime = parseUtcDateTime(left.depTime);
+      const rightTime = parseUtcDateTime(right.depTime);
+      const leftValid = Number.isFinite(leftTime);
+      const rightValid = Number.isFinite(rightTime);
 
-/**
- * Selecciona hasta N vuelos para animar en el mapa.
- * Prioriza diversidad de rutas (origen-destino unicos).
- */
-const pickFlightsToAnimate = (flights, airportsByIata, limit) => {
-  const seen = new Set();
-  const out = [];
-  for (const f of flights) {
-    if (!airportsByIata.has(f.origin) || !airportsByIata.has(f.dest)) continue;
-    const key = `${f.origin}-${f.dest}`;
-    if (seen.has(key)) continue;
-    seen.add(key);
-    out.push(f);
-    if (out.length >= limit) break;
-  }
-  return out;
+      if (leftValid && rightValid) return leftTime - rightTime;
+      if (leftValid) return -1;
+      if (rightValid) return 1;
+      return String(left.id ?? "").localeCompare(String(right.id ?? ""));
+    });
 };
 
-export default function AirportMap({ showFlights = true }) {
+export default function AirportMap({
+  showFlights = true,
+  showRouteLines = true,
+  airports: airportsProp,
+  flights: flightsProp,
+  autoload = true,
+  simulatedNowMs = null,
+  animateFlights = false,
+}) {
   const center = [20, -40];
   const zoom = 3;
 
-  const { data: airports = [] } = useFetch(listAirports);
-  const { data: flights = [] } = useFetch(listFlights);
+  const { data: fetchedAirports = [] } = useFetch(
+    () => (autoload ? listAirports() : Promise.resolve([])),
+    [autoload]
+  );
+  const { data: fetchedFlights = [] } = useFetch(
+    () => (autoload ? listFlights() : Promise.resolve([])),
+    [autoload]
+  );
+
+  const airports = airportsProp ?? fetchedAirports ?? [];
+  const flights = flightsProp ?? fetchedFlights ?? [];
 
   const airportsByIata = useMemo(() => {
     const map = new Map();
@@ -89,34 +108,73 @@ export default function AirportMap({ showFlights = true }) {
     return map;
   }, [airports]);
 
-  const routes = useMemo(
-    () => pickFlightsToAnimate(flights ?? [], airportsByIata, MAX_FLIGHTS_ON_MAP),
-    [flights, airportsByIata]
-  );
+  const routes = useMemo(() => getFlightsOnMap(flights ?? [], airportsByIata), [flights, airportsByIata]);
 
-  /* Animacion de aviones (continuo, decorativo) */
-  const [progresses, setProgresses] = useState([]);
-  const progressesRef = useRef([]);
+  const [frameNowMs, setFrameNowMs] = useState(() => Date.now());
 
   useEffect(() => {
-    progressesRef.current = routes.map(() => Math.random());
-    setProgresses(progressesRef.current);
-  }, [routes.length]);
+    if (!showFlights || simulatedNowMs === null || !animateFlights) return undefined;
 
-  useEffect(() => {
-    let raf;
-    let lastTime = performance.now();
-    const tick = (time) => {
-      const dt = time - lastTime;
-      lastTime = time;
-      const next = progressesRef.current.map((p) => (p + dt * 0.00005) % 1);
-      progressesRef.current = next;
-      setProgresses(next);
-      raf = requestAnimationFrame(tick);
+    let raf = 0;
+    const animate = () => {
+      setFrameNowMs(Date.now());
+      raf = requestAnimationFrame(animate);
     };
-    raf = requestAnimationFrame(tick);
+
+    raf = requestAnimationFrame(animate);
     return () => cancelAnimationFrame(raf);
-  }, []);
+  }, [showFlights, simulatedNowMs, animateFlights]);
+
+  const animatedRoutes = useMemo(() => {
+    const activeSimulatedNowMs = simulatedNowMs ?? frameNowMs;
+
+    return routes.map((route) => {
+      const origin = airportsByIata.get(route.origin);
+      const destination = airportsByIata.get(route.dest);
+      const departureUtcMs = parseUtcDateTime(route.depTime);
+      const arrivalUtcMs = parseUtcDateTime(route.arrTime);
+      const hasValidSchedule =
+        Number.isFinite(departureUtcMs) &&
+        Number.isFinite(arrivalUtcMs) &&
+        arrivalUtcMs > departureUtcMs;
+
+      const progress =
+        hasValidSchedule && Number.isFinite(activeSimulatedNowMs)
+          ? clamp((activeSimulatedNowMs - departureUtcMs) / (arrivalUtcMs - departureUtcMs), 0, 1)
+          : null;
+
+      return {
+        route,
+        origin,
+        destination,
+        hasDeparted:
+          hasValidSchedule && Number.isFinite(activeSimulatedNowMs) && activeSimulatedNowMs >= departureUtcMs,
+        progress,
+        showPlane: hasValidSchedule && progress !== null && progress > 0 && progress < 1,
+      };
+    });
+  }, [routes, airportsByIata, simulatedNowMs, frameNowMs]);
+
+  const visibleRouteSegments = useMemo(() => {
+    const seen = new Set();
+    const segments = [];
+
+    animatedRoutes.forEach(({ route, origin, destination, hasDeparted }) => {
+      if (!hasDeparted || !origin || !destination) return;
+
+      const routeKey = `${route.origin}-${route.dest}`;
+      if (seen.has(routeKey)) return;
+      seen.add(routeKey);
+
+      segments.push({
+        key: routeKey,
+        origin,
+        destination,
+      });
+    });
+
+    return segments;
+  }, [animatedRoutes]);
 
   return (
     <div className="w-full h-full bg-canvas">
@@ -129,37 +187,39 @@ export default function AirportMap({ showFlights = true }) {
       >
         <TileLayer url="https://{s}.basemaps.cartocdn.com/dark_nolabels/{z}/{x}/{y}{r}.png" />
 
-        {showFlights &&
-          routes.map((route, i) => {
-            const origin = airportsByIata.get(route.origin);
-            const destination = airportsByIata.get(route.dest);
-            if (!origin || !destination) return null;
+        {showFlights && showRouteLines &&
+          visibleRouteSegments.map(({ key, origin, destination }) => (
+            <Polyline
+              key={key}
+              positions={[
+                [origin.lat, origin.lng],
+                [destination.lat, destination.lng],
+              ]}
+              color={tokens.success}
+              weight={1.5}
+              opacity={0.3}
+              dashArray="4, 6"
+            />
+          ))}
 
-            const progress = progresses[i] ?? 0;
-            const lat = origin.lat + (destination.lat - origin.lat) * progress;
-            const lng = origin.lng + (destination.lng - origin.lng) * progress;
+        {showFlights &&
+          animatedRoutes.map(({ route, origin, destination, progress, showPlane }, i) => {
+            if (!origin || !destination || !showPlane) return null;
 
             const bearing =
               (Math.atan2(destination.lng - origin.lng, destination.lat - origin.lat) * 180) /
               Math.PI;
             const planeAngle = bearing - 45;
-
             const planeColor = flightLoadColor(route.used, route.capacity);
+            const lat = origin.lat + (destination.lat - origin.lat) * progress;
+            const lng = origin.lng + (destination.lng - origin.lng) * progress;
 
             return (
-              <div key={`${route.id ?? i}-${route.origin}-${route.dest}`}>
-                <Polyline
-                  positions={[
-                    [origin.lat, origin.lng],
-                    [destination.lat, destination.lng],
-                  ]}
-                  color={tokens.success}
-                  weight={1.5}
-                  opacity={0.3}
-                  dashArray="4, 6"
-                />
-                <Marker position={[lat, lng]} icon={createPlaneIcon(planeAngle, planeColor)} />
-              </div>
+              <Marker
+                key={`${route.id ?? i}-${route.origin}-${route.dest}`}
+                position={[lat, lng]}
+                icon={createPlaneIcon(planeAngle, planeColor)}
+              />
             );
           })}
 

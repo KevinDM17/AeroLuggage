@@ -15,6 +15,12 @@ export default function MapDashboard({
   mapOverlay = null,
   showMapClock = true,
   showMapFlights = true,
+  showMapRouteLines = true,
+  animateMapFlights = false,
+  mapAutoload = true,
+  airports,
+  flights,
+  simulatedNowMs,
   date = "18-03-26",
   time = "12:34:16 UTC",
   metrics = {},
@@ -74,7 +80,15 @@ export default function MapDashboard({
 
       <div className="flex-1 relative w-full h-full bg-canvas p-2 sm:p-4 min-h-0">
         <div className="w-full h-full rounded-2xl overflow-hidden relative shadow-[0_0_40px_rgba(0,0,0,0.5)] border border-slate-700/50">
-          <AirportMap showFlights={showMapFlights} />
+          <AirportMap
+            showFlights={showMapFlights}
+            showRouteLines={showMapRouteLines}
+            airports={airports}
+            flights={flights}
+            autoload={mapAutoload}
+            simulatedNowMs={simulatedNowMs}
+            animateFlights={animateMapFlights}
+          />
 
           {showMapClock && <div className="absolute top-4 left-1/2 -translate-x-1/2 sm:left-6 sm:translate-x-0 z-[1000]">
             <div className="bg-surface-2/75 backdrop-blur pl-4 pr-6 py-2.5 rounded-xl border border-slate-700 flex gap-4 sm:gap-6">

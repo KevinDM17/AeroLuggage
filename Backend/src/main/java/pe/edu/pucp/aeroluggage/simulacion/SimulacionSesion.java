@@ -14,7 +14,7 @@ public class SimulacionSesion {
     private final String sessionId;
     private final LocalDate fechaInicio;
     private final int totalDias;
-    private final long intervaloTickMs;
+    private final long duracionDiaSimuladoMs;
     private final AtomicInteger tickActual = new AtomicInteger(0);
     private final AtomicReference<LocalDate> fechaSimulada;
     private final AtomicBoolean activa = new AtomicBoolean(true);
@@ -24,11 +24,11 @@ public class SimulacionSesion {
             final String sessionId,
             final LocalDate fechaInicio,
             final int totalDias,
-            final long intervaloTickMs) {
+            final long duracionDiaSimuladoMs) {
         this.sessionId = sessionId;
         this.fechaInicio = fechaInicio;
         this.totalDias = totalDias;
-        this.intervaloTickMs = intervaloTickMs;
+        this.duracionDiaSimuladoMs = duracionDiaSimuladoMs;
         this.fechaSimulada = new AtomicReference<>(fechaInicio);
     }
 

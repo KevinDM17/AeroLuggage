@@ -6,7 +6,7 @@ import org.springframework.messaging.simp.SimpMessagingTemplate;
 import org.springframework.stereotype.Component;
 import pe.edu.pucp.aeroluggage.simulacion.DataTransferObject.PeriodoTickDTO;
 import pe.edu.pucp.aeroluggage.simulacion.DataTransferObject.SimulacionEstadoDTO;
-import pe.edu.pucp.aeroluggage.simulacion.DataTransferObject.SimulacionIniciarDTO;
+import pe.edu.pucp.aeroluggage.dto.rest.simulacion.SimulacionIniciarRequest;
 
 import java.time.LocalDate;
 import java.util.Map;
@@ -37,7 +37,7 @@ public class SimulacionSesionManager {
     private final ScheduledExecutorService scheduler = Executors.newScheduledThreadPool(4);
 
     public SimulacionEstadoDTO iniciar(
-            final SimulacionIniciarDTO params,
+            final SimulacionIniciarRequest params,
             final SimpMessagingTemplate broker) {
 
         final String sessionId = UUID.randomUUID().toString();
@@ -46,7 +46,7 @@ public class SimulacionSesionManager {
                 sessionId,
                 fechaInicio,
                 params.getTotalDias(),
-                params.getIntervaloTickMs()
+                params.getDuracionDiaSimuladoMs()
         );
 
         sesionesActivas.put(sessionId, sesion);
@@ -145,8 +145,8 @@ public class SimulacionSesionManager {
     private void programarTarea(final SimulacionSesion sesion, final SimpMessagingTemplate broker) {
         final ScheduledFuture<?> tarea = scheduler.scheduleAtFixedRate(
                 () -> ejecutarIteracion(sesion, broker),
-                sesion.getIntervaloTickMs(),
-                sesion.getIntervaloTickMs(),
+                sesion.getDuracionDiaSimuladoMs(),
+                sesion.getDuracionDiaSimuladoMs(),
                 TimeUnit.MILLISECONDS
         );
         sesion.setTareaScheduled(tarea);
