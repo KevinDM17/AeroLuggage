@@ -1,30 +1,22 @@
-import { useEffect, useState } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
 import { MapContainer, TileLayer, Marker, Polyline } from "react-leaflet";
 import L from "leaflet";
 import { tokens, semaphoreColor } from "../../utils/tokens";
+import { useFetch } from "../../hooks/useFetch";
+import { listAirports } from "../../api/airports";
+import { listFlights } from "../../api/flights";
 
-const AIRPORTS = [
-  { id: 'JFK', lat: 40.6413, lng: -73.7781, status: 'green' },
-  { id: 'MIA', lat: 25.7959, lng: -80.2870, status: 'red' },
-  { id: 'BOG', lat: 4.7016, lng: -74.1469, status: 'green' },
-  { id: 'LIM', lat: -12.0219, lng: -77.1143, status: 'yellow' },
-  { id: 'GRU', lat: -23.4356, lng: -46.4731, status: 'yellow' },
-  { id: 'MAD', lat: 40.4719, lng: -3.5626, status: 'green' },
-  { id: 'LHR', lat: 51.4700, lng: -0.4543, status: 'green' },
-  { id: 'DXB', lat: 25.2532, lng: 55.3657, status: 'yellow' },
-];
+/**
+ * Convierte porcentaje de ocupación a estado de semáforo.
+ */
+const occupancyStatus = (used, capacity) => {
+  const pct = capacity > 0 ? (used / capacity) * 100 : 0;
+  if (pct >= 85) return "red";
+  if (pct >= 60) return "yellow";
+  return "green";
+};
 
-const ROUTES = [
-  { id: 1, origin: 'JFK', dest: 'MIA', used: 60, capacity: 250 },
-  { id: 2, origin: 'MIA', dest: 'MAD', used: 300, capacity: 350 },
-  { id: 3, origin: 'MIA', dest: 'GRU', used: 150, capacity: 200 },
-  { id: 4, origin: 'LIM', dest: 'BOG', used: 45, capacity: 220 },
-  { id: 5, origin: 'LHR', dest: 'DXB', used: 380, capacity: 400 },
-];
-
-const getStatusColor = semaphoreColor;
-
-const getFlightLoadColor = (used, capacity) => {
+const flightLoadColor = (used, capacity) => {
   const pct = capacity > 0 ? (used / capacity) * 100 : 0;
   if (pct >= 85) return tokens.danger;
   if (pct >= 60) return tokens.warning;
@@ -32,24 +24,24 @@ const getFlightLoadColor = (used, capacity) => {
 };
 
 const createAirportIcon = (airport) => {
-  const color = getStatusColor(airport.status);
+  const color = semaphoreColor(occupancyStatus(airport.used, airport.capacity));
   return L.divIcon({
     html: `
-      <div style="display: flex; flex-direction: column; items-center; justify-content: center; transform: translate(-50%, -50%);">
+      <div style="display: flex; flex-direction: column; justify-content: center; transform: translate(-50%, -50%);">
         <div style="width: 12px; height: 12px; background-color: ${color}; border-radius: 50%; box-shadow: 0 0 10px ${color}, 0 0 20px ${color}; margin: 0 auto;"></div>
         <div style="color: white; font-size: 10px; font-weight: bold; font-family: sans-serif; background: rgba(0,0,0,0.5); padding: 2px 4px; border-radius: 4px; margin-top: 4px; white-space: nowrap;">
-          ${airport.id}
+          ${airport.iata}
         </div>
       </div>
     `,
-    className: '',
-    iconSize: [0, 0], // Handled in html transform
+    className: "",
+    iconSize: [0, 0],
     iconAnchor: [0, 0],
   });
 };
 
-const createPlaneIcon = (angle, color) => {
-  return L.divIcon({
+const createPlaneIcon = (angle, color) =>
+  L.divIcon({
     html: `
       <div style="width: 24px; height: 24px; display: flex; align-items: center; justify-content: center; transform: rotate(${angle}deg);">
         <svg xmlns="http://www.w3.org/2000/svg" width="20" height="20" viewBox="0 0 24 24" fill="${color}" stroke="${color}" stroke-width="1" stroke-linecap="round" stroke-linejoin="round">
@@ -57,91 +49,128 @@ const createPlaneIcon = (angle, color) => {
         </svg>
       </div>
     `,
-    className: '',
+    className: "",
     iconSize: [24, 24],
     iconAnchor: [12, 12],
   });
-};
 
+const MAX_FLIGHTS_ON_MAP = 30;
+
+/**
+ * Selecciona hasta N vuelos para animar en el mapa.
+ * Prioriza diversidad de rutas (origen-destino unicos).
+ */
+const pickFlightsToAnimate = (flights, airportsByIata, limit) => {
+  const seen = new Set();
+  const out = [];
+  for (const f of flights) {
+    if (!airportsByIata.has(f.origin) || !airportsByIata.has(f.dest)) continue;
+    const key = `${f.origin}-${f.dest}`;
+    if (seen.has(key)) continue;
+    seen.add(key);
+    out.push(f);
+    if (out.length >= limit) break;
+  }
+  return out;
+};
 
 export default function AirportMap({ showFlights = true }) {
   const center = [20, -40];
   const zoom = 3;
 
-  // Animation state for planes
-  const [progresses, setProgresses] = useState(ROUTES.map(() => Math.random()));
+  const { data: airports = [] } = useFetch(listAirports);
+  const { data: flights = [] } = useFetch(listFlights);
+
+  const airportsByIata = useMemo(() => {
+    const map = new Map();
+    (airports ?? []).forEach((a) => {
+      if (a.iata && Number.isFinite(a.lat) && Number.isFinite(a.lng)) map.set(a.iata, a);
+    });
+    return map;
+  }, [airports]);
+
+  const routes = useMemo(
+    () => pickFlightsToAnimate(flights ?? [], airportsByIata, MAX_FLIGHTS_ON_MAP),
+    [flights, airportsByIata]
+  );
+
+  /* Animacion de aviones (continuo, decorativo) */
+  const [progresses, setProgresses] = useState([]);
+  const progressesRef = useRef([]);
 
   useEffect(() => {
-    let animationFrame;
+    progressesRef.current = routes.map(() => Math.random());
+    setProgresses(progressesRef.current);
+  }, [routes.length]);
+
+  useEffect(() => {
+    let raf;
     let lastTime = performance.now();
-
-    const animate = (time) => {
-      const deltaTime = time - lastTime;
+    const tick = (time) => {
+      const dt = time - lastTime;
       lastTime = time;
-
-      setProgresses(prev => prev.map(p => {
-        // Different speeds for different planes for variation
-        const newProgress = p + (deltaTime * 0.00005);
-        return newProgress % 1; // Wrap around
-      }));
-      
-      animationFrame = requestAnimationFrame(animate);
+      const next = progressesRef.current.map((p) => (p + dt * 0.00005) % 1);
+      progressesRef.current = next;
+      setProgresses(next);
+      raf = requestAnimationFrame(tick);
     };
-
-    animationFrame = requestAnimationFrame(animate);
-    return () => cancelAnimationFrame(animationFrame);
+    raf = requestAnimationFrame(tick);
+    return () => cancelAnimationFrame(raf);
   }, []);
 
   return (
     <div className="w-full h-full bg-canvas">
-       <MapContainer center={center} zoom={zoom} style={{ height: "100%", width: "100%", background: "transparent" }} zoomControl={false} attributionControl={false}>
-          <TileLayer
-             url="https://{s}.basemaps.cartocdn.com/dark_nolabels/{z}/{x}/{y}{r}.png"
-          />
-          
-          {showFlights && ROUTES.map((route, i) => {
-             const origin = AIRPORTS.find(a => a.id === route.origin);
-             const destination = AIRPORTS.find(a => a.id === route.dest);
-             if (!origin || !destination) return null;
+      <MapContainer
+        center={center}
+        zoom={zoom}
+        style={{ height: "100%", width: "100%", background: "transparent" }}
+        zoomControl={false}
+        attributionControl={false}
+      >
+        <TileLayer url="https://{s}.basemaps.cartocdn.com/dark_nolabels/{z}/{x}/{y}{r}.png" />
 
-             const progress = progresses[i];
-             
-             // Calculate interpolated position
-             const lat = origin.lat + (destination.lat - origin.lat) * progress;
-             const lng = origin.lng + (destination.lng - origin.lng) * progress;
-             
-             // Bearing aprox (norte=0, este=90, sur=180, oeste=270) usando lat/lng como cartesiano.
-             // Suficiente para visualización a zoom global; no es navegación real.
-             const bearing = Math.atan2(destination.lng - origin.lng, destination.lat - origin.lat) * 180 / Math.PI;
-             // El icono Plane de lucide apunta nativamente al NE (~45° CW desde el norte),
-             // así que restamos 45° para alinear la punta con el bearing.
-             const planeAngle = bearing - 45;
+        {showFlights &&
+          routes.map((route, i) => {
+            const origin = airportsByIata.get(route.origin);
+            const destination = airportsByIata.get(route.dest);
+            if (!origin || !destination) return null;
 
-             return (
-               <div key={route.id}>
-                 <Polyline 
-                    positions={[[origin.lat, origin.lng], [destination.lat, destination.lng]]}
-                    color={tokens.success}
-                    weight={1.5}
-                    opacity={0.3}
-                    dashArray="4, 6"
-                 />
-                 <Marker 
-                    position={[lat, lng]} 
-                    icon={createPlaneIcon(planeAngle, getFlightLoadColor(route.used, route.capacity))} 
-                 />
-               </div>
-             );
+            const progress = progresses[i] ?? 0;
+            const lat = origin.lat + (destination.lat - origin.lat) * progress;
+            const lng = origin.lng + (destination.lng - origin.lng) * progress;
+
+            const bearing =
+              (Math.atan2(destination.lng - origin.lng, destination.lat - origin.lat) * 180) /
+              Math.PI;
+            const planeAngle = bearing - 45;
+
+            const planeColor = flightLoadColor(route.used, route.capacity);
+
+            return (
+              <div key={`${route.id ?? i}-${route.origin}-${route.dest}`}>
+                <Polyline
+                  positions={[
+                    [origin.lat, origin.lng],
+                    [destination.lat, destination.lng],
+                  ]}
+                  color={tokens.success}
+                  weight={1.5}
+                  opacity={0.3}
+                  dashArray="4, 6"
+                />
+                <Marker position={[lat, lng]} icon={createPlaneIcon(planeAngle, planeColor)} />
+              </div>
+            );
           })}
 
-          {AIRPORTS.map((airport) => (
-             <Marker 
-                key={airport.id} 
-                position={[airport.lat, airport.lng]}
-                icon={createAirportIcon(airport)}
-             />
-          ))}
-       </MapContainer>
+        {Array.from(airportsByIata.values()).map((airport) => (
+          <Marker
+            key={airport.iata}
+            position={[airport.lat, airport.lng]}
+            icon={createAirportIcon(airport)}
+          />
+        ))}
+      </MapContainer>
     </div>
   );
 }

@@ -1,5 +1,5 @@
 import { useMemo, useState } from "react";
-import { Filter, PanelRightClose, MapPin, Globe, Info, ChevronDown, Plane } from "lucide-react";
+import { Filter, PanelRightClose, MapPin, Globe, Info, ChevronDown, Plane, RefreshCw } from "lucide-react";
 import { useFetch } from "../../hooks/useFetch";
 import { listFlights } from "../../api/flights";
 import { listOrders } from "../../api/orders";
@@ -280,6 +280,14 @@ export default function RightPanel({ onClose }) {
   const maletas  = useFetch(listMaletas);
   const rutas    = useFetch(listRutas);
 
+  const activeSource = {
+    "Vuelos":  flights,
+    "Pedidos": orders,
+    "Rutas":   rutas,
+    "Maletas": maletas,
+    "Aerop.":  airports,
+  }[activeTab];
+
   const filterByText = (rows, fields) => {
     const q = query.trim().toLowerCase();
     if (!q) return rows;
@@ -317,8 +325,8 @@ export default function RightPanel({ onClose }) {
         </div>
       </div>
 
-      <div className="p-4 border-b border-slate-800 flex items-center gap-3">
-        <Filter className="w-5 h-5 text-slate-400" />
+      <div className="p-4 border-b border-slate-800 flex items-center gap-2">
+        <Filter className="w-5 h-5 text-slate-400 shrink-0" />
         <input
           type="text"
           value={query}
@@ -327,6 +335,16 @@ export default function RightPanel({ onClose }) {
           aria-label={`Buscar ${activeTab.toLowerCase()}`}
           className="w-full bg-surface-2 border border-slate-800 rounded-lg py-1.5 pl-3 pr-3 text-sm text-slate-200 placeholder:text-slate-400 focus:outline-none focus:border-slate-600"
         />
+        <button
+          type="button"
+          onClick={() => activeSource?.refetch?.()}
+          disabled={activeSource?.loading}
+          aria-label="Refrescar"
+          title="Refrescar"
+          className="shrink-0 p-1.5 rounded-lg text-slate-400 hover:text-white hover:bg-surface-2 transition-colors disabled:opacity-50"
+        >
+          <RefreshCw className={`w-4 h-4 ${activeSource?.loading ? "animate-spin" : ""}`} />
+        </button>
       </div>
 
       <div className="flex-1 overflow-y-auto px-4 py-4 no-scrollbar">

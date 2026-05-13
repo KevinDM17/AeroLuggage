@@ -10,16 +10,16 @@ const delay = (ms = 250) => new Promise((r) => setTimeout(r, ms));
 
 // ---------- AEROPUERTOS ----------
 let _airports = [
-  { iata: "LIM", name: "Jorge Chavez",      city: "Lima, Peru",         continent: "Sudamerica",    gmt: -5, capacity: 700, used: 480 },
-  { iata: "BOG", name: "El Dorado",         city: "Bogota, Colombia",   continent: "Sudamerica",    gmt: -5, capacity: 650, used: 612 },
-  { iata: "GRU", name: "Guarulhos",         city: "Sao Paulo, Brasil",  continent: "Sudamerica",    gmt: -3, capacity: 800, used: 530 },
-  { iata: "MIA", name: "Miami Intl",        city: "Miami, EEUU",        continent: "Norteamerica",  gmt: -5, capacity: 750, used: 720 },
-  { iata: "JFK", name: "John F. Kennedy",   city: "New York, EEUU",     continent: "Norteamerica",  gmt: -5, capacity: 780, used: 410 },
-  { iata: "MAD", name: "Barajas",           city: "Madrid, Espana",     continent: "Europa",        gmt:  1, capacity: 720, used: 360 },
-  { iata: "LHR", name: "Heathrow",          city: "London, UK",         continent: "Europa",        gmt:  0, capacity: 800, used: 420 },
-  { iata: "NRT", name: "Narita",            city: "Tokio, Japon",       continent: "Asia",          gmt:  9, capacity: 760, used: 540 },
-  { iata: "HKG", name: "Hong Kong Intl",    city: "Hong Kong",          continent: "Asia",          gmt:  8, capacity: 700, used: 460 },
-  { iata: "DXB", name: "Dubai Intl",        city: "Dubai, EAU",         continent: "Asia",          gmt:  4, capacity: 800, used: 615 },
+  { iata: "LIM", name: "Jorge Chavez",      city: "Lima, Peru",         continent: "Sudamerica",    gmt: -5, capacity: 700, used: 480, lat: -12.0219, lng:  -77.1143 },
+  { iata: "BOG", name: "El Dorado",         city: "Bogota, Colombia",   continent: "Sudamerica",    gmt: -5, capacity: 650, used: 612, lat:   4.7016, lng:  -74.1469 },
+  { iata: "GRU", name: "Guarulhos",         city: "Sao Paulo, Brasil",  continent: "Sudamerica",    gmt: -3, capacity: 800, used: 530, lat: -23.4356, lng:  -46.4731 },
+  { iata: "MIA", name: "Miami Intl",        city: "Miami, EEUU",        continent: "Norteamerica",  gmt: -5, capacity: 750, used: 720, lat:  25.7959, lng:  -80.2870 },
+  { iata: "JFK", name: "John F. Kennedy",   city: "New York, EEUU",     continent: "Norteamerica",  gmt: -5, capacity: 780, used: 410, lat:  40.6413, lng:  -73.7781 },
+  { iata: "MAD", name: "Barajas",           city: "Madrid, Espana",     continent: "Europa",        gmt:  1, capacity: 720, used: 360, lat:  40.4719, lng:   -3.5626 },
+  { iata: "LHR", name: "Heathrow",          city: "London, UK",         continent: "Europa",        gmt:  0, capacity: 800, used: 420, lat:  51.4700, lng:   -0.4543 },
+  { iata: "NRT", name: "Narita",            city: "Tokio, Japon",       continent: "Asia",          gmt:  9, capacity: 760, used: 540, lat:  35.7720, lng:  140.3929 },
+  { iata: "HKG", name: "Hong Kong Intl",    city: "Hong Kong",          continent: "Asia",          gmt:  8, capacity: 700, used: 460, lat:  22.3080, lng:  113.9185 },
+  { iata: "DXB", name: "Dubai Intl",        city: "Dubai, EAU",         continent: "Asia",          gmt:  4, capacity: 800, used: 615, lat:  25.2532, lng:   55.3657 },
 ];
 
 export async function mockListAirports() { await delay(); return [..._airports]; }
