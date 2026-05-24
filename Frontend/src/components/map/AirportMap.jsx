@@ -213,14 +213,33 @@ function AirportMap({ showFlights = true }) {
     });
   }, [flights, airportsByIata]);
 
-  // Diagnóstico útil cuando se sospecha de filtros agresivos.
+  // Diagnóstico que se dispara SIEMPRE (incluso con flights vacío) para
+  // poder identificar si el problema es de filtros o de carga del back.
   useEffect(() => {
-    if (!flights || flights.length === 0) return;
+    const flightCount = Array.isArray(flights) ? flights.length : 0;
+    const airportCount = airportsByIata.size;
+    const drawableCount = routesGeometry.length;
+    const sampleFlight = flightCount > 0 ? flights[0] : null;
+    const sampleAirport = airports && airports.length > 0 ? airports[0] : null;
     // eslint-disable-next-line no-console
-    console.log(
-      `[AirportMap] flights del back: ${flights.length} | aeropuertos válidos: ${airportsByIata.size} | aviones dibujables: ${routesGeometry.length}`
-    );
-  }, [flights, airportsByIata, routesGeometry]);
+    console.log("[AirportMap] diagnóstico", {
+      flightsDelBack: flightCount,
+      aeropuertosValidos: airportCount,
+      avionesDibujables: drawableCount,
+      sampleFlight,
+      sampleAirport,
+    });
+    if (flightCount > 0 && drawableCount === 0) {
+      // eslint-disable-next-line no-console
+      console.warn(
+        "[AirportMap] hay vuelos pero ninguno mapea a un aeropuerto conocido. " +
+        "Posible mismatch entre flight.origin/dest y airport.iata. Sample flight:",
+        sampleFlight,
+        "Airports keys:",
+        Array.from(airportsByIata.keys())
+      );
+    }
+  }, [flights, airports, airportsByIata, routesGeometry]);
 
   /* PathLayer: paths estáticos derivados de routesGeometry */
   const routesForDeck = useMemo(
