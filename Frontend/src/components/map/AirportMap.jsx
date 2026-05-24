@@ -1,15 +1,22 @@
 import { memo, useEffect, useMemo, useRef, useState } from "react";
-import { MapContainer, TileLayer, Marker, Polyline, useMap } from "react-leaflet";
+import { MapContainer, TileLayer, Marker, useMap } from "react-leaflet";
 import L from "leaflet";
+import { LeafletLayer } from "deck.gl-leaflet";
+import { IconLayer, PathLayer } from "@deck.gl/layers";
 import { tokens, semaphoreColor } from "../../utils/tokens";
 import { useFetch } from "../../hooks/useFetch";
 import { listAirports } from "../../api/airports";
 import { listFlights } from "../../api/flights";
-import { createPlanesCanvasLayer } from "./PlanesCanvasLayer";
 
 /**
- * Convierte porcentaje de ocupación a estado de semáforo.
+ * Versión de prueba con deck.gl (WebGL) en lugar de canvas 2D.
+ * - Aviones: IconLayer (GPU, miles de elementos sin problema)
+ * - Rutas: PathLayer (GPU)
+ * - Aeropuertos: siguen siendo markers DOM (son pocos)
+ *
+ * Misma API pública que la versión anterior: solo recibe `showFlights`.
  */
+
 const occupancyStatus = (used, capacity) => {
   const pct = capacity > 0 ? (used / capacity) * 100 : 0;
   if (pct >= 85) return "red";
@@ -17,17 +24,45 @@ const occupancyStatus = (used, capacity) => {
   return "green";
 };
 
-const flightLoadColor = (used, capacity) => {
+const flightLoadStatus = (used, capacity) => {
   const pct = capacity > 0 ? (used / capacity) * 100 : 0;
-  if (pct >= 85) return tokens.danger;
-  if (pct >= 60) return tokens.warning;
-  return tokens.success;
+  if (pct >= 85) return "danger";
+  if (pct >= 60) return "warning";
+  return "success";
 };
 
-/* Cache global de iconos de aeropuerto. Como casi nunca cambian de status
- * y son pocos, el cache hit-rate es ~100% y evita que Leaflet recree el DOM. */
-const airportIconCache = new Map();
+/* ---------- Iconos pre-generados como data URL SVG ----------
+ * deck.gl IconLayer puede usar URLs; las data-URLs evitan el
+ * round-trip a red. Generamos 3 (uno por color) y los cacheamos. */
+const PLANE_SVG_PATH =
+  "M17.8 19.2 16 11l3.5-3.5C21 6 21.5 4 21 3c-1-.5-3 0-4.5 1.5L13 8 4.8 6.2c-.5-.1-.9.2-1.1.5l-1.3 1.5c-.3.4-.1 1 .4 1.2L9 12l-4 4-2.2-.6c-.4-.1-.8.1-1.1.4l-.8.8c-.3.4-.1 1 .4 1.2l4 1.5 1.5 4c.2.5.8.7 1.2.4l.8-.8c.3-.3.5-.7.4-1.1L8 19l4-4 2.6 6.2c.2.5.8.7 1.2.4l1.5-1.3c.3-.2.6-.6.5-1.1z";
 
+const makePlaneIconUrl = (color) => {
+  const svg =
+    `<svg xmlns="http://www.w3.org/2000/svg" width="64" height="64" viewBox="0 0 24 24" ` +
+    `fill="${color}" stroke="${color}" stroke-width="1" stroke-linecap="round" stroke-linejoin="round">` +
+    `<path d="${PLANE_SVG_PATH}"/>` +
+    `</svg>`;
+  return `data:image/svg+xml;base64,${btoa(svg)}`;
+};
+
+const PLANE_ICONS = {
+  success: { url: makePlaneIconUrl(tokens.success), width: 64, height: 64, anchorX: 32, anchorY: 32, mask: false },
+  warning: { url: makePlaneIconUrl(tokens.warning), width: 64, height: 64, anchorX: 32, anchorY: 32, mask: false },
+  danger:  { url: makePlaneIconUrl(tokens.danger),  width: 64, height: 64, anchorX: 32, anchorY: 32, mask: false },
+};
+
+/* Polyline color en formato deck.gl: [R, G, B, A] */
+const ROUTE_COLOR_RGBA = (() => {
+  const hex = tokens.success.replace("#", "");
+  const r = parseInt(hex.slice(0, 2), 16);
+  const g = parseInt(hex.slice(2, 4), 16);
+  const b = parseInt(hex.slice(4, 6), 16);
+  return [r, g, b, 80]; // alpha bajo (0.3 aprox)
+})();
+
+/* ---------- Cache de iconos de aeropuerto (siguen siendo DOM) ---------- */
+const airportIconCache = new Map();
 const getAirportIcon = (airport) => {
   const status = occupancyStatus(airport.used, airport.capacity);
   const key = `${airport.iata}|${status}`;
@@ -51,10 +86,6 @@ const getAirportIcon = (airport) => {
 
 const MAX_FLIGHTS_ON_MAP = 30;
 
-/**
- * Selecciona hasta N vuelos para animar en el mapa.
- * Prioriza diversidad de rutas (origen-destino únicos).
- */
 const pickFlightsToAnimate = (flights, airportsByIata, limit) => {
   const seen = new Set();
   const out = [];
@@ -69,24 +100,64 @@ const pickFlightsToAnimate = (flights, airportsByIata, limit) => {
   return out;
 };
 
-/* Sub-componente que monta el canvas layer y le pasa la lista de aviones. */
-function PlanesCanvasOverlay({ planes }) {
+/* ---------- Sub-componente que monta el LeafletLayer de deck.gl ---------- */
+function DeckGLOverlay({ planes, routes }) {
   const map = useMap();
   const layerRef = useRef(null);
+  const planesRef = useRef(planes);
+  const routesRef = useRef(routes);
+
+  // Mantenemos refs actualizadas para que el animation loop las lea.
+  useEffect(() => { planesRef.current = planes; }, [planes]);
+  useEffect(() => { routesRef.current = routes; }, [routes]);
 
   useEffect(() => {
-    const layer = createPlanesCanvasLayer();
-    layer.addTo(map);
-    layerRef.current = layer;
+    const deckLayer = new LeafletLayer({
+      views: undefined,
+      layers: [],
+    });
+    deckLayer.addTo(map);
+    layerRef.current = deckLayer;
+
     return () => {
-      map.removeLayer(layer);
+      map.removeLayer(deckLayer);
       layerRef.current = null;
     };
   }, [map]);
 
+  // Re-publicar layers cuando cambien planes o rutas
   useEffect(() => {
-    if (layerRef.current) layerRef.current.setPlanes(planes);
-  }, [planes]);
+    if (!layerRef.current) return;
+
+    const pathLayer = new PathLayer({
+      id: "routes",
+      data: routes,
+      getPath: (d) => d.path,
+      getColor: ROUTE_COLOR_RGBA,
+      getWidth: 1.5,
+      widthUnits: "pixels",
+      pickable: false,
+    });
+
+    const iconLayer = new IconLayer({
+      id: "planes",
+      data: planes,
+      getIcon: (d) => PLANE_ICONS[d.status],
+      getPosition: (d) => [d.lng, d.lat],
+      getSize: 24,
+      sizeUnits: "pixels",
+      // deck.gl rota antihorario; el ángulo nuestro fue calculado para CSS (horario)
+      getAngle: (d) => -d.angle,
+      // Actualizaciones frecuentes: invalidamos solo lo que cambia
+      updateTriggers: {
+        getPosition: planes,
+        getAngle: planes,
+      },
+      pickable: false,
+    });
+
+    layerRef.current.setProps({ layers: [pathLayer, iconLayer] });
+  }, [planes, routes]);
 
   return null;
 }
@@ -106,9 +177,7 @@ function AirportMap({ showFlights = true }) {
     return map;
   }, [airports]);
 
-  /* Geometría estática de cada ruta animada: origen, destino, ángulo, color
-   * y deltas pre-calculados. Solo cambia cuando cambian vuelos/aeropuertos,
-   * NO en cada frame. Esto saca toda la trigonometría del hot path. */
+  /* Geometría estática por ruta */
   const routesGeometry = useMemo(() => {
     const picked = pickFlightsToAnimate(flights ?? [], airportsByIata, MAX_FLIGHTS_ON_MAP);
     return picked.map((route) => {
@@ -124,28 +193,31 @@ function AirportMap({ showFlights = true }) {
         dLat,
         dLng,
         planeAngle: bearing - 45,
-        color: flightLoadColor(route.used, route.capacity),
+        status: flightLoadStatus(route.used, route.capacity),
       };
     });
   }, [flights, airportsByIata]);
 
-  /* Animación decorativa: cada vuelo arranca con un progreso aleatorio
-   * y avanza con dt. NO usamos setState para el progress (evita re-renders
-   * 60 veces por segundo) — lo guardamos en un ref y empujamos directamente
-   * la lista de aviones al canvas layer. */
-  const layerSetterRef = useRef(null);
-  const progressesRef = useRef([]);
+  /* Datos para PathLayer (estáticos por ruta) */
+  const routesForDeck = useMemo(
+    () =>
+      routesGeometry.map((g) => ({
+        path: [
+          [g.origin.lng, g.origin.lat],
+          [g.destination.lng, g.destination.lat],
+        ],
+      })),
+    [routesGeometry]
+  );
 
-  // Reset de progresos cuando cambia la cantidad de rutas
+  /* Animación: progresos aleatorios + dt. Publicamos al deck.gl layer
+   * la lista de aviones con su posición actual cada frame. */
+  const progressesRef = useRef([]);
+  const [planes, setPlanes] = useState([]);
+
   useEffect(() => {
     progressesRef.current = routesGeometry.map(() => Math.random());
   }, [routesGeometry.length]);
-
-  /* El raf actualiza progress + computa lista de aviones + la entrega al
-   * canvas layer SIN tocar React state. Resultado: el componente AirportMap
-   * casi no re-renderiza, y todo el costo se concentra en un drawImage
-   * por avión sobre un único <canvas>. */
-  const [planes, setPlanes] = useState([]);
 
   useEffect(() => {
     if (routesGeometry.length === 0) {
@@ -155,23 +227,19 @@ function AirportMap({ showFlights = true }) {
 
     let raf;
     let lastTime = performance.now();
-    // Throttle a ~30fps: a escala de mapa mundial el ojo no nota más,
-    // y reducimos a la mitad la carga de actualización.
-    const FRAME_BUDGET_MS = 33;
-    let acc = 0;
+    const FRAME_BUDGET_MS = 33; // ~30fps
 
+    let acc = 0;
     const tick = (time) => {
       const dt = time - lastTime;
       lastTime = time;
       acc += dt;
 
-      // Avanzar progresos siempre (movimiento suave acumulado)
       const arr = progressesRef.current;
       for (let i = 0; i < arr.length; i++) {
         arr[i] = (arr[i] + dt * 0.00005) % 1;
       }
 
-      // Pero solo enviamos al canvas/state cuando toca un frame
       if (acc >= FRAME_BUDGET_MS) {
         acc = 0;
         const next = new Array(routesGeometry.length);
@@ -182,7 +250,7 @@ function AirportMap({ showFlights = true }) {
             lat: geo.origin.lat + geo.dLat * p,
             lng: geo.origin.lng + geo.dLng * p,
             angle: geo.planeAngle,
-            color: geo.color,
+            status: geo.status,
           };
         }
         setPlanes(next);
@@ -193,7 +261,7 @@ function AirportMap({ showFlights = true }) {
 
     raf = requestAnimationFrame(tick);
     return () => cancelAnimationFrame(raf);
-  }, [routesGeometry]);
+  }, [routesGeometry, setPlanes]);
 
   const airportList = useMemo(() => Array.from(airportsByIata.values()), [airportsByIata]);
 
@@ -205,30 +273,13 @@ function AirportMap({ showFlights = true }) {
         style={{ height: "100%", width: "100%", background: "transparent" }}
         zoomControl={false}
         attributionControl={false}
-        preferCanvas={true}
       >
         <TileLayer url="https://{s}.basemaps.cartocdn.com/dark_nolabels/{z}/{x}/{y}{r}.png" />
 
-        {/* Polylines: solo cambian si cambia la lista de rutas, NO cada frame */}
-        {showFlights &&
-          routesGeometry.map(({ route, origin, destination }) => (
-            <Polyline
-              key={`${route.id ?? `${route.origin}-${route.dest}`}`}
-              positions={[
-                [origin.lat, origin.lng],
-                [destination.lat, destination.lng],
-              ]}
-              color={tokens.success}
-              weight={1.5}
-              opacity={0.3}
-              dashArray="4, 6"
-            />
-          ))}
+        {showFlights && (
+          <DeckGLOverlay planes={planes} routes={routesForDeck} />
+        )}
 
-        {/* Aviones en UN solo canvas (en vez de N markers DOM) */}
-        {showFlights && <PlanesCanvasOverlay planes={planes} />}
-
-        {/* Aeropuertos siguen siendo markers DOM (son pocos y no se mueven) */}
         {airportList.map((airport) => (
           <Marker
             key={airport.iata}
