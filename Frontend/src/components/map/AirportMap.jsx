@@ -9,12 +9,8 @@ import { listAirports } from "../../api/airports";
 import { listFlights } from "../../api/flights";
 
 /**
- * Versión de prueba con deck.gl (WebGL) en lugar de canvas 2D.
- * - Aviones: IconLayer (GPU, miles de elementos sin problema)
- * - Rutas: PathLayer (GPU)
- * - Aeropuertos: siguen siendo markers DOM (son pocos)
- *
- * Misma API pública que la versión anterior: solo recibe `showFlights`.
+ * Versión con deck.gl (WebGL): IconLayer + PathLayer corren en GPU.
+ * Soporta cientos/miles de aviones simultáneos.
  */
 
 const occupancyStatus = (used, capacity) => {
@@ -24,44 +20,72 @@ const occupancyStatus = (used, capacity) => {
   return "green";
 };
 
-const flightLoadStatus = (used, capacity) => {
+/* Índice numérico para indexar el atlas (success=0, warning=1, danger=2). */
+const flightLoadStatusIndex = (used, capacity) => {
   const pct = capacity > 0 ? (used / capacity) * 100 : 0;
-  if (pct >= 85) return "danger";
-  if (pct >= 60) return "warning";
-  return "success";
+  if (pct >= 85) return 2;
+  if (pct >= 60) return 1;
+  return 0;
 };
 
-/* ---------- Iconos pre-generados como data URL SVG ----------
- * deck.gl IconLayer puede usar URLs; las data-URLs evitan el
- * round-trip a red. Generamos 3 (uno por color) y los cacheamos. */
+/* ---------- Atlas de iconos para deck.gl ----------
+ * Un solo canvas con los 3 iconos de avión (success, warning, danger)
+ * rasterizados lado a lado. Esto es la forma RECOMENDADA por deck.gl
+ * (más confiable que pasar dataURL diferentes por avión).
+ */
 const PLANE_SVG_PATH =
   "M17.8 19.2 16 11l3.5-3.5C21 6 21.5 4 21 3c-1-.5-3 0-4.5 1.5L13 8 4.8 6.2c-.5-.1-.9.2-1.1.5l-1.3 1.5c-.3.4-.1 1 .4 1.2L9 12l-4 4-2.2-.6c-.4-.1-.8.1-1.1.4l-.8.8c-.3.4-.1 1 .4 1.2l4 1.5 1.5 4c.2.5.8.7 1.2.4l.8-.8c.3-.3.5-.7.4-1.1L8 19l4-4 2.6 6.2c.2.5.8.7 1.2.4l1.5-1.3c.3-.2.6-.6.5-1.1z";
 
-const makePlaneIconUrl = (color) => {
-  const svg =
-    `<svg xmlns="http://www.w3.org/2000/svg" width="64" height="64" viewBox="0 0 24 24" ` +
-    `fill="${color}" stroke="${color}" stroke-width="1" stroke-linecap="round" stroke-linejoin="round">` +
-    `<path d="${PLANE_SVG_PATH}"/>` +
-    `</svg>`;
-  return `data:image/svg+xml;base64,${btoa(svg)}`;
+const ICON_SIZE = 64;          // pixeles por icono en el atlas
+const ICON_RENDER_SIZE = 24;   // pixeles en pantalla
+
+/** Construye un canvas con los 3 iconos lado a lado y devuelve un DataURL PNG. */
+function buildIconAtlas() {
+  const colors = [tokens.success, tokens.warning, tokens.danger];
+  const atlas = document.createElement("canvas");
+  atlas.width = ICON_SIZE * colors.length;
+  atlas.height = ICON_SIZE;
+  const ctx = atlas.getContext("2d");
+
+  const path = new Path2D(PLANE_SVG_PATH);
+  colors.forEach((color, i) => {
+    ctx.save();
+    ctx.translate(i * ICON_SIZE, 0);
+    ctx.scale(ICON_SIZE / 24, ICON_SIZE / 24); // SVG viewBox 0 0 24 24
+    ctx.fillStyle = color;
+    ctx.strokeStyle = color;
+    ctx.lineWidth = 1;
+    ctx.lineCap = "round";
+    ctx.lineJoin = "round";
+    ctx.fill(path);
+    ctx.stroke(path);
+    ctx.restore();
+  });
+
+  return atlas.toDataURL("image/png");
+}
+
+const ICON_ATLAS_URL = typeof document !== "undefined" ? buildIconAtlas() : null;
+
+const ICON_MAPPING = {
+  success: { x: 0,                width: ICON_SIZE, height: ICON_SIZE, anchorX: ICON_SIZE / 2, anchorY: ICON_SIZE / 2, mask: false },
+  warning: { x: ICON_SIZE,        width: ICON_SIZE, height: ICON_SIZE, anchorX: ICON_SIZE / 2, anchorY: ICON_SIZE / 2, mask: false },
+  danger:  { x: ICON_SIZE * 2,    width: ICON_SIZE, height: ICON_SIZE, anchorX: ICON_SIZE / 2, anchorY: ICON_SIZE / 2, mask: false },
 };
 
-const PLANE_ICONS = {
-  success: { url: makePlaneIconUrl(tokens.success), width: 64, height: 64, anchorX: 32, anchorY: 32, mask: false },
-  warning: { url: makePlaneIconUrl(tokens.warning), width: 64, height: 64, anchorX: 32, anchorY: 32, mask: false },
-  danger:  { url: makePlaneIconUrl(tokens.danger),  width: 64, height: 64, anchorX: 32, anchorY: 32, mask: false },
-};
+const STATUS_NAMES = ["success", "warning", "danger"];
 
-/* Polyline color en formato deck.gl: [R, G, B, A] */
 const ROUTE_COLOR_RGBA = (() => {
   const hex = tokens.success.replace("#", "");
-  const r = parseInt(hex.slice(0, 2), 16);
-  const g = parseInt(hex.slice(2, 4), 16);
-  const b = parseInt(hex.slice(4, 6), 16);
-  return [r, g, b, 80]; // alpha bajo (0.3 aprox)
+  return [
+    parseInt(hex.slice(0, 2), 16),
+    parseInt(hex.slice(2, 4), 16),
+    parseInt(hex.slice(4, 6), 16),
+    80, // alpha ~0.3
+  ];
 })();
 
-/* ---------- Cache de iconos de aeropuerto (siguen siendo DOM) ---------- */
+/* ---------- Iconos de aeropuertos (siguen DOM) ---------- */
 const airportIconCache = new Map();
 const getAirportIcon = (airport) => {
   const status = occupancyStatus(airport.used, airport.capacity);
@@ -84,48 +108,38 @@ const getAirportIcon = (airport) => {
   return icon;
 };
 
-const MAX_FLIGHTS_ON_MAP = 30;
+/* ---------- Filtro de vuelos ----------
+ * Ya NO deduplica por ruta (eso ocultaba aviones cuando el back devuelve
+ * varios vuelos con el mismo origen-destino). Solo descarta vuelos con
+ * origen/destino inválido. Tope alto por seguridad pero amplio.
+ */
+const MAX_FLIGHTS_ON_MAP = 1000;
 
-const pickFlightsToAnimate = (flights, airportsByIata, limit) => {
-  const seen = new Set();
+const filterFlightsForMap = (flights, airportsByIata) => {
   const out = [];
   for (const f of flights) {
     if (!airportsByIata.has(f.origin) || !airportsByIata.has(f.dest)) continue;
-    const key = `${f.origin}-${f.dest}`;
-    if (seen.has(key)) continue;
-    seen.add(key);
     out.push(f);
-    if (out.length >= limit) break;
+    if (out.length >= MAX_FLIGHTS_ON_MAP) break;
   }
   return out;
 };
 
-/* ---------- Sub-componente que monta el LeafletLayer de deck.gl ---------- */
+/* ---------- DeckGL Overlay ---------- */
 function DeckGLOverlay({ planes, routes }) {
   const map = useMap();
   const layerRef = useRef(null);
-  const planesRef = useRef(planes);
-  const routesRef = useRef(routes);
-
-  // Mantenemos refs actualizadas para que el animation loop las lea.
-  useEffect(() => { planesRef.current = planes; }, [planes]);
-  useEffect(() => { routesRef.current = routes; }, [routes]);
 
   useEffect(() => {
-    const deckLayer = new LeafletLayer({
-      views: undefined,
-      layers: [],
-    });
+    const deckLayer = new LeafletLayer({ layers: [] });
     deckLayer.addTo(map);
     layerRef.current = deckLayer;
-
     return () => {
       map.removeLayer(deckLayer);
       layerRef.current = null;
     };
   }, [map]);
 
-  // Re-publicar layers cuando cambien planes o rutas
   useEffect(() => {
     if (!layerRef.current) return;
 
@@ -142,16 +156,18 @@ function DeckGLOverlay({ planes, routes }) {
     const iconLayer = new IconLayer({
       id: "planes",
       data: planes,
-      getIcon: (d) => PLANE_ICONS[d.status],
+      iconAtlas: ICON_ATLAS_URL,
+      iconMapping: ICON_MAPPING,
+      getIcon: (d) => STATUS_NAMES[d.statusIdx],
       getPosition: (d) => [d.lng, d.lat],
-      getSize: 24,
+      getSize: ICON_RENDER_SIZE,
       sizeUnits: "pixels",
-      // deck.gl rota antihorario; el ángulo nuestro fue calculado para CSS (horario)
+      // deck.gl rota antihorario; nuestro angle se calculó para CSS (horario)
       getAngle: (d) => -d.angle,
-      // Actualizaciones frecuentes: invalidamos solo lo que cambia
       updateTriggers: {
         getPosition: planes,
         getAngle: planes,
+        getIcon: planes,
       },
       pickable: false,
     });
@@ -177,9 +193,8 @@ function AirportMap({ showFlights = true }) {
     return map;
   }, [airports]);
 
-  /* Geometría estática por ruta */
   const routesGeometry = useMemo(() => {
-    const picked = pickFlightsToAnimate(flights ?? [], airportsByIata, MAX_FLIGHTS_ON_MAP);
+    const picked = filterFlightsForMap(flights ?? [], airportsByIata);
     return picked.map((route) => {
       const origin = airportsByIata.get(route.origin);
       const destination = airportsByIata.get(route.dest);
@@ -193,12 +208,21 @@ function AirportMap({ showFlights = true }) {
         dLat,
         dLng,
         planeAngle: bearing - 45,
-        status: flightLoadStatus(route.used, route.capacity),
+        statusIdx: flightLoadStatusIndex(route.used, route.capacity),
       };
     });
   }, [flights, airportsByIata]);
 
-  /* Datos para PathLayer (estáticos por ruta) */
+  // Diagnóstico útil cuando se sospecha de filtros agresivos.
+  useEffect(() => {
+    if (!flights || flights.length === 0) return;
+    // eslint-disable-next-line no-console
+    console.log(
+      `[AirportMap] flights del back: ${flights.length} | aeropuertos válidos: ${airportsByIata.size} | aviones dibujables: ${routesGeometry.length}`
+    );
+  }, [flights, airportsByIata, routesGeometry]);
+
+  /* PathLayer: paths estáticos derivados de routesGeometry */
   const routesForDeck = useMemo(
     () =>
       routesGeometry.map((g) => ({
@@ -210,8 +234,7 @@ function AirportMap({ showFlights = true }) {
     [routesGeometry]
   );
 
-  /* Animación: progresos aleatorios + dt. Publicamos al deck.gl layer
-   * la lista de aviones con su posición actual cada frame. */
+  /* Animación decorativa: progresos aleatorios + dt */
   const progressesRef = useRef([]);
   const [planes, setPlanes] = useState([]);
 
@@ -227,9 +250,9 @@ function AirportMap({ showFlights = true }) {
 
     let raf;
     let lastTime = performance.now();
-    const FRAME_BUDGET_MS = 33; // ~30fps
-
+    const FRAME_BUDGET_MS = 33;
     let acc = 0;
+
     const tick = (time) => {
       const dt = time - lastTime;
       lastTime = time;
@@ -250,7 +273,7 @@ function AirportMap({ showFlights = true }) {
             lat: geo.origin.lat + geo.dLat * p,
             lng: geo.origin.lng + geo.dLng * p,
             angle: geo.planeAngle,
-            status: geo.status,
+            statusIdx: geo.statusIdx,
           };
         }
         setPlanes(next);
@@ -261,7 +284,7 @@ function AirportMap({ showFlights = true }) {
 
     raf = requestAnimationFrame(tick);
     return () => cancelAnimationFrame(raf);
-  }, [routesGeometry, setPlanes]);
+  }, [routesGeometry]);
 
   const airportList = useMemo(() => Array.from(airportsByIata.values()), [airportsByIata]);
 
