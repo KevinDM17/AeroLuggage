@@ -9,8 +9,12 @@ import { listAirports } from "../../api/airports";
 import { listFlights } from "../../api/flights";
 
 /**
- * Versión con deck.gl (WebGL): IconLayer + PathLayer corren en GPU.
- * Soporta cientos/miles de aviones simultáneos.
+ * AirportMap con deck.gl (WebGL). Soporta dos modos:
+ *  1) Modo "simulador real": el padre pasa airports/flights del snapshot del back
+ *     + simulatedNowMs (reloj de la sim). Los aviones se muestran según los
+ *     horarios reales (depTime/arrTime) y la hora simulada actual.
+ *  2) Modo "decorativo": sin props de datos → useFetch interno + animación con
+ *     progresos aleatorios. Útil para landing/mock.
  */
 
 const occupancyStatus = (used, capacity) => {
@@ -20,7 +24,6 @@ const occupancyStatus = (used, capacity) => {
   return "green";
 };
 
-/* Índice numérico para indexar el atlas (success=0, warning=1, danger=2). */
 const flightLoadStatusIndex = (used, capacity) => {
   const pct = capacity > 0 ? (used / capacity) * 100 : 0;
   if (pct >= 85) return 2;
@@ -28,30 +31,33 @@ const flightLoadStatusIndex = (used, capacity) => {
   return 0;
 };
 
-/* ---------- Atlas de iconos para deck.gl ----------
- * Un solo canvas con los 3 iconos de avión (success, warning, danger)
- * rasterizados lado a lado. Esto es la forma RECOMENDADA por deck.gl
- * (más confiable que pasar dataURL diferentes por avión).
- */
+const parseUtcDateTime = (value) => {
+  if (!value) return Number.NaN;
+  const raw = String(value).trim();
+  const normalized = /z$/i.test(raw) ? raw : `${raw}Z`;
+  return Date.parse(normalized);
+};
+
+const clamp = (value, min, max) => Math.min(max, Math.max(min, value));
+
+/* ---------- Atlas de iconos para deck.gl IconLayer ---------- */
 const PLANE_SVG_PATH =
   "M17.8 19.2 16 11l3.5-3.5C21 6 21.5 4 21 3c-1-.5-3 0-4.5 1.5L13 8 4.8 6.2c-.5-.1-.9.2-1.1.5l-1.3 1.5c-.3.4-.1 1 .4 1.2L9 12l-4 4-2.2-.6c-.4-.1-.8.1-1.1.4l-.8.8c-.3.4-.1 1 .4 1.2l4 1.5 1.5 4c.2.5.8.7 1.2.4l.8-.8c.3-.3.5-.7.4-1.1L8 19l4-4 2.6 6.2c.2.5.8.7 1.2.4l1.5-1.3c.3-.2.6-.6.5-1.1z";
 
-const ICON_SIZE = 64;          // pixeles por icono en el atlas
-const ICON_RENDER_SIZE = 24;   // pixeles en pantalla
+const ICON_SIZE = 64;
+const ICON_RENDER_SIZE = 24;
 
-/** Construye un canvas con los 3 iconos lado a lado y devuelve un DataURL PNG. */
 function buildIconAtlas() {
   const colors = [tokens.success, tokens.warning, tokens.danger];
   const atlas = document.createElement("canvas");
   atlas.width = ICON_SIZE * colors.length;
   atlas.height = ICON_SIZE;
   const ctx = atlas.getContext("2d");
-
   const path = new Path2D(PLANE_SVG_PATH);
   colors.forEach((color, i) => {
     ctx.save();
     ctx.translate(i * ICON_SIZE, 0);
-    ctx.scale(ICON_SIZE / 24, ICON_SIZE / 24); // SVG viewBox 0 0 24 24
+    ctx.scale(ICON_SIZE / 24, ICON_SIZE / 24);
     ctx.fillStyle = color;
     ctx.strokeStyle = color;
     ctx.lineWidth = 1;
@@ -61,16 +67,15 @@ function buildIconAtlas() {
     ctx.stroke(path);
     ctx.restore();
   });
-
   return atlas.toDataURL("image/png");
 }
 
 const ICON_ATLAS_URL = typeof document !== "undefined" ? buildIconAtlas() : null;
 
 const ICON_MAPPING = {
-  success: { x: 0,                width: ICON_SIZE, height: ICON_SIZE, anchorX: ICON_SIZE / 2, anchorY: ICON_SIZE / 2, mask: false },
-  warning: { x: ICON_SIZE,        width: ICON_SIZE, height: ICON_SIZE, anchorX: ICON_SIZE / 2, anchorY: ICON_SIZE / 2, mask: false },
-  danger:  { x: ICON_SIZE * 2,    width: ICON_SIZE, height: ICON_SIZE, anchorX: ICON_SIZE / 2, anchorY: ICON_SIZE / 2, mask: false },
+  success: { x: 0,             width: ICON_SIZE, height: ICON_SIZE, anchorX: ICON_SIZE / 2, anchorY: ICON_SIZE / 2, mask: false },
+  warning: { x: ICON_SIZE,     width: ICON_SIZE, height: ICON_SIZE, anchorX: ICON_SIZE / 2, anchorY: ICON_SIZE / 2, mask: false },
+  danger:  { x: ICON_SIZE * 2, width: ICON_SIZE, height: ICON_SIZE, anchorX: ICON_SIZE / 2, anchorY: ICON_SIZE / 2, mask: false },
 };
 
 const STATUS_NAMES = ["success", "warning", "danger"];
@@ -81,18 +86,17 @@ const ROUTE_COLOR_RGBA = (() => {
     parseInt(hex.slice(0, 2), 16),
     parseInt(hex.slice(2, 4), 16),
     parseInt(hex.slice(4, 6), 16),
-    80, // alpha ~0.3
+    80,
   ];
 })();
 
-/* ---------- Iconos de aeropuertos (siguen DOM) ---------- */
+/* ---------- Iconos de aeropuerto (DOM, cacheados) ---------- */
 const airportIconCache = new Map();
 const getAirportIcon = (airport) => {
   const status = occupancyStatus(airport.used, airport.capacity);
   const key = `${airport.iata}|${status}`;
   const cached = airportIconCache.get(key);
   if (cached) return cached;
-
   const color = semaphoreColor(status);
   const icon = L.divIcon({
     html:
@@ -108,14 +112,10 @@ const getAirportIcon = (airport) => {
   return icon;
 };
 
-/* ---------- Filtro de vuelos ----------
- * Ya NO deduplica por ruta (eso ocultaba aviones cuando el back devuelve
- * varios vuelos con el mismo origen-destino). Solo descarta vuelos con
- * origen/destino inválido. Tope alto por seguridad pero amplio.
- */
+/* ---------- Filtros de vuelos ---------- */
 const MAX_FLIGHTS_ON_MAP = 1000;
 
-const filterFlightsForMap = (flights, airportsByIata) => {
+const filterValidFlights = (flights, airportsByIata) => {
   const out = [];
   for (const f of flights) {
     if (!airportsByIata.has(f.origin) || !airportsByIata.has(f.dest)) continue;
@@ -125,7 +125,7 @@ const filterFlightsForMap = (flights, airportsByIata) => {
   return out;
 };
 
-/* ---------- DeckGL Overlay ---------- */
+/* ---------- Overlay deck.gl ---------- */
 function DeckGLOverlay({ planes, routes }) {
   const map = useMap();
   const layerRef = useRef(null);
@@ -162,7 +162,6 @@ function DeckGLOverlay({ planes, routes }) {
       getPosition: (d) => [d.lng, d.lat],
       getSize: ICON_RENDER_SIZE,
       sizeUnits: "pixels",
-      // deck.gl rota antihorario; nuestro angle se calculó para CSS (horario)
       getAngle: (d) => -d.angle,
       updateTriggers: {
         getPosition: planes,
@@ -178,12 +177,30 @@ function DeckGLOverlay({ planes, routes }) {
   return null;
 }
 
-function AirportMap({ showFlights = true }) {
+function AirportMap({
+  showFlights = true,
+  showRouteLines = true,
+  airports: airportsProp,
+  flights: flightsProp,
+  autoload = true,
+  simulatedNowMs = null,
+  animateFlights = false,
+}) {
   const center = [20, -40];
   const zoom = 3;
 
-  const { data: airports = [] } = useFetch(listAirports);
-  const { data: flights = [] } = useFetch(listFlights);
+  /* Fetch interno SOLO si el padre no nos pasa datos y autoload está activo */
+  const { data: fetchedAirports = [] } = useFetch(
+    () => (autoload && !airportsProp ? listAirports() : Promise.resolve([])),
+    [autoload, !!airportsProp]
+  );
+  const { data: fetchedFlights = [] } = useFetch(
+    () => (autoload && !flightsProp ? listFlights() : Promise.resolve([])),
+    [autoload, !!flightsProp]
+  );
+
+  const airports = airportsProp ?? fetchedAirports ?? [];
+  const flights = flightsProp ?? fetchedFlights ?? [];
 
   const airportsByIata = useMemo(() => {
     const map = new Map();
@@ -193,14 +210,21 @@ function AirportMap({ showFlights = true }) {
     return map;
   }, [airports]);
 
-  const routesGeometry = useMemo(() => {
-    const picked = filterFlightsForMap(flights ?? [], airportsByIata);
-    return picked.map((route) => {
+  /* Geometría estática por vuelo: origen, destino, ángulo, deltas, fechas */
+  const flightGeometry = useMemo(() => {
+    const valid = filterValidFlights(flights ?? [], airportsByIata);
+    return valid.map((route) => {
       const origin = airportsByIata.get(route.origin);
       const destination = airportsByIata.get(route.dest);
       const dLat = destination.lat - origin.lat;
       const dLng = destination.lng - origin.lng;
       const bearing = (Math.atan2(dLng, dLat) * 180) / Math.PI;
+      const departureUtcMs = parseUtcDateTime(route.depTime);
+      const arrivalUtcMs = parseUtcDateTime(route.arrTime);
+      const hasValidSchedule =
+        Number.isFinite(departureUtcMs) &&
+        Number.isFinite(arrivalUtcMs) &&
+        arrivalUtcMs > departureUtcMs;
       return {
         route,
         origin,
@@ -209,103 +233,125 @@ function AirportMap({ showFlights = true }) {
         dLng,
         planeAngle: bearing - 45,
         statusIdx: flightLoadStatusIndex(route.used, route.capacity),
+        departureUtcMs,
+        arrivalUtcMs,
+        hasValidSchedule,
       };
     });
   }, [flights, airportsByIata]);
 
-  // Diagnóstico que se dispara SIEMPRE (incluso con flights vacío) para
-  // poder identificar si el problema es de filtros o de carga del back.
+  // Diagnóstico útil cuando algo no coincide
   useEffect(() => {
     const flightCount = Array.isArray(flights) ? flights.length : 0;
-    const airportCount = airportsByIata.size;
-    const drawableCount = routesGeometry.length;
-    const sampleFlight = flightCount > 0 ? flights[0] : null;
-    const sampleAirport = airports && airports.length > 0 ? airports[0] : null;
     // eslint-disable-next-line no-console
-    console.log("[AirportMap] diagnóstico", {
-      flightsDelBack: flightCount,
-      aeropuertosValidos: airportCount,
-      avionesDibujables: drawableCount,
-      sampleFlight,
-      sampleAirport,
-    });
-    if (flightCount > 0 && drawableCount === 0) {
-      // eslint-disable-next-line no-console
-      console.warn(
-        "[AirportMap] hay vuelos pero ninguno mapea a un aeropuerto conocido. " +
-        "Posible mismatch entre flight.origin/dest y airport.iata. Sample flight:",
-        sampleFlight,
-        "Airports keys:",
-        Array.from(airportsByIata.keys())
-      );
-    }
-  }, [flights, airports, airportsByIata, routesGeometry]);
+    console.log("[AirportMap] flights=" + flightCount + " airports=" + airportsByIata.size + " geometry=" + flightGeometry.length);
+  }, [flights, airportsByIata, flightGeometry]);
 
-  /* PathLayer: paths estáticos derivados de routesGeometry */
-  const routesForDeck = useMemo(
-    () =>
-      routesGeometry.map((g) => ({
-        path: [
-          [g.origin.lng, g.origin.lat],
-          [g.destination.lng, g.destination.lat],
-        ],
-      })),
-    [routesGeometry]
-  );
+  /* Decide si usamos el modo "horarios reales" (simulador con back)
+   * o el modo "decorativo" (animación con progresos aleatorios). */
+  const useRealSchedule = simulatedNowMs !== null && Number.isFinite(simulatedNowMs);
 
-  /* Animación decorativa: progresos aleatorios + dt */
+  /* === MODO DECORATIVO === progreso aleatorio + dt */
   const progressesRef = useRef([]);
-  const [planes, setPlanes] = useState([]);
+  const [decorativePlanes, setDecorativePlanes] = useState([]);
 
   useEffect(() => {
-    progressesRef.current = routesGeometry.map(() => Math.random());
-  }, [routesGeometry.length]);
+    if (useRealSchedule) return;
+    progressesRef.current = flightGeometry.map(() => Math.random());
+  }, [flightGeometry.length, useRealSchedule]);
 
   useEffect(() => {
-    if (routesGeometry.length === 0) {
-      setPlanes([]);
+    if (useRealSchedule) return undefined;
+    if (flightGeometry.length === 0) {
+      setDecorativePlanes([]);
       return undefined;
     }
 
     let raf;
     let lastTime = performance.now();
-    const FRAME_BUDGET_MS = 33;
     let acc = 0;
+    const FRAME_BUDGET_MS = 33;
 
     const tick = (time) => {
       const dt = time - lastTime;
       lastTime = time;
       acc += dt;
-
       const arr = progressesRef.current;
       for (let i = 0; i < arr.length; i++) {
         arr[i] = (arr[i] + dt * 0.00005) % 1;
       }
-
       if (acc >= FRAME_BUDGET_MS) {
         acc = 0;
-        const next = new Array(routesGeometry.length);
-        for (let i = 0; i < routesGeometry.length; i++) {
-          const geo = routesGeometry[i];
+        const next = new Array(flightGeometry.length);
+        for (let i = 0; i < flightGeometry.length; i++) {
+          const g = flightGeometry[i];
           const p = arr[i];
           next[i] = {
-            lat: geo.origin.lat + geo.dLat * p,
-            lng: geo.origin.lng + geo.dLng * p,
-            angle: geo.planeAngle,
-            statusIdx: geo.statusIdx,
+            lat: g.origin.lat + g.dLat * p,
+            lng: g.origin.lng + g.dLng * p,
+            angle: g.planeAngle,
+            statusIdx: g.statusIdx,
           };
         }
-        setPlanes(next);
+        setDecorativePlanes(next);
       }
-
       raf = requestAnimationFrame(tick);
     };
-
     raf = requestAnimationFrame(tick);
     return () => cancelAnimationFrame(raf);
-  }, [routesGeometry]);
+  }, [flightGeometry, useRealSchedule]);
+
+  /* === MODO HORARIOS REALES === posición según simulatedNowMs */
+  const realPlanes = useMemo(() => {
+    if (!useRealSchedule) return [];
+    const out = [];
+    for (const g of flightGeometry) {
+      if (!g.hasValidSchedule) continue;
+      const progress = clamp(
+        (simulatedNowMs - g.departureUtcMs) / (g.arrivalUtcMs - g.departureUtcMs),
+        0,
+        1
+      );
+      if (progress <= 0 || progress >= 1) continue;
+      out.push({
+        lat: g.origin.lat + g.dLat * progress,
+        lng: g.origin.lng + g.dLng * progress,
+        angle: g.planeAngle,
+        statusIdx: g.statusIdx,
+      });
+    }
+    return out;
+  }, [flightGeometry, simulatedNowMs, useRealSchedule]);
+
+  const planes = useRealSchedule ? realPlanes : decorativePlanes;
+
+  /* Rutas (PathLayer): solo las rutas de vuelos visibles */
+  const routesForDeck = useMemo(() => {
+    if (!showRouteLines) return [];
+    if (useRealSchedule) {
+      // Solo rutas de vuelos ya despegados (no terminados)
+      const seen = new Set();
+      const out = [];
+      for (const g of flightGeometry) {
+        if (!g.hasValidSchedule) continue;
+        if (simulatedNowMs < g.departureUtcMs) continue;
+        const key = `${g.route.origin}-${g.route.dest}`;
+        if (seen.has(key)) continue;
+        seen.add(key);
+        out.push({ path: [[g.origin.lng, g.origin.lat], [g.destination.lng, g.destination.lat]] });
+      }
+      return out;
+    }
+    return flightGeometry.map((g) => ({
+      path: [[g.origin.lng, g.origin.lat], [g.destination.lng, g.destination.lat]],
+    }));
+  }, [flightGeometry, showRouteLines, simulatedNowMs, useRealSchedule]);
 
   const airportList = useMemo(() => Array.from(airportsByIata.values()), [airportsByIata]);
+
+  // Para que el efecto de animateFlights tenga sentido cuando el padre
+  // no provee simulatedNowMs pero sí quiere ver aviones (caso decorativo)
+  const showPlanesOnMap = showFlights && (useRealSchedule || animateFlights || (!simulatedNowMs && autoload));
 
   return (
     <div className="w-full h-full bg-canvas">
@@ -318,7 +364,7 @@ function AirportMap({ showFlights = true }) {
       >
         <TileLayer url="https://{s}.basemaps.cartocdn.com/dark_nolabels/{z}/{x}/{y}{r}.png" />
 
-        {showFlights && (
+        {showPlanesOnMap && (
           <DeckGLOverlay planes={planes} routes={routesForDeck} />
         )}
 

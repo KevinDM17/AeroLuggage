@@ -34,47 +34,13 @@ export async function mockCreateAirport(payload) {
 }
 
 // ---------- VUELOS ----------
-/* Generación procedural de vuelos para probar carga visual.
- * Crea N vuelos combinando todos los pares origen-destino entre los
- * aeropuertos mock, con capacidades y cargas variadas.
- * Cantidad alta (~180) para probar deck.gl con muchos aviones simultáneos. */
-const AIRLINES = ["LA", "AV", "G3", "AA", "IB", "JL", "BA", "AF", "EK", "QF"];
-const STATUSES = ["Confirmado", "Confirmado", "Confirmado", "En progreso", "Programado"];
-
-function generateMockFlights() {
-  const iataCodes = _airports.map((a) => a.iata);
-  const flights = [];
-  let counter = 100;
-
-  // Genera 2 vuelos por cada par origen-destino (i,j) con i!=j → 10*9*2 = 180
-  for (let i = 0; i < iataCodes.length; i++) {
-    for (let j = 0; j < iataCodes.length; j++) {
-      if (i === j) continue;
-      for (let k = 0; k < 2; k++) {
-        const airline = AIRLINES[(i + j + k) % AIRLINES.length];
-        const depHour = (8 + (i + j + k) * 2) % 24;
-        const arrHour = (depHour + 4 + (k % 3)) % 24;
-        const capacity = 150 + ((i * 31 + j * 17 + k * 7) % 250); // 150-400
-        // Carga variada: algunos vuelos llenos (rojos), otros medios (amarillos), otros vacíos (verdes)
-        const loadPct = ((i * 13 + j * 23 + k * 41) % 100) / 100;
-        const used = Math.round(capacity * loadPct);
-        flights.push({
-          id: `${airline}${counter++}`,
-          origin: iataCodes[i],
-          dest: iataCodes[j],
-          depTime: `${String(depHour).padStart(2, "0")}:00`,
-          arrTime: `${String(arrHour).padStart(2, "0")}:00`,
-          status: STATUSES[(i + j + k) % STATUSES.length],
-          capacity,
-          used,
-        });
-      }
-    }
-  }
-  return flights;
-}
-
-let _flights = generateMockFlights();
+let _flights = [
+  { id: "LA201", origin: "LIM", dest: "MIA", depTime: "10:00", arrTime: "16:30", status: "Finalizado", capacity: 250, used: 220 },
+  { id: "AV105", origin: "BOG", dest: "MAD", depTime: "14:00", arrTime: "06:00", status: "Cancelado",  capacity: 400, used: 0   },
+  { id: "G3102", origin: "GRU", dest: "LIM", depTime: "08:00", arrTime: "11:30", status: "En progreso", capacity: 200, used: 150 },
+  { id: "AA908", origin: "MIA", dest: "MAD", depTime: "18:00", arrTime: "08:30", status: "Confirmado", capacity: 350, used: 300 },
+  { id: "JL061", origin: "NRT", dest: "HKG", depTime: "11:00", arrTime: "15:00", status: "Confirmado", capacity: 220, used: 180 },
+];
 
 export async function mockListFlights() { await delay(); return [..._flights]; }
 export async function mockCreateFlight(payload) {
@@ -205,19 +171,7 @@ export async function mockGetPeriodSimState() {
     _sim.period.progress = Math.min(100, (elapsed / mockTotalMs) * 100);
     if (_sim.period.progress >= 100) _sim.period.status = "done";
   }
-  // KPIs simulados que evolucionan con el progreso (no se quedan en 0).
-  const p = _sim.period.progress / 100;
-  const totalBags = 4500;
-  const delivered = Math.round(totalBags * p);
-  const inTransit = Math.round(800 + Math.sin(p * Math.PI * 4) * 150);
-  return {
-    ..._sim.period,
-    bagsInTransit:   _sim.period.status === "idle" ? 0 : inTransit,
-    bagsDelivered:   _sim.period.status === "idle" ? 0 : delivered,
-    bagsUnassigned:  _sim.period.status === "idle" ? 0 : Math.round(20 + Math.random() * 10),
-    activeFlights:   _sim.period.status === "idle" ? 0 : Math.round(45 + Math.sin(p * Math.PI * 6) * 15),
-    freeCapacityPct: _sim.period.status === "idle" ? 0 : Math.max(15, Math.min(85, Math.round(50 - p * 30 + Math.random() * 5))),
-  };
+  return { ..._sim.period };
 }
 
 export async function mockStartCollapseSim(startDate) {

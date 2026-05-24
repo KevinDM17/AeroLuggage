@@ -1,4 +1,4 @@
-import { apiPost, USE_MOCK } from "./client";
+import { apiGet, apiPost, USE_MOCK } from "./client";
 import {
   mockStartPeriodSim,
   mockStopPeriodSim,
@@ -15,8 +15,10 @@ import {
  *
  * REST (lo que el front llama directo):
  *   POST /api/simulacion/periodo/iniciar
- *     Body: SimulacionIniciarDTO { fechaInicio: "YYYY-MM-DD", totalDias, intervaloTickMs }
- *     Response: SimulacionEstadoDTO { sessionId, estado, mensaje }
+ *     Body: SimulacionIniciarDTO { fechaInicio: "YYYY-MM-DD", totalDias, duracionDiaSimuladoMs }
+ *     Response: SimulacionInicioResponse {
+ *       sessionId, estado, mensaje, fechaInicio, totalDias, aeropuertos, vuelosInstancia
+ *     }
  *
  * WebSocket (STOMP) — manejado por hooks/useStomp:
  *   SEND /app/simulacion/periodo/{pausar|reanudar|detener}   con { sessionId }
@@ -29,12 +31,15 @@ export const iniciarSimulacionPeriodo = (payload) =>
     ? mockStartPeriodSim(payload.fechaInicio)
     : apiPost("/simulacion/periodo/iniciar", payload);
 
+export const obtenerSnapshotSimulacionPeriodo = (sessionId) =>
+  apiGet(`/simulacion/periodo/${sessionId}/snapshot`);
+
 /* Wrapper legacy para no romper imports actuales. */
 export const startPeriodSim = (startDate) =>
   iniciarSimulacionPeriodo({
     fechaInicio: startDate,
     totalDias: 5,
-    intervaloTickMs: 1000,
+    duracionDiaSimuladoMs: 1000,
   });
 
 /* Stop/state legacy: en modo real ya no se usan; pausar/reanudar/detener van

@@ -1,29 +1,32 @@
 package pe.edu.pucp.aeroluggage.config;
 
-import javax.sql.DataSource;
-
+import com.zaxxer.hikari.HikariConfig;
+import com.zaxxer.hikari.HikariDataSource;
+import io.github.cdimascio.dotenv.Dotenv;
 import org.springframework.context.annotation.Bean;
 import org.springframework.context.annotation.Configuration;
 import org.springframework.context.annotation.Primary;
 
-import com.zaxxer.hikari.HikariConfig;
-import com.zaxxer.hikari.HikariDataSource;
+import javax.sql.DataSource;
 
 @Configuration
 public class DatabaseConfig {
 
+    private static final String DB_URL_KEY = "DB_URL";
+
     @Bean
     @Primary
     public DataSource dataSource() {
-        HikariConfig config = new HikariConfig();
-        config.setJdbcUrl("jdbc:sqlite:aeroluggage.db");
+        final Dotenv dotenv = Dotenv.configure().ignoreIfMissing().load();
+        final String jdbcUrl = dotenv.get(DB_URL_KEY);
+
+        final HikariConfig config = new HikariConfig();
+        config.setJdbcUrl(jdbcUrl);
         config.setDriverClassName("org.sqlite.JDBC");
         config.setMaximumPoolSize(4);
         config.setMinimumIdle(2);
-        
-        // Activar WAL mode para mejorar concurrencia en escrituras
         config.setConnectionInitSql("PRAGMA journal_mode=WAL; PRAGMA foreign_keys=ON;");
-        
+
         return new HikariDataSource(config);
     }
 }
