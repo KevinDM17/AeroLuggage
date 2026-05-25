@@ -10,16 +10,21 @@ import pe.edu.pucp.aeroluggage.dominio.enums.EstadoMaleta;
 import pe.edu.pucp.aeroluggage.dominio.enums.EstadoPedido;
 import pe.edu.pucp.aeroluggage.dominio.enums.EstadoRuta;
 import pe.edu.pucp.aeroluggage.dominio.enums.EstadoVuelo;
-import pe.edu.pucp.aeroluggage.dto.rest.simulacion.AeropuertoResponse;
-import pe.edu.pucp.aeroluggage.dto.rest.simulacion.VueloInstanciaResponse;
+import pe.edu.pucp.aeroluggage.dto.simulacion.rest.AeropuertoResponse;
+import pe.edu.pucp.aeroluggage.dto.simulacion.rest.MaletaSimulacionResponse;
+import pe.edu.pucp.aeroluggage.dto.simulacion.rest.PedidoSimulacionResponse;
+import pe.edu.pucp.aeroluggage.dto.simulacion.rest.RutaSimulacionResponse;
+import pe.edu.pucp.aeroluggage.dto.simulacion.rest.RutaVueloResponse;
+import pe.edu.pucp.aeroluggage.dto.simulacion.rest.VueloInstanciaResponse;
 
 import java.time.LocalDateTime;
 import java.time.format.DateTimeFormatter;
 import java.util.ArrayList;
+import java.util.Comparator;
 import java.util.HashMap;
+import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Map;
-import java.util.stream.Collectors;
 
 @Service
 public class SimulacionSnapshotService {
@@ -28,12 +33,13 @@ public class SimulacionSnapshotService {
 
     public void recalcularEstadoSesion(final SimulacionSesion sesion) {
         final LocalDateTime simTimeUtc = sesion.getCurrentSimTimeUtc().get();
-        final Map<String, Maleta> maletasPorId = sesion.getMaletas().stream()
-                .filter(maleta -> maleta != null && maleta.getIdMaleta() != null)
-                .collect(Collectors.toMap(Maleta::getIdMaleta, maleta -> maleta, (left, right) -> left));
-        final Map<String, Ruta> rutaPorMaleta = sesion.getRutas().stream()
-                .filter(ruta -> ruta != null && ruta.getIdMaleta() != null)
-                .collect(Collectors.toMap(Ruta::getIdMaleta, ruta -> ruta, (left, right) -> left));
+        final Map<String, Maleta> maletasPorId = sesion.getMaletasPorId();
+        final Map<String, Ruta> rutaPorMaleta = new HashMap<>();
+        for (final Ruta ruta : sesion.getRutas()) {
+            if (ruta != null && ruta.getIdMaleta() != null) {
+                rutaPorMaleta.putIfAbsent(ruta.getIdMaleta(), ruta);
+            }
+        }
         final Map<String, Integer> usoPorVuelo = calcularUsoPorVuelo(sesion.getRutas(), maletasPorId, simTimeUtc);
         final Map<String, List<Maleta>> maletasPorPedido = new HashMap<>();
         final Map<String, Integer> maletasPorAeropuerto = new HashMap<>();
@@ -100,9 +106,7 @@ public class SimulacionSnapshotService {
 
     public int contarMaletasSinRuta(final SimulacionSesion sesion) {
         final LocalDateTime simTimeUtc = sesion.getCurrentSimTimeUtc().get();
-        final Map<String, Maleta> maletasPorId = sesion.getMaletas().stream()
-                .filter(maleta -> maleta != null && maleta.getIdMaleta() != null)
-                .collect(Collectors.toMap(Maleta::getIdMaleta, maleta -> maleta, (left, right) -> left));
+        final Map<String, Maleta> maletasPorId = sesion.getMaletasPorId();
         return (int) sesion.getRutas().stream()
                 .filter(ruta -> ruta == null
                         || ruta.getSubrutas() == null
@@ -158,25 +162,48 @@ public class SimulacionSnapshotService {
 
     public List<VueloInstanciaResponse> mapearVuelosInstancia(final List<VueloInstancia> vuelosInstancia) {
         return vuelosInstancia.stream()
-                .map(vueloInstancia -> {
-                    final int capacidadDisponible = vueloInstancia.getCapacidadDisponible();
-                    final int capacidadMaxima = vueloInstancia.getCapacidadMaxima();
-                    return VueloInstanciaResponse.builder()
-                            .withIdVueloInstancia(vueloInstancia.getIdVueloInstancia())
-                            .withCodigo(vueloInstancia.getCodigo())
-                            .withAeropuertoOrigen(vueloInstancia.getAeropuertoOrigen() != null
-                                    ? vueloInstancia.getAeropuertoOrigen().getIdAeropuerto() : null)
-                            .withAeropuertoDestino(vueloInstancia.getAeropuertoDestino() != null
-                                    ? vueloInstancia.getAeropuertoDestino().getIdAeropuerto() : null)
-                            .withFechaSalida(formatDateTime(vueloInstancia.getFechaSalida()))
-                            .withFechaLlegada(formatDateTime(vueloInstancia.getFechaLlegada()))
-                            .withCapacidadMaxima(capacidadMaxima)
-                            .withCapacidadDisponible(capacidadDisponible)
-                            .withCapacidadUsada(Math.max(0, capacidadMaxima - capacidadDisponible))
-                            .withEstado(vueloInstancia.getEstado() != null ? vueloInstancia.getEstado().name() : null)
-                            .build();
-                })
+                .map(this::mapearVueloInstancia)
                 .toList();
+    }
+
+    public List<VueloInstanciaResponse> mapearVuelosInstanciaActivos(final List<VueloInstancia> vuelosInstancia,
+                                                                      final LocalDateTime simTimeUtc,
+                                                                      final int windowMinutes) {
+        final LocalDateTime limiteVentana = simTimeUtc.plusMinutes(windowMinutes);
+        final List<VueloInstanciaResponse> resultado = new ArrayList<>();
+        for (final VueloInstancia vuelo : vuelosInstancia) {
+            if (vuelo == null) {
+                continue;
+            }
+            final boolean enProgreso = vuelo.getEstado() == EstadoVuelo.EN_PROGRESO;
+            final boolean proximoEnVentana = vuelo.getEstado() == EstadoVuelo.PROGRAMADO
+                    && vuelo.getFechaSalida() != null
+                    && !vuelo.getFechaSalida().isAfter(limiteVentana);
+            if (!enProgreso && !proximoEnVentana) {
+                continue;
+            }
+            resultado.add(mapearVueloInstancia(vuelo));
+        }
+        return resultado;
+    }
+
+    private VueloInstanciaResponse mapearVueloInstancia(final VueloInstancia vueloInstancia) {
+        final int capacidadDisponible = vueloInstancia.getCapacidadDisponible();
+        final int capacidadMaxima = vueloInstancia.getCapacidadMaxima();
+        return VueloInstanciaResponse.builder()
+                .withIdVueloInstancia(vueloInstancia.getIdVueloInstancia())
+                .withCodigo(vueloInstancia.getCodigo())
+                .withAeropuertoOrigen(vueloInstancia.getAeropuertoOrigen() != null
+                        ? vueloInstancia.getAeropuertoOrigen().getIdAeropuerto() : null)
+                .withAeropuertoDestino(vueloInstancia.getAeropuertoDestino() != null
+                        ? vueloInstancia.getAeropuertoDestino().getIdAeropuerto() : null)
+                .withFechaSalida(formatDateTime(vueloInstancia.getFechaSalida()))
+                .withFechaLlegada(formatDateTime(vueloInstancia.getFechaLlegada()))
+                .withCapacidadMaxima(capacidadMaxima)
+                .withCapacidadDisponible(capacidadDisponible)
+                .withCapacidadUsada(Math.max(0, capacidadMaxima - capacidadDisponible))
+                .withEstado(vueloInstancia.getEstado() != null ? vueloInstancia.getEstado().name() : null)
+                .build();
     }
 
     private Map<String, Integer> calcularUsoPorVuelo(final List<Ruta> rutas,
@@ -298,6 +325,125 @@ public class SimulacionSnapshotService {
                 .anyMatch(maleta -> maleta.getEstado() == EstadoMaleta.EN_TRANSITO
                         || maleta.getEstado() == EstadoMaleta.ENTREGADA);
         pedido.setEstado(algunaConMovimiento ? EstadoPedido.EN_PROCESO : EstadoPedido.REGISTRADO);
+    }
+
+    public record EntidadesVisibles(
+            List<RutaSimulacionResponse> rutas,
+            List<MaletaSimulacionResponse> maletas,
+            List<PedidoSimulacionResponse> pedidos
+    ) {}
+
+    public EntidadesVisibles mapearEntidadesVisibles(
+            final List<Ruta> rutas,
+            final List<Maleta> maletas,
+            final LocalDateTime simTimeUtc) {
+        final Map<String, Ruta> rutaPorMaleta = new HashMap<>();
+        for (final Ruta ruta : rutas) {
+            if (ruta != null && ruta.getIdMaleta() != null) {
+                rutaPorMaleta.putIfAbsent(ruta.getIdMaleta(), ruta);
+            }
+        }
+        final List<RutaSimulacionResponse> rutasMapeadas = new ArrayList<>();
+        final Map<String, MaletaSimulacionResponse> maletasMapeadas = new LinkedHashMap<>();
+        final Map<String, PedidoSimulacionResponse> pedidosMapeados = new LinkedHashMap<>();
+
+        for (final Maleta maleta : maletas) {
+            if (maleta == null || maleta.getFechaRegistro() == null
+                    || maleta.getFechaRegistro().isAfter(simTimeUtc)) {
+                continue;
+            }
+            maletasMapeadas.putIfAbsent(maleta.getIdMaleta(), mapearMaleta(maleta));
+            if (maleta.getPedido() != null && maleta.getPedido().getIdPedido() != null) {
+                pedidosMapeados.putIfAbsent(maleta.getPedido().getIdPedido(), mapearPedido(maleta.getPedido()));
+            }
+            final Ruta ruta = rutaPorMaleta.get(maleta.getIdMaleta());
+            if (ruta != null) {
+                rutasMapeadas.add(mapearRuta(ruta));
+            }
+        }
+
+        final List<MaletaSimulacionResponse> maletasOrdenadas = maletasMapeadas.values().stream()
+                .sorted(Comparator.comparing(MaletaSimulacionResponse::getFechaRegistro,
+                        Comparator.nullsLast(Comparator.naturalOrder()))
+                        .thenComparing(MaletaSimulacionResponse::getIdMaleta))
+                .toList();
+        final List<PedidoSimulacionResponse> pedidosOrdenados = pedidosMapeados.values().stream()
+                .sorted(Comparator.comparing(PedidoSimulacionResponse::getDate,
+                        Comparator.nullsLast(Comparator.naturalOrder()))
+                        .thenComparing(PedidoSimulacionResponse::getId))
+                .toList();
+
+        return new EntidadesVisibles(rutasMapeadas, maletasOrdenadas, pedidosOrdenados);
+    }
+
+    private RutaSimulacionResponse mapearRuta(final Ruta ruta) {
+        final List<RutaVueloResponse> vuelos = ruta.getSubrutas() == null
+                ? List.of()
+                : ruta.getSubrutas().stream().map(this::mapearRutaVuelo).toList();
+        return RutaSimulacionResponse.builder()
+                .withIdRuta(ruta.getIdRuta())
+                .withIdMaleta(ruta.getIdMaleta())
+                .withPlazoMaximoDias(ruta.getPlazoMaximoDias())
+                .withDuracion(ruta.getDuracion())
+                .withEstado(ruta.getEstado() != null ? ruta.getEstado().name() : null)
+                .withVuelos(vuelos)
+                .build();
+    }
+
+    private RutaVueloResponse mapearRutaVuelo(final VueloInstancia vuelo) {
+        return RutaVueloResponse.builder()
+                .withIdVueloInstancia(vuelo.getIdVueloInstancia())
+                .withCodigo(vuelo.getCodigo())
+                .withFechaSalida(formatDateTime(vuelo.getFechaSalida()))
+                .withFechaLlegada(formatDateTime(vuelo.getFechaLlegada()))
+                .withAeropuertoOrigen(vuelo.getAeropuertoOrigen() != null
+                        ? vuelo.getAeropuertoOrigen().getIdAeropuerto() : null)
+                .withAeropuertoDestino(vuelo.getAeropuertoDestino() != null
+                        ? vuelo.getAeropuertoDestino().getIdAeropuerto() : null)
+                .build();
+    }
+
+    private MaletaSimulacionResponse mapearMaleta(final Maleta maleta) {
+        return MaletaSimulacionResponse.builder()
+                .withIdMaleta(maleta.getIdMaleta())
+                .withIdPedido(maleta.getPedido() != null ? maleta.getPedido().getIdPedido() : null)
+                .withFechaRegistro(formatDateTime(maleta.getFechaRegistro()))
+                .withFechaLlegada(formatDateTime(maleta.getFechaLlegada()))
+                .withEstado(maleta.getEstado() != null ? maleta.getEstado().name() : null)
+                .withUbicacionActual(resolveUbicacionActual(maleta))
+                .build();
+    }
+
+    private PedidoSimulacionResponse mapearPedido(final Pedido pedido) {
+        final String fechaRegistro = formatDateTime(pedido.getFechaRegistro());
+        final String date = fechaRegistro != null ? fechaRegistro.substring(0, 10) : "";
+        final String time = fechaRegistro != null && fechaRegistro.length() >= 16
+                ? fechaRegistro.substring(11, 16) : "";
+        return PedidoSimulacionResponse.builder()
+                .withId(pedido.getIdPedido())
+                .withClientId("")
+                .withOrigin(pedido.getAeropuertoOrigen() != null
+                        ? pedido.getAeropuertoOrigen().getIdAeropuerto() : null)
+                .withDest(pedido.getAeropuertoDestino() != null
+                        ? pedido.getAeropuertoDestino().getIdAeropuerto() : null)
+                .withBags(pedido.getCantidadMaletas())
+                .withDate(date)
+                .withTime(time)
+                .withStatus(pedido.getEstado() != null ? pedido.getEstado().name() : null)
+                .build();
+    }
+
+    private String resolveUbicacionActual(final Maleta maleta) {
+        if (maleta.getPedido() == null) {
+            return null;
+        }
+        return switch (maleta.getEstado()) {
+            case ENTREGADA -> maleta.getPedido().getAeropuertoDestino() != null
+                    ? maleta.getPedido().getAeropuertoDestino().getIdAeropuerto() : null;
+            case EN_TRANSITO -> null;
+            default -> maleta.getPedido().getAeropuertoOrigen() != null
+                    ? maleta.getPedido().getAeropuertoOrigen().getIdAeropuerto() : null;
+        };
     }
 
     private String formatDateTime(final LocalDateTime value) {

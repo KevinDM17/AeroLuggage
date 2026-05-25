@@ -11,7 +11,7 @@ import java.util.Arrays;
 public class CorsConfig implements WebMvcConfigurer {
 
     private static final String FRONTEND_URL_KEY = "FRONTEND_URL";
-    private static final String DEFAULT_FRONTEND_ORIGINS = "http://localhost:3000,http://localhost:5173";
+    private static final String DEFAULT_FRONTEND_ORIGINS = "http://localhost:5173";
 
     @Override
     public void addCorsMappings(final CorsRegistry registry) {

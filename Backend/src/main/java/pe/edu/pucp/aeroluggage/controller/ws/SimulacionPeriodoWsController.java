@@ -7,7 +7,7 @@ import org.springframework.messaging.simp.SimpMessageHeaderAccessor;
 import org.springframework.messaging.simp.SimpMessagingTemplate;
 import org.springframework.stereotype.Controller;
 import pe.edu.pucp.aeroluggage.simulacion.SimulacionSesionManager;
-import pe.edu.pucp.aeroluggage.simulacion.DataTransferObject.SimulacionComandoDTO;
+import pe.edu.pucp.aeroluggage.dto.simulacion.ws.SimulacionComandoDTO;
 
 @Slf4j
 @Controller

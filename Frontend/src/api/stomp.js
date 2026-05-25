@@ -2,7 +2,7 @@
  * Cliente STOMP/SockJS singleton para hablar con el back de AeroLuggage.
  *
  * Convencion del back (definida en WebSocketConfig.java):
- * - Endpoint:          ${VITE_WS_BASE_URL}/ws  (SockJS handshake)
+ * - Endpoint:          ${BACKEND_WS_BASE_URL}/ws  (SockJS handshake)
  * - App prefix (send): /app/...     -> el front publica acá
  * - Topic prefix (sub): /topic/...  -> el front se suscribe acá
  *
@@ -17,7 +17,7 @@ import { Client } from "@stomp/stompjs";
 import SockJS from "sockjs-client";
 import { USE_MOCK } from "./client";
 
-const WS_BASE_URL = import.meta.env.VITE_WS_BASE_URL ?? "http://localhost:8080";
+const WS_BASE_URL = import.meta.env.BACKEND_WS_BASE_URL ?? "http://localhost:8080";
 const WS_ENDPOINT = `${WS_BASE_URL}/ws`;
 
 let _client = null;

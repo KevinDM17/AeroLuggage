@@ -1,9 +1,9 @@
-package pe.edu.pucp.aeroluggage.dto.rest.simulacion;
-
-import java.util.List;
+package pe.edu.pucp.aeroluggage.dto.simulacion.rest;
 
 import lombok.Builder;
 import lombok.Getter;
+
+import java.util.List;
 
 @Getter
 @Builder(setterPrefix = "with")
@@ -22,7 +22,4 @@ public class SimulacionInicioResponse {
     private SimulacionVentanaResponse nextWindow;
     private List<AeropuertoResponse> aeropuertos;
     private List<VueloInstanciaResponse> vuelosInstancia;
-    private List<PedidoSimulacionResponse> pedidos;
-    private List<MaletaSimulacionResponse> maletas;
-    private List<RutaSimulacionResponse> rutas;
 }

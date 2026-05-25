@@ -7,11 +7,13 @@ import java.time.LocalDate;
 import java.time.LocalDateTime;
 import java.util.ArrayList;
 import java.util.List;
+import java.util.Map;
 import java.util.concurrent.ScheduledFuture;
 import java.util.concurrent.atomic.AtomicBoolean;
 import java.util.concurrent.atomic.AtomicInteger;
 import java.util.concurrent.atomic.AtomicLong;
 import java.util.concurrent.atomic.AtomicReference;
+import java.util.stream.Collectors;
 
 import pe.edu.pucp.aeroluggage.dominio.entidades.Aeropuerto;
 import pe.edu.pucp.aeroluggage.dominio.entidades.Maleta;
@@ -40,12 +42,15 @@ public class SimulacionSesion {
     private final AtomicLong planningGeneration = new AtomicLong(1);
     private final AtomicLong stateVersion = new AtomicLong(1);
     private final AtomicBoolean activa = new AtomicBoolean(true);
+    private final AtomicBoolean planificacionEnCurso = new AtomicBoolean(false);
+    private final AtomicReference<String> ultimaVentanaPlanificada = new AtomicReference<>("");
     private volatile List<Aeropuerto> aeropuertos = List.of();
     private volatile List<VueloProgramado> vuelosProgramados = List.of();
     private volatile List<VueloInstancia> vuelosInstancia = List.of();
     private volatile List<Pedido> pedidos = List.of();
     private volatile List<Maleta> maletas = List.of();
     private volatile List<Ruta> rutas = List.of();
+    private volatile Map<String, Maleta> maletasPorId = Map.of();
     private volatile ScheduledFuture<?> tareaScheduled;
 
     public SimulacionSesion(
@@ -103,6 +108,31 @@ public class SimulacionSesion {
         return !currentSimTimeUtc.get().isBefore(fechaFinUtc);
     }
 
+    public boolean necesitaPlanificacion() {
+        if (planificacionEnCurso.get()) {
+            return false;
+        }
+        final SimulacionVentana ventana = currentWindow.get();
+        if (ventana == null) {
+            return false;
+        }
+        return !ventana.getWindowId().equals(ultimaVentanaPlanificada.get());
+    }
+
+    public void marcarVentanaPlanificada(final String windowId) {
+        ultimaVentanaPlanificada.set(windowId);
+    }
+
+    public synchronized void agregarRutas(final List<Ruta> nuevasRutas) {
+        if (nuevasRutas == null || nuevasRutas.isEmpty()) {
+            return;
+        }
+        final List<Ruta> combinadas = new ArrayList<>(this.rutas);
+        combinadas.addAll(nuevasRutas);
+        this.rutas = List.copyOf(combinadas);
+        this.stateVersion.incrementAndGet();
+    }
+
     public boolean hasSnapshotData() {
         return !aeropuertos.isEmpty()
                 || !vuelosProgramados.isEmpty()
@@ -126,6 +156,9 @@ public class SimulacionSesion {
         this.pedidos = pedidos == null ? List.of() : List.copyOf(new ArrayList<>(pedidos));
         this.maletas = maletas == null ? List.of() : List.copyOf(new ArrayList<>(maletas));
         this.rutas = rutas == null ? List.of() : List.copyOf(new ArrayList<>(rutas));
+        this.maletasPorId = this.maletas.stream()
+                .filter(m -> m != null && m.getIdMaleta() != null)
+                .collect(Collectors.toUnmodifiableMap(Maleta::getIdMaleta, m -> m, (a, b) -> a));
     }
 
     private SimulacionVentana buildWindowFor(final LocalDateTime dateTime, final String status) {

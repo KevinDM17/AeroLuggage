@@ -2,7 +2,7 @@ package pe.edu.pucp.aeroluggage.simulacion;
 
 import lombok.RequiredArgsConstructor;
 import org.springframework.stereotype.Service;
-import pe.edu.pucp.aeroluggage.simulacion.DataTransferObject.PeriodoTickDTO;
+import pe.edu.pucp.aeroluggage.dto.simulacion.ws.PeriodoTickDTO;
 
 import java.time.Duration;
 import java.time.format.DateTimeFormatter;
@@ -29,6 +29,8 @@ public class SimulacionPeriodoService {
         final int capacidadLibrePct = snapshotService.calcularCapacidadLibrePct(sesion);
         final long minutosDesdeInicio = Duration.between(sesion.getFechaInicioUtc(), sesion.getCurrentSimTimeUtc().get()).toMinutes();
         final int diaActual = Math.max(1, (int) (minutosDesdeInicio / (24L * 60L)) + 1);
+        final SimulacionSnapshotService.EntidadesVisibles entidades =
+                snapshotService.mapearEntidadesVisibles(sesion.getRutas(), sesion.getMaletas(), sesion.getCurrentSimTimeUtc().get());
 
         return PeriodoTickDTO.builder()
                 .withTickActual(tick)
@@ -46,6 +48,14 @@ public class SimulacionPeriodoService {
                 .withMaletasNoAsignadas(sinRuta)
                 .withVuelosActivos(vuelosActivos)
                 .withCapacidadLibrePct(capacidadLibrePct)
+                .withAeropuertos(snapshotService.mapearAeropuertos(sesion.getAeropuertos()))
+                .withVuelosInstancia(snapshotService.mapearVuelosInstanciaActivos(
+                        sesion.getVuelosInstancia(),
+                        sesion.getCurrentSimTimeUtc().get(),
+                        sesion.getWindowSizeMinutes()))
+                .withPedidos(entidades.pedidos())
+                .withMaletas(entidades.maletas())
+                .withRutas(entidades.rutas())
                 .build();
     }
 }

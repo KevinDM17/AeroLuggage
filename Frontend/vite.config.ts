@@ -7,6 +7,7 @@ export default defineConfig(({mode}) => {
   const env = loadEnv(mode, '.', '');
   return {
     plugins: [react(), tailwindcss()],
+    envPrefix: ['VITE_', 'BACKEND_'],
     define: {
       'process.env.GEMINI_API_KEY': JSON.stringify(env.GEMINI_API_KEY),
       // sockjs-client (usado por @stomp/stompjs) referencia `global` que no
@@ -26,8 +27,9 @@ export default defineConfig(({mode}) => {
       },
     },
     server: {
+      port: parseInt(env.PORT ?? '5173'),
       // HMR is disabled in AI Studio via DISABLE_HMR env var.
-      // Do not modifyâfile watching is disabled to prevent flickering during agent edits.
+      // Do not modifyâfile watching is disabled to prevent flickering during agent edits.
       hmr: process.env.DISABLE_HMR !== 'true',
     },
   };

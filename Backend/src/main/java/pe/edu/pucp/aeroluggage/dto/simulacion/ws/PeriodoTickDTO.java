@@ -1,9 +1,12 @@
-package pe.edu.pucp.aeroluggage.simulacion.DataTransferObject;
+package pe.edu.pucp.aeroluggage.dto.simulacion.ws;
 
 import lombok.Builder;
 import lombok.Getter;
-import pe.edu.pucp.aeroluggage.dto.rest.simulacion.AeropuertoResponse;
-import pe.edu.pucp.aeroluggage.dto.rest.simulacion.VueloInstanciaResponse;
+import pe.edu.pucp.aeroluggage.dto.simulacion.rest.AeropuertoResponse;
+import pe.edu.pucp.aeroluggage.dto.simulacion.rest.MaletaSimulacionResponse;
+import pe.edu.pucp.aeroluggage.dto.simulacion.rest.PedidoSimulacionResponse;
+import pe.edu.pucp.aeroluggage.dto.simulacion.rest.RutaSimulacionResponse;
+import pe.edu.pucp.aeroluggage.dto.simulacion.rest.VueloInstanciaResponse;
 
 import java.util.List;
 
@@ -28,4 +31,7 @@ public class PeriodoTickDTO {
     private int capacidadLibrePct;
     private List<AeropuertoResponse> aeropuertos;
     private List<VueloInstanciaResponse> vuelosInstancia;
+    private List<PedidoSimulacionResponse> pedidos;
+    private List<MaletaSimulacionResponse> maletas;
+    private List<RutaSimulacionResponse> rutas;
 }

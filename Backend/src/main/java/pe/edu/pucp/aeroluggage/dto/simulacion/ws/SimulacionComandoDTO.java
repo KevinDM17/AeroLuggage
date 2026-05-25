@@ -1,4 +1,4 @@
-package pe.edu.pucp.aeroluggage.simulacion.DataTransferObject;
+package pe.edu.pucp.aeroluggage.dto.simulacion.ws;
 
 import lombok.Getter;
 import lombok.NoArgsConstructor;

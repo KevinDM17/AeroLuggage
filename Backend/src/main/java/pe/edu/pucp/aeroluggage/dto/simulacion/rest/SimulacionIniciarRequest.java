@@ -1,4 +1,4 @@
-package pe.edu.pucp.aeroluggage.dto.rest.simulacion;
+package pe.edu.pucp.aeroluggage.dto.simulacion.rest;
 
 import com.fasterxml.jackson.annotation.JsonAlias;
 import lombok.Getter;

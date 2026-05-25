@@ -10,18 +10,19 @@ import {
   iniciarSimulacionPeriodo,
   stopPeriodSim,
   getPeriodSimState,
-  obtenerSnapshotSimulacionPeriodo,
 } from "../api/simulator";
 import { adaptAirport } from "../api/airports";
 import { adaptFlightInstance } from "../api/flightInstances";
 import { USE_MOCK } from "../api/client";
-import { formatElapsedHMS, formatUtcDateTimeDisplay } from "../utils/formatting";
+import {
+  formatElapsedHMS,
+  formatUtcDateTimeDisplay,
+} from "../utils/formatting";
 
 const PERIOD_DAYS = 5;
-const DURATION_SIMULATED_DAY_MS = 180000;
+const DURATION_SIMULATED_DAY_MS = 10 * 60 * 1000;
 const CLOCK_REFRESH_MS = 33;
 const SIMULATED_DAY_MS = 24 * 60 * 60 * 1000;
-const SNAPSHOT_POLL_MS = 2000;
 
 const ESTADO_BACK_A_LOCAL = {
   INICIADA: "running",
@@ -33,10 +34,17 @@ const ESTADO_BACK_A_LOCAL = {
 
 const clamp = (value, min, max) => Math.min(max, Math.max(min, value));
 
-const getSimulationProgress = (elapsedRealMs, totalDays, simulatedDayDurationMs) => {
+const getSimulationProgress = (
+  elapsedRealMs,
+  totalDays,
+  simulatedDayDurationMs,
+) => {
   if (totalDays <= 0 || simulatedDayDurationMs <= 0) return 0;
   const totalRealDurationMs = totalDays * simulatedDayDurationMs;
-  return Math.min(100, Math.max(0, (elapsedRealMs / totalRealDurationMs) * 100));
+  return Math.min(
+    100,
+    Math.max(0, (elapsedRealMs / totalRealDurationMs) * 100),
+  );
 };
 
 const getDisplayedDay = (progress, hasActiveRun) => {
@@ -49,7 +57,9 @@ export default function PeriodSimulatorPage() {
   const publish = useStompPublish();
   const { setSimulationPanelData } = useOutletContext();
 
-  const [startDate, setStartDate] = useState(() => new Date().toISOString().slice(0, 10));
+  const [startDate, setStartDate] = useState(() =>
+    new Date().toISOString().slice(0, 10),
+  );
   const [sessionId, setSessionId] = useState(null);
   const [simStatus, setSimStatus] = useState("idle");
   const [runId, setRunId] = useState(0);
@@ -58,19 +68,37 @@ export default function PeriodSimulatorPage() {
   const [mapFlights, setMapFlights] = useState([]);
   const [showRouteLines, setShowRouteLines] = useState(true);
   const [currentSimTimeUtc, setCurrentSimTimeUtc] = useState(null);
-  const [simulatedDayDurationMs, setSimulatedDayDurationMs] = useState(DURATION_SIMULATED_DAY_MS);
+  const [simulatedDayDurationMs, setSimulatedDayDurationMs] = useState(
+    DURATION_SIMULATED_DAY_MS,
+  );
   const [tickBaseSimTimeUtc, setTickBaseSimTimeUtc] = useState(null);
   const [tickReceiptElapsedMs, setTickReceiptElapsedMs] = useState(0);
 
   useEffect(() => {
-    setSimulationPanelData({ airports: [], flights: [], orders: [], bags: [], routes: [], loaded: false });
+    setSimulationPanelData({
+      airports: [],
+      flights: [],
+      orders: [],
+      bags: [],
+      routes: [],
+      loaded: false,
+    });
     return () => {
-      setSimulationPanelData({ airports: [], flights: [], orders: [], bags: [], routes: [], loaded: false });
+      setSimulationPanelData({
+        airports: [],
+        flights: [],
+        orders: [],
+        bags: [],
+        routes: [],
+        loaded: false,
+      });
     };
   }, [setSimulationPanelData]);
 
-  const tickTopic = !USE_MOCK && sessionId ? `/topic/simulacion/${sessionId}` : null;
-  const statusTopic = !USE_MOCK && sessionId ? `/topic/simulacion/${sessionId}/estado` : null;
+  const tickTopic =
+    !USE_MOCK && sessionId ? `/topic/simulacion/${sessionId}` : null;
+  const statusTopic =
+    !USE_MOCK && sessionId ? `/topic/simulacion/${sessionId}/estado` : null;
 
   const { data: tick } = useStompSubscribe(tickTopic);
   const { data: estadoMessage } = useStompSubscribe(statusTopic);
@@ -79,16 +107,14 @@ export default function PeriodSimulatorPage() {
     enabled: USE_MOCK && simStatus === "running",
     intervalMs: 1000,
   });
-  const { data: liveSnapshot } = usePolling(
-    () => obtenerSnapshotSimulacionPeriodo(sessionId),
-    {
-      enabled: !USE_MOCK && !!sessionId && (simStatus === "running" || simStatus === "paused"),
-      intervalMs: SNAPSHOT_POLL_MS,
-    }
-  );
 
-  const executionElapsedMs = useElapsedTimer(simStatus, runId, CLOCK_REFRESH_MS);
-  const hasActiveRun = simStatus === "running" || simStatus === "paused" || simStatus === "done";
+  const executionElapsedMs = useElapsedTimer(
+    simStatus,
+    runId,
+    CLOCK_REFRESH_MS,
+  );
+  const hasActiveRun =
+    simStatus === "running" || simStatus === "paused" || simStatus === "done";
 
   useEffect(() => {
     if (USE_MOCK) {
@@ -108,7 +134,11 @@ export default function PeriodSimulatorPage() {
     const local = ESTADO_BACK_A_LOCAL[estadoMessage.estado] ?? simStatus;
     if (local !== simStatus) setSimStatus(local);
     if (estadoMessage.estado === "FINALIZADA") {
-      toast.push({ type: "success", title: "Simulación completada", message: estadoMessage.mensaje });
+      toast.push({
+        type: "success",
+        title: "Simulación completada",
+        message: estadoMessage.mensaje,
+      });
     }
     if (estadoMessage.estado === "DETENIDA") {
       setSessionId(null);
@@ -117,41 +147,46 @@ export default function PeriodSimulatorPage() {
 
   const progress = useMemo(() => {
     if (USE_MOCK) return mockState?.progress ?? lastMockState?.progress ?? 0;
-    return getSimulationProgress(executionElapsedMs, PERIOD_DAYS, simulatedDayDurationMs);
+    return getSimulationProgress(
+      executionElapsedMs,
+      PERIOD_DAYS,
+      simulatedDayDurationMs,
+    );
   }, [executionElapsedMs, mockState, lastMockState, simulatedDayDurationMs]);
 
   useEffect(() => {
     if (!tick?.currentSimTimeUtc) return;
+    setCurrentSimTimeUtc(tick.currentSimTimeUtc);
     setTickBaseSimTimeUtc(tick.currentSimTimeUtc);
     setTickReceiptElapsedMs(executionElapsedMs);
-  }, [tick, executionElapsedMs]);
-
-  useEffect(() => {
-    if (!liveSnapshot) return;
-    const adaptedAirports = Array.isArray(liveSnapshot.aeropuertos)
-      ? liveSnapshot.aeropuertos.map(adaptAirport)
-      : [];
-    const adaptedFlights = Array.isArray(liveSnapshot.vuelosInstancia)
-      ? liveSnapshot.vuelosInstancia.map(adaptFlightInstance)
-      : [];
-    const orders = Array.isArray(liveSnapshot.pedidos) ? liveSnapshot.pedidos : [];
-    const bags = Array.isArray(liveSnapshot.maletas) ? liveSnapshot.maletas : [];
-    const routes = Array.isArray(liveSnapshot.rutas) ? liveSnapshot.rutas : [];
-
-    setCurrentSimTimeUtc(liveSnapshot.currentSimTimeUtc ?? currentSimTimeUtc);
-    setTickBaseSimTimeUtc(liveSnapshot.currentSimTimeUtc ?? tickBaseSimTimeUtc);
-    setTickReceiptElapsedMs(executionElapsedMs);
-    setMapAirports(adaptedAirports);
-    setMapFlights(adaptedFlights);
-    setSimulationPanelData({
-      airports: adaptedAirports,
-      flights: adaptedFlights,
-      orders,
-      bags,
-      routes,
-      loaded: true,
-    });
-  }, [liveSnapshot]); // eslint-disable-line react-hooks/exhaustive-deps
+    if (Array.isArray(tick.vuelosInstancia)) {
+      const adaptedFlights = tick.vuelosInstancia.map(adaptFlightInstance);
+      const adaptedAirports = Array.isArray(tick.aeropuertos)
+        ? tick.aeropuertos.map(adaptAirport)
+        : null;
+      setMapFlights(adaptedFlights);
+      if (adaptedAirports) {
+        setMapAirports(adaptedAirports);
+      }
+      setSimulationPanelData((prev) => ({
+        ...prev,
+        ...(adaptedAirports && { airports: adaptedAirports }),
+        flights: adaptedFlights,
+        orders: Array.isArray(tick.pedidos) ? tick.pedidos : prev.orders,
+        bags: Array.isArray(tick.maletas) ? tick.maletas : prev.bags,
+        routes: Array.isArray(tick.rutas) ? tick.rutas : prev.routes,
+        loaded: true,
+      }));
+    } else {
+      setSimulationPanelData((prev) => ({
+        ...prev,
+        orders: Array.isArray(tick.pedidos) ? tick.pedidos : prev.orders,
+        bags: Array.isArray(tick.maletas) ? tick.maletas : prev.bags,
+        routes: Array.isArray(tick.rutas) ? tick.rutas : prev.routes,
+        loaded: true,
+      }));
+    }
+  }, [tick, executionElapsedMs]); // eslint-disable-line react-hooks/exhaustive-deps
 
   const simulatedNowMs = useMemo(() => {
     const base = tickBaseSimTimeUtc ?? currentSimTimeUtc;
@@ -160,10 +195,21 @@ export default function PeriodSimulatorPage() {
     if (!Number.isFinite(parsed)) return null;
     if (simStatus !== "running") return parsed;
 
-    const elapsedSinceTickMs = Math.max(0, executionElapsedMs - tickReceiptElapsedMs);
-    const simulatedDeltaMs = elapsedSinceTickMs * (SIMULATED_DAY_MS / simulatedDayDurationMs);
+    const elapsedSinceTickMs = Math.max(
+      0,
+      executionElapsedMs - tickReceiptElapsedMs,
+    );
+    const simulatedDeltaMs =
+      elapsedSinceTickMs * (SIMULATED_DAY_MS / simulatedDayDurationMs);
     return parsed + simulatedDeltaMs;
-  }, [tickBaseSimTimeUtc, currentSimTimeUtc, simStatus, executionElapsedMs, tickReceiptElapsedMs, simulatedDayDurationMs]);
+  }, [
+    tickBaseSimTimeUtc,
+    currentSimTimeUtc,
+    simStatus,
+    executionElapsedMs,
+    tickReceiptElapsedMs,
+    simulatedDayDurationMs,
+  ]);
 
   const simulationClock = useMemo(() => {
     if (simulatedNowMs === null || Number.isNaN(simulatedNowMs)) {
@@ -187,7 +233,8 @@ export default function PeriodSimulatorPage() {
     if (!tick) return undefined;
     return {
       bagsInTransit: tick.maletasEnTransito ?? 0,
-      bagsDelivered: tick.maletasEntregadas ?? tick.maletasEntregadasATiempo ?? 0,
+      bagsDelivered:
+        tick.maletasEntregadas ?? tick.maletasEntregadasATiempo ?? 0,
       bagsUnassigned: tick.maletasNoAsignadas ?? tick.maletasSinRuta ?? 0,
       activeFlights: tick.vuelosActivos ?? 0,
       freeCapacityPct: tick.capacidadLibrePct ?? 0,
@@ -207,29 +254,31 @@ export default function PeriodSimulatorPage() {
       const adaptedFlights = Array.isArray(result.vuelosInstancia)
         ? result.vuelosInstancia.map(adaptFlightInstance)
         : [];
-      const orders = Array.isArray(result.pedidos) ? result.pedidos : [];
-      const bags = Array.isArray(result.maletas) ? result.maletas : [];
-      const routes = Array.isArray(result.rutas) ? result.rutas : [];
-
       setSessionId(result.sessionId ?? null);
       setLastMockState(null);
       setCurrentSimTimeUtc(result.currentSimTimeUtc ?? `${startDate}T00:00:00`);
-      setTickBaseSimTimeUtc(result.currentSimTimeUtc ?? `${startDate}T00:00:00`);
+      setTickBaseSimTimeUtc(
+        result.currentSimTimeUtc ?? `${startDate}T00:00:00`,
+      );
       setTickReceiptElapsedMs(0);
-      setSimulatedDayDurationMs(result.duracionDiaSimuladoMs ?? DURATION_SIMULATED_DAY_MS);
+      setSimulatedDayDurationMs(
+        result.duracionDiaSimuladoMs ?? DURATION_SIMULATED_DAY_MS,
+      );
       setMapAirports(adaptedAirports);
       setMapFlights(adaptedFlights);
       setSimulationPanelData({
         airports: adaptedAirports,
         flights: adaptedFlights,
-        orders,
-        bags,
-        routes,
+        orders: [],
+        bags: [],
+        routes: [],
         loaded: true,
       });
       setRunId((current) => current + 1);
       setSimStatus(
-        USE_MOCK ? result.status ?? "running" : ESTADO_BACK_A_LOCAL[result.estado] ?? "running"
+        USE_MOCK
+          ? (result.status ?? "running")
+          : (ESTADO_BACK_A_LOCAL[result.estado] ?? "running"),
       );
       toast.push({
         type: "info",
@@ -237,7 +286,11 @@ export default function PeriodSimulatorPage() {
         message: `Inicio: ${startDate} · ${PERIOD_DAYS} días`,
       });
     } catch (err) {
-      toast.push({ type: "error", title: "No se pudo iniciar", message: err.message });
+      toast.push({
+        type: "error",
+        title: "No se pudo iniciar",
+        message: err.message,
+      });
     }
   };
 
@@ -249,7 +302,11 @@ export default function PeriodSimulatorPage() {
     try {
       await publish("/app/simulacion/periodo/pausar", { sessionId });
     } catch (err) {
-      toast.push({ type: "error", title: "No se pudo pausar", message: err.message });
+      toast.push({
+        type: "error",
+        title: "No se pudo pausar",
+        message: err.message,
+      });
     }
   };
 
@@ -258,7 +315,11 @@ export default function PeriodSimulatorPage() {
     try {
       await publish("/app/simulacion/periodo/reanudar", { sessionId });
     } catch (err) {
-      toast.push({ type: "error", title: "No se pudo reanudar", message: err.message });
+      toast.push({
+        type: "error",
+        title: "No se pudo reanudar",
+        message: err.message,
+      });
     }
   };
 
@@ -276,10 +337,21 @@ export default function PeriodSimulatorPage() {
       setTickReceiptElapsedMs(0);
       setMapAirports([]);
       setMapFlights([]);
-      setSimulationPanelData({ airports: [], flights: [], orders: [], bags: [], routes: [], loaded: false });
+      setSimulationPanelData({
+        airports: [],
+        flights: [],
+        orders: [],
+        bags: [],
+        routes: [],
+        loaded: false,
+      });
       toast.push({ type: "warning", title: "Simulación detenida" });
     } catch (err) {
-      toast.push({ type: "error", title: "No se pudo detener", message: err.message });
+      toast.push({
+        type: "error",
+        title: "No se pudo detener",
+        message: err.message,
+      });
     }
   };
 
@@ -288,15 +360,26 @@ export default function PeriodSimulatorPage() {
   const mapOverlay = hasActiveRun ? (
     <div className="bg-surface-2/85 backdrop-blur border border-slate-700 shadow-[0_12px_35px_rgba(0,0,0,0.45)] rounded-xl px-4 py-3 flex items-center justify-center gap-6">
       <div>
-        <div className="text-[10px] text-slate-400 font-medium uppercase tracking-wider">Cronometro</div>
-        <div className="text-lg font-bold text-slate-100 tabular-nums">{formatElapsedHMS(executionElapsedMs)}</div>
+        <div className="text-[10px] text-slate-400 font-medium uppercase tracking-wider">
+          Cronometro
+        </div>
+        <div className="text-lg font-bold text-slate-100 tabular-nums">
+          {formatElapsedHMS(executionElapsedMs)}
+        </div>
       </div>
       <div className="h-9 w-px bg-slate-700" />
       <div>
-        <div className="text-[10px] text-slate-400 font-medium uppercase tracking-wider">Fecha/hora simulada</div>
+        <div className="text-[10px] text-slate-400 font-medium uppercase tracking-wider">
+          Fecha/hora simulada
+        </div>
         <div className="text-lg font-bold text-info tabular-nums">
-          {simulationClock.date} - {simulationClock.time} {simulationClock.timeZone}
-          {tick?.currentWindowId ? ` - ${tick.currentWindowId}` : displayedDay ? ` - dia ${displayedDay}/${PERIOD_DAYS}` : ""}
+          {simulationClock.date} - {simulationClock.time}{" "}
+          {simulationClock.timeZone}
+          {tick?.currentWindowId
+            ? ` - ${tick.currentWindowId}`
+            : displayedDay
+              ? ` - dia ${displayedDay}/${PERIOD_DAYS}`
+              : ""}
         </div>
       </div>
     </div>
@@ -322,7 +405,9 @@ export default function PeriodSimulatorPage() {
       </div>
 
       <div className="flex flex-col">
-        <span className="text-[10px] text-slate-400 uppercase tracking-wider font-medium">Duración</span>
+        <span className="text-[10px] text-slate-400 uppercase tracking-wider font-medium">
+          Duración
+        </span>
         <span className="px-3 py-1.5 bg-surface-2 border border-slate-700 rounded-lg text-sm font-bold text-success">
           {PERIOD_DAYS} días
         </span>

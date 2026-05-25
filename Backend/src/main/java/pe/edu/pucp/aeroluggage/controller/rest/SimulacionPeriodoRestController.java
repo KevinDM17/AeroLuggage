@@ -10,11 +10,11 @@ import org.springframework.web.bind.annotation.RequestBody;
 import org.springframework.web.bind.annotation.RequestMapping;
 import org.springframework.web.bind.annotation.RestController;
 import org.springframework.web.server.ResponseStatusException;
-import pe.edu.pucp.aeroluggage.dto.rest.simulacion.SimulacionIniciarRequest;
-import pe.edu.pucp.aeroluggage.dto.rest.simulacion.SimulacionInicioResponse;
+import pe.edu.pucp.aeroluggage.dto.simulacion.rest.SimulacionIniciarRequest;
+import pe.edu.pucp.aeroluggage.dto.simulacion.rest.SimulacionInicioResponse;
 import pe.edu.pucp.aeroluggage.servicios.query.SimulacionInicioQueryService;
 import pe.edu.pucp.aeroluggage.simulacion.SimulacionSesionManager;
-import pe.edu.pucp.aeroluggage.simulacion.DataTransferObject.SimulacionEstadoDTO;
+import pe.edu.pucp.aeroluggage.dto.simulacion.ws.SimulacionEstadoDTO;
 
 import static org.springframework.http.HttpStatus.NOT_FOUND;
 
