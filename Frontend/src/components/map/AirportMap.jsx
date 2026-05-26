@@ -88,7 +88,13 @@ function PlanesCanvasOverlay({ planes }) {
   return null;
 }
 
-function AirportMap({ showFlights = true }) {
+function AirportMap({
+  showFlights = true,
+  showRouteLines = true,
+  airports: airportsProp,
+  flights: flightsProp,
+  autoload = true,
+}) {
   const center = [20, -40];
   const zoom = 3;
 
@@ -216,7 +222,7 @@ function AirportMap({ showFlights = true }) {
         <TileLayer url="https://{s}.basemaps.cartocdn.com/dark_nolabels/{z}/{x}/{y}{r}.png" />
 
         {/* Polylines: solo cambian si cambia la lista de rutas, NO cada frame */}
-        {showFlights &&
+        {showFlights && showRouteLines &&
           routesGeometry.map(({ route, origin, destination }) => (
             <Polyline
               key={`${route.id ?? `${route.origin}-${route.dest}`}`}
