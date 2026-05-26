@@ -159,8 +159,8 @@ export default function AirportMap({
     const seen = new Set();
     const segments = [];
 
-    animatedRoutes.forEach(({ route, origin, destination, hasDeparted }) => {
-      if (!hasDeparted || !origin || !destination) return;
+    animatedRoutes.forEach(({ route, origin, destination, progress, showPlane }) => {
+      if (!showPlane || progress === null || progress >= 1 || !origin || !destination) return;
 
       const routeKey = `${route.origin}-${route.dest}`;
       if (seen.has(routeKey)) return;

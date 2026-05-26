@@ -327,11 +327,11 @@ export default function PeriodSimulatorPage() {
     try {
       if (USE_MOCK) {
         await stopPeriodSim();
-        setSimStatus("idle");
-        setSessionId(null);
       } else {
         await publish("/app/simulacion/periodo/detener", { sessionId });
       }
+      setSimStatus("idle");
+      setSessionId(null);
       setCurrentSimTimeUtc(null);
       setTickBaseSimTimeUtc(null);
       setTickReceiptElapsedMs(0);
