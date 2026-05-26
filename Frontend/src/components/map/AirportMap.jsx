@@ -1,10 +1,11 @@
-import { useEffect, useMemo, useState } from "react";
-import { MapContainer, TileLayer, Marker, Polyline } from "react-leaflet";
+import { memo, useEffect, useMemo, useRef, useState } from "react";
+import { MapContainer, TileLayer, Marker, Polyline, useMap } from "react-leaflet";
 import L from "leaflet";
 import { tokens, semaphoreColor } from "../../utils/tokens";
 import { useFetch } from "../../hooks/useFetch";
 import { listAirports } from "../../api/airports";
 import { listFlights } from "../../api/flights";
+import { createPlanesCanvasLayer } from "./PlanesCanvasLayer";
 
 const occupancyStatus = (used, capacity) => {
   const pct = capacity > 0 ? (used / capacity) * 100 : 0;
@@ -20,71 +21,74 @@ const flightLoadColor = (used, capacity) => {
   return tokens.success;
 };
 
-const parseUtcDateTime = (value) => {
-  if (!value) return Number.NaN;
-  const raw = String(value).trim();
-  const normalized = /z$/i.test(raw) ? raw : `${raw}Z`;
-  return Date.parse(normalized);
-};
+/* Cache global de iconos de aeropuerto. Como casi nunca cambian de status
+ * y son pocos, el cache hit-rate es ~100% y evita que Leaflet recree el DOM. */
+const airportIconCache = new Map();
 
-const clamp = (value, min, max) => Math.min(max, Math.max(min, value));
+const getAirportIcon = (airport) => {
+  const status = occupancyStatus(airport.used, airport.capacity);
+  const key = `${airport.iata}|${status}`;
+  const cached = airportIconCache.get(key);
+  if (cached) return cached;
 
-const createAirportIcon = (airport) => {
-  const color = semaphoreColor(occupancyStatus(airport.used, airport.capacity));
-  return L.divIcon({
-    html: `
-      <div style="display: flex; flex-direction: column; justify-content: center; transform: translate(-50%, -50%);">
-        <div style="width: 12px; height: 12px; background-color: ${color}; border-radius: 50%; box-shadow: 0 0 10px ${color}, 0 0 20px ${color}; margin: 0 auto;"></div>
-        <div style="color: white; font-size: 10px; font-weight: bold; font-family: sans-serif; background: rgba(0,0,0,0.5); padding: 2px 4px; border-radius: 4px; margin-top: 4px; white-space: nowrap;">
-          ${airport.iata}
-        </div>
-      </div>
-    `,
+  const color = semaphoreColor(status);
+  const icon = L.divIcon({
+    html:
+      `<div style="display:flex;flex-direction:column;justify-content:center;transform:translate(-50%,-50%);">` +
+        `<div style="width:12px;height:12px;background-color:${color};border-radius:50%;box-shadow:0 0 10px ${color},0 0 20px ${color};margin:0 auto;"></div>` +
+        `<div style="color:white;font-size:10px;font-weight:bold;font-family:sans-serif;background:rgba(0,0,0,0.5);padding:2px 4px;border-radius:4px;margin-top:4px;white-space:nowrap;">${airport.iata}</div>` +
+      `</div>`,
     className: "",
     iconSize: [0, 0],
     iconAnchor: [0, 0],
   });
+  airportIconCache.set(key, icon);
+  return icon;
 };
 
-const createPlaneIcon = (angle, color) =>
-  L.divIcon({
-    html: `
-      <div style="width: 24px; height: 24px; display: flex; align-items: center; justify-content: center; transform: rotate(${angle}deg);">
-        <svg xmlns="http://www.w3.org/2000/svg" width="20" height="20" viewBox="0 0 24 24" fill="${color}" stroke="${color}" stroke-width="1" stroke-linecap="round" stroke-linejoin="round">
-          <path d="M17.8 19.2 16 11l3.5-3.5C21 6 21.5 4 21 3c-1-.5-3 0-4.5 1.5L13 8 4.8 6.2c-.5-.1-.9.2-1.1.5l-1.3 1.5c-.3.4-.1 1 .4 1.2L9 12l-4 4-2.2-.6c-.4-.1-.8.1-1.1.4l-.8.8c-.3.4-.1 1 .4 1.2l4 1.5 1.5 4c.2.5.8.7 1.2.4l.8-.8c.3-.3.5-.7.4-1.1L8 19l4-4 2.6 6.2c.2.5.8.7 1.2.4l1.5-1.3c.3-.2.6-.6.5-1.1z"/>
-        </svg>
-      </div>
-    `,
-    className: "",
-    iconSize: [24, 24],
-    iconAnchor: [12, 12],
-  });
+const MAX_FLIGHTS_ON_MAP = 30;
 
-const getFlightsOnMap = (flights, airportsByIata) => {
-  return [...(flights ?? [])]
-    .filter((flight) => airportsByIata.has(flight.origin) && airportsByIata.has(flight.dest))
-    .sort((left, right) => {
-      const leftTime = parseUtcDateTime(left.depTime);
-      const rightTime = parseUtcDateTime(right.depTime);
-      const leftValid = Number.isFinite(leftTime);
-      const rightValid = Number.isFinite(rightTime);
-
-      if (leftValid && rightValid) return leftTime - rightTime;
-      if (leftValid) return -1;
-      if (rightValid) return 1;
-      return String(left.id ?? "").localeCompare(String(right.id ?? ""));
-    });
+/**
+ * Selecciona hasta N vuelos para animar en el mapa.
+ * Prioriza diversidad de rutas (origen-destino únicos).
+ */
+const pickFlightsToAnimate = (flights, airportsByIata, limit) => {
+  const seen = new Set();
+  const out = [];
+  for (const f of flights) {
+    if (!airportsByIata.has(f.origin) || !airportsByIata.has(f.dest)) continue;
+    const key = `${f.origin}-${f.dest}`;
+    if (seen.has(key)) continue;
+    seen.add(key);
+    out.push(f);
+    if (out.length >= limit) break;
+  }
+  return out;
 };
 
-export default function AirportMap({
-  showFlights = true,
-  showRouteLines = true,
-  airports: airportsProp,
-  flights: flightsProp,
-  autoload = true,
-  simulatedNowMs = null,
-  animateFlights = false,
-}) {
+/* Sub-componente que monta el canvas layer y le pasa la lista de aviones. */
+function PlanesCanvasOverlay({ planes }) {
+  const map = useMap();
+  const layerRef = useRef(null);
+
+  useEffect(() => {
+    const layer = createPlanesCanvasLayer();
+    layer.addTo(map);
+    layerRef.current = layer;
+    return () => {
+      map.removeLayer(layer);
+      layerRef.current = null;
+    };
+  }, [map]);
+
+  useEffect(() => {
+    if (layerRef.current) layerRef.current.setPlanes(planes);
+  }, [planes]);
+
+  return null;
+}
+
+function AirportMap({ showFlights = true }) {
   const center = [20, -40];
   const zoom = 3;
 
@@ -108,73 +112,96 @@ export default function AirportMap({
     return map;
   }, [airports]);
 
-  const routes = useMemo(() => getFlightsOnMap(flights ?? [], airportsByIata), [flights, airportsByIata]);
-
-  const [frameNowMs, setFrameNowMs] = useState(() => Date.now());
-
-  useEffect(() => {
-    if (!showFlights || simulatedNowMs === null || !animateFlights) return undefined;
-
-    let raf = 0;
-    const animate = () => {
-      setFrameNowMs(Date.now());
-      raf = requestAnimationFrame(animate);
-    };
-
-    raf = requestAnimationFrame(animate);
-    return () => cancelAnimationFrame(raf);
-  }, [showFlights, simulatedNowMs, animateFlights]);
-
-  const animatedRoutes = useMemo(() => {
-    const activeSimulatedNowMs = simulatedNowMs ?? frameNowMs;
-
-    return routes.map((route) => {
+  /* Geometría estática de cada ruta animada: origen, destino, ángulo, color
+   * y deltas pre-calculados. Solo cambia cuando cambian vuelos/aeropuertos,
+   * NO en cada frame. Esto saca toda la trigonometría del hot path. */
+  const routesGeometry = useMemo(() => {
+    const picked = pickFlightsToAnimate(flights ?? [], airportsByIata, MAX_FLIGHTS_ON_MAP);
+    return picked.map((route) => {
       const origin = airportsByIata.get(route.origin);
       const destination = airportsByIata.get(route.dest);
-      const departureUtcMs = parseUtcDateTime(route.depTime);
-      const arrivalUtcMs = parseUtcDateTime(route.arrTime);
-      const hasValidSchedule =
-        Number.isFinite(departureUtcMs) &&
-        Number.isFinite(arrivalUtcMs) &&
-        arrivalUtcMs > departureUtcMs;
-
-      const progress =
-        hasValidSchedule && Number.isFinite(activeSimulatedNowMs)
-          ? clamp((activeSimulatedNowMs - departureUtcMs) / (arrivalUtcMs - departureUtcMs), 0, 1)
-          : null;
-
+      const dLat = destination.lat - origin.lat;
+      const dLng = destination.lng - origin.lng;
+      const bearing = (Math.atan2(dLng, dLat) * 180) / Math.PI;
       return {
         route,
         origin,
         destination,
-        hasDeparted:
-          hasValidSchedule && Number.isFinite(activeSimulatedNowMs) && activeSimulatedNowMs >= departureUtcMs,
-        progress,
-        showPlane: hasValidSchedule && progress !== null && progress > 0 && progress < 1,
+        dLat,
+        dLng,
+        planeAngle: bearing - 45,
+        color: flightLoadColor(route.used, route.capacity),
       };
     });
-  }, [routes, airportsByIata, simulatedNowMs, frameNowMs]);
+  }, [flights, airportsByIata]);
 
-  const visibleRouteSegments = useMemo(() => {
-    const seen = new Set();
-    const segments = [];
+  /* Animación decorativa: cada vuelo arranca con un progreso aleatorio
+   * y avanza con dt. NO usamos setState para el progress (evita re-renders
+   * 60 veces por segundo) — lo guardamos en un ref y empujamos directamente
+   * la lista de aviones al canvas layer. */
+  const layerSetterRef = useRef(null);
+  const progressesRef = useRef([]);
 
-    animatedRoutes.forEach(({ route, origin, destination, progress, showPlane }) => {
-      if (!showPlane || progress === null || progress >= 1 || !origin || !destination) return;
+  // Reset de progresos cuando cambia la cantidad de rutas
+  useEffect(() => {
+    progressesRef.current = routesGeometry.map(() => Math.random());
+  }, [routesGeometry.length]);
 
-      const routeKey = `${route.origin}-${route.dest}`;
-      if (seen.has(routeKey)) return;
-      seen.add(routeKey);
+  /* El raf actualiza progress + computa lista de aviones + la entrega al
+   * canvas layer SIN tocar React state. Resultado: el componente AirportMap
+   * casi no re-renderiza, y todo el costo se concentra en un drawImage
+   * por avión sobre un único <canvas>. */
+  const [planes, setPlanes] = useState([]);
 
-      segments.push({
-        key: routeKey,
-        origin,
-        destination,
-      });
-    });
+  useEffect(() => {
+    if (routesGeometry.length === 0) {
+      setPlanes([]);
+      return undefined;
+    }
 
-    return segments;
-  }, [animatedRoutes]);
+    let raf;
+    let lastTime = performance.now();
+    // Throttle a ~30fps: a escala de mapa mundial el ojo no nota más,
+    // y reducimos a la mitad la carga de actualización.
+    const FRAME_BUDGET_MS = 33;
+    let acc = 0;
+
+    const tick = (time) => {
+      const dt = time - lastTime;
+      lastTime = time;
+      acc += dt;
+
+      // Avanzar progresos siempre (movimiento suave acumulado)
+      const arr = progressesRef.current;
+      for (let i = 0; i < arr.length; i++) {
+        arr[i] = (arr[i] + dt * 0.00005) % 1;
+      }
+
+      // Pero solo enviamos al canvas/state cuando toca un frame
+      if (acc >= FRAME_BUDGET_MS) {
+        acc = 0;
+        const next = new Array(routesGeometry.length);
+        for (let i = 0; i < routesGeometry.length; i++) {
+          const geo = routesGeometry[i];
+          const p = arr[i];
+          next[i] = {
+            lat: geo.origin.lat + geo.dLat * p,
+            lng: geo.origin.lng + geo.dLng * p,
+            angle: geo.planeAngle,
+            color: geo.color,
+          };
+        }
+        setPlanes(next);
+      }
+
+      raf = requestAnimationFrame(tick);
+    };
+
+    raf = requestAnimationFrame(tick);
+    return () => cancelAnimationFrame(raf);
+  }, [routesGeometry]);
+
+  const airportList = useMemo(() => Array.from(airportsByIata.values()), [airportsByIata]);
 
   return (
     <div className="w-full h-full bg-canvas">
@@ -184,13 +211,15 @@ export default function AirportMap({
         style={{ height: "100%", width: "100%", background: "transparent" }}
         zoomControl={false}
         attributionControl={false}
+        preferCanvas={true}
       >
         <TileLayer url="https://{s}.basemaps.cartocdn.com/dark_nolabels/{z}/{x}/{y}{r}.png" />
 
-        {showFlights && showRouteLines &&
-          visibleRouteSegments.map(({ key, origin, destination }) => (
+        {/* Polylines: solo cambian si cambia la lista de rutas, NO cada frame */}
+        {showFlights &&
+          routesGeometry.map(({ route, origin, destination }) => (
             <Polyline
-              key={key}
+              key={`${route.id ?? `${route.origin}-${route.dest}`}`}
               positions={[
                 [origin.lat, origin.lng],
                 [destination.lat, destination.lng],
@@ -202,35 +231,20 @@ export default function AirportMap({
             />
           ))}
 
-        {showFlights &&
-          animatedRoutes.map(({ route, origin, destination, progress, showPlane }, i) => {
-            if (!origin || !destination || !showPlane) return null;
+        {/* Aviones en UN solo canvas (en vez de N markers DOM) */}
+        {showFlights && <PlanesCanvasOverlay planes={planes} />}
 
-            const bearing =
-              (Math.atan2(destination.lng - origin.lng, destination.lat - origin.lat) * 180) /
-              Math.PI;
-            const planeAngle = bearing - 45;
-            const planeColor = flightLoadColor(route.used, route.capacity);
-            const lat = origin.lat + (destination.lat - origin.lat) * progress;
-            const lng = origin.lng + (destination.lng - origin.lng) * progress;
-
-            return (
-              <Marker
-                key={`${route.id ?? i}-${route.origin}-${route.dest}`}
-                position={[lat, lng]}
-                icon={createPlaneIcon(planeAngle, planeColor)}
-              />
-            );
-          })}
-
-        {Array.from(airportsByIata.values()).map((airport) => (
+        {/* Aeropuertos siguen siendo markers DOM (son pocos y no se mueven) */}
+        {airportList.map((airport) => (
           <Marker
             key={airport.iata}
             position={[airport.lat, airport.lng]}
-            icon={createAirportIcon(airport)}
+            icon={getAirportIcon(airport)}
           />
         ))}
       </MapContainer>
     </div>
   );
 }
+
+export default memo(AirportMap);
