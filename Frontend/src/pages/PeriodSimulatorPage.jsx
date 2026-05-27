@@ -21,7 +21,7 @@ import {
 
 const PERIOD_DAYS = 5;
 const DURATION_SIMULATED_DAY_MS = 10 * 60 * 1000;
-const CLOCK_REFRESH_MS = 33;
+const CLOCK_REFRESH_MS = 500;
 const SIMULATED_DAY_MS = 24 * 60 * 60 * 1000;
 
 const ESTADO_BACK_A_LOCAL = {

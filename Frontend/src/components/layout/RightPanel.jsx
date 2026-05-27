@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useState } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { useLocation } from "react-router-dom";
 import { Filter, PanelRightClose, MapPin, Globe, Info, ChevronDown, Plane, RefreshCw } from "lucide-react";
 import { useFetch } from "../../hooks/useFetch";
@@ -9,13 +9,9 @@ import { listMaletas } from "../../api/maletas";
 import { listRutas } from "../../api/rutas";
 import { LoadingState, EmptyState, ErrorState } from "../ui/States";
 
-const FLIGHT_STATUS_FILTERS = [
-  { value: "ALL", label: "Todos" },
-  { value: "PROGRAMADO", label: "Programado" },
-  { value: "EN_PROGRESO", label: "En progreso" },
-  { value: "FINALIZADO", label: "Finalizado" },
-  { value: "CANCELADO", label: "Cancelado" },
-];
+const STATUS_FILTER_TABS = new Set(["Vuelos", "Pedidos", "Rutas", "Maletas"]);
+const ESTIMATED_ROW_HEIGHT = 96;
+const VIRTUAL_OVERSCAN = 4;
 
 const flightStatusColor = (s) => {
   switch ((s ?? "").toUpperCase().replace(/_/g, " ")) {
@@ -304,18 +300,50 @@ function sortFlightsByDepartureAsc(rows = []) {
   });
 }
 
-function normalizeFlightStatus(status) {
+function normalizeStatus(status) {
   return String(status ?? "")
     .trim()
     .toUpperCase()
+    .replace(/_/g, " ")
     .replace(/\s+/g, "_");
+}
+
+function statusLabel(status) {
+  const label = String(status ?? "").trim();
+  if (!label) return "";
+  return label.replace(/_/g, " ");
+}
+
+function getStatusValue(row, activeTab) {
+  if (!STATUS_FILTER_TABS.has(activeTab)) return "";
+  return activeTab === "Vuelos" || activeTab === "Pedidos" ? row?.status : row?.estado;
+}
+
+function buildStatusOptions(rows = [], activeTab) {
+  if (!STATUS_FILTER_TABS.has(activeTab)) {
+    return [{ value: "ALL", label: "Todos" }];
+  }
+
+  const seen = new Map();
+  rows.forEach((row) => {
+    const raw = getStatusValue(row, activeTab);
+    const value = normalizeStatus(raw);
+    if (!value || seen.has(value)) return;
+    seen.set(value, statusLabel(raw));
+  });
+
+  return [
+    { value: "ALL", label: "Todos" },
+    ...Array.from(seen.entries())
+      .sort((left, right) => left[1].localeCompare(right[1]))
+      .map(([value, label]) => ({ value, label })),
+  ];
 }
 
 export default function RightPanel({ onClose, simulationPanelData }) {
   const [activeTab, setActiveTab] = useState("Vuelos");
   const [query, setQuery] = useState("");
-  const [flightStatusFilter, setFlightStatusFilter] = useState("ALL");
-  const [visibleFlights, setVisibleFlights] = useState([]);
+  const [statusFilters, setStatusFilters] = useState({});
   const location = useLocation();
   const tabs = ["Vuelos", "Pedidos", "Rutas", "Maletas", "Aerop."];
   const isSimulator = location.pathname === "/" || location.pathname.startsWith("/simulator");
@@ -323,9 +351,7 @@ export default function RightPanel({ onClose, simulationPanelData }) {
   const onTabChange = (tab) => {
     setActiveTab(tab);
     setQuery("");
-    if (tab !== "Vuelos") {
-      setFlightStatusFilter("ALL");
-    }
+    setStatusFilters((current) => ({ ...current, [tab]: "ALL" }));
   };
 
   const flightsFetch = useFetch(() => (isSimulator ? Promise.resolve([]) : listFlights()), [isSimulator]);
@@ -354,18 +380,61 @@ export default function RightPanel({ onClose, simulationPanelData }) {
     return rows.filter((r) => fields.some((f) => String(r[f] ?? "").toLowerCase().includes(q)));
   };
 
-  useEffect(() => {
-    const sourceFlights = Array.isArray(flights.data) ? flights.data : [];
-    const byStatus = flightStatusFilter === "ALL"
-      ? sourceFlights
-      : sourceFlights.filter((flight) => normalizeFlightStatus(flight?.status) === flightStatusFilter);
-    setVisibleFlights(sortFlightsByDepartureAsc(byStatus));
-  }, [flights.data, flightStatusFilter]);
+  const statusFilter = statusFilters[activeTab] ?? "ALL";
+  const supportsStatusFilter = STATUS_FILTER_TABS.has(activeTab);
+  const filterByStatus = (rows) => {
+    if (!supportsStatusFilter || statusFilter === "ALL") return rows;
+    return rows.filter((row) => normalizeStatus(getStatusValue(row, activeTab)) === statusFilter);
+  };
 
-  const ordersFiltered = useMemo(() => filterByText(orders.data ?? [], ["id", "clientId", "origin", "dest", "status"]), [orders.data, query]);
+  const flightStatusOptions = useMemo(
+    () => buildStatusOptions(flights.data ?? [], "Vuelos"),
+    [flights.data],
+  );
+  const orderStatusOptions = useMemo(
+    () => buildStatusOptions(orders.data ?? [], "Pedidos"),
+    [orders.data],
+  );
+  const routeStatusOptions = useMemo(
+    () => buildStatusOptions(rutas.data ?? [], "Rutas"),
+    [rutas.data],
+  );
+  const bagStatusOptions = useMemo(
+    () => buildStatusOptions(maletas.data ?? [], "Maletas"),
+    [maletas.data],
+  );
+
+  const statusOptionsByTab = {
+    Vuelos: flightStatusOptions,
+    Pedidos: orderStatusOptions,
+    Rutas: routeStatusOptions,
+    Maletas: bagStatusOptions,
+  };
+  const statusOptions = statusOptionsByTab[activeTab] ?? [{ value: "ALL", label: "Todos" }];
+
+  useEffect(() => {
+    if (!supportsStatusFilter || statusFilter === "ALL") return;
+    if (statusOptions.some((option) => option.value === statusFilter)) return;
+    setStatusFilters((current) => ({ ...current, [activeTab]: "ALL" }));
+  }, [activeTab, statusFilter, statusOptions, supportsStatusFilter]);
+
+  const visibleFlights = useMemo(() => {
+    const byText = filterByText(flights.data ?? [], ["id", "origin", "dest", "status"]);
+    return sortFlightsByDepartureAsc(filterByStatus(byText));
+  }, [flights.data, query, statusFilter, activeTab]);
+  const ordersFiltered = useMemo(() => {
+    const byText = filterByText(orders.data ?? [], ["id", "clientId", "origin", "dest", "status"]);
+    return filterByStatus(byText);
+  }, [orders.data, query, statusFilter, activeTab]);
   const airportsFiltered = useMemo(() => filterByText(airports.data ?? [], ["iata", "city", "continent"]), [airports.data, query]);
-  const maletasFiltered = useMemo(() => filterByText(maletas.data ?? [], ["idMaleta", "idPedido", "estado", "ubicacionActual"]), [maletas.data, query]);
-  const rutasFiltered = useMemo(() => filterByText(rutas.data ?? [], ["idRuta", "idMaleta", "estado"]), [rutas.data, query]);
+  const maletasFiltered = useMemo(() => {
+    const byText = filterByText(maletas.data ?? [], ["idMaleta", "idPedido", "estado", "ubicacionActual"]);
+    return filterByStatus(byText);
+  }, [maletas.data, query, statusFilter, activeTab]);
+  const rutasFiltered = useMemo(() => {
+    const byText = filterByText(rutas.data ?? [], ["idRuta", "idMaleta", "estado"]);
+    return filterByStatus(byText);
+  }, [rutas.data, query, statusFilter, activeTab]);
 
   return (
     <div className="w-[min(360px,90vw)] lg:w-[360px] shrink-0 bg-surface-1 border-l border-slate-800 h-screen flex flex-col relative z-[9999]">
@@ -393,25 +462,7 @@ export default function RightPanel({ onClose, simulationPanelData }) {
       </div>
 
       <div className="p-4 border-b border-slate-800 flex items-center gap-2">
-        {activeTab === "Vuelos" ? (
-          <div className="flex items-center gap-2 flex-1 min-w-0">
-            <div className="relative flex-1 min-w-0">
-              <Filter className="pointer-events-none absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-slate-400" />
-              <select
-                value={flightStatusFilter}
-                onChange={(e) => setFlightStatusFilter(e.target.value)}
-                aria-label="Filtrar vuelos por estado"
-                className="w-full appearance-none rounded-lg border border-slate-800 bg-surface-2 py-1.5 pl-9 pr-8 text-sm text-slate-200 focus:border-slate-600 focus:outline-none"
-              >
-                {FLIGHT_STATUS_FILTERS.map((option) => (
-                  <option key={option.value} value={option.value}>
-                    {option.label}
-                  </option>
-                ))}
-              </select>
-            </div>
-          </div>
-        ) : (
+        <div className="flex flex-1 min-w-0 gap-2">
           <input
             type="text"
             value={query}
@@ -420,7 +471,27 @@ export default function RightPanel({ onClose, simulationPanelData }) {
             aria-label={`Buscar ${activeTab.toLowerCase()}`}
             className="w-full bg-surface-2 border border-slate-800 rounded-lg py-1.5 pl-3 pr-3 text-sm text-slate-200 placeholder:text-slate-400 focus:outline-none focus:border-slate-600"
           />
-        )}
+          {supportsStatusFilter && (
+            <div className="relative w-36 shrink-0">
+              <Filter className="pointer-events-none absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-slate-400" />
+              <select
+                value={statusFilter}
+                onChange={(e) => setStatusFilters((current) => ({
+                  ...current,
+                  [activeTab]: e.target.value,
+                }))}
+                aria-label={`Filtrar ${activeTab.toLowerCase()} por estado`}
+                className="w-full appearance-none rounded-lg border border-slate-800 bg-surface-2 py-1.5 pl-9 pr-8 text-sm text-slate-200 focus:border-slate-600 focus:outline-none"
+              >
+                {statusOptions.map((option) => (
+                  <option key={option.value} value={option.value}>
+                    {option.label}
+                  </option>
+                ))}
+              </select>
+            </div>
+          )}
+        </div>
         <button
           type="button"
           onClick={() => activeSource?.refetch?.()}
@@ -433,12 +504,12 @@ export default function RightPanel({ onClose, simulationPanelData }) {
         </button>
       </div>
 
-      <div className="flex-1 overflow-y-auto px-4 py-4 no-scrollbar">
-        {activeTab === "Vuelos" && <TabBody {...flights} empty="Ejecuta la simulacion para cargar los vuelos del periodo." rows={visibleFlights} renderItem={(f) => <FlightItem key={f.id} flight={f} />} />}
-        {activeTab === "Pedidos" && <TabBody {...orders} empty="Ejecuta la simulacion para cargar los pedidos de la ventana activa." rows={ordersFiltered} renderItem={(o) => <OrderItem key={o.id} order={o} />} />}
-        {activeTab === "Rutas" && <TabBody {...rutas} empty="Ejecuta la simulacion para cargar las rutas de la ventana activa." rows={rutasFiltered} renderItem={(r) => <RouteItem key={r.idRuta} route={r} />} />}
-        {activeTab === "Maletas" && <TabBody {...maletas} empty="Ejecuta la simulacion para cargar las maletas de la ventana activa." rows={maletasFiltered} renderItem={(b) => <BagItem key={b.idMaleta} bag={b} />} />}
-        {activeTab === "Aerop." && <TabBody {...airports} empty="Ejecuta la simulacion para cargar los aeropuertos del periodo." rows={airportsFiltered} renderItem={(a) => <AirportItem key={a.iata} apt={a} />} />}
+      <div className="flex-1 min-h-0">
+        {activeTab === "Vuelos" && <TabBody {...flights} empty="Ejecuta la simulacion para cargar los vuelos del periodo." rows={visibleFlights} itemKey={(f) => f.id} renderItem={(f) => <FlightItem flight={f} />} resetKey={`Vuelos:${query}:${statusFilter}`} />}
+        {activeTab === "Pedidos" && <TabBody {...orders} empty="Ejecuta la simulacion para cargar los pedidos de la ventana activa." rows={ordersFiltered} itemKey={(o) => o.id} renderItem={(o) => <OrderItem order={o} />} resetKey={`Pedidos:${query}:${statusFilter}`} />}
+        {activeTab === "Rutas" && <TabBody {...rutas} empty="Ejecuta la simulacion para cargar las rutas de la ventana activa." rows={rutasFiltered} itemKey={(r) => r.idRuta} renderItem={(r) => <RouteItem route={r} />} resetKey={`Rutas:${query}:${statusFilter}`} />}
+        {activeTab === "Maletas" && <TabBody {...maletas} empty="Ejecuta la simulacion para cargar las maletas de la ventana activa." rows={maletasFiltered} itemKey={(b) => b.idMaleta} renderItem={(b) => <BagItem bag={b} />} resetKey={`Maletas:${query}:${statusFilter}`} />}
+        {activeTab === "Aerop." && <TabBody {...airports} empty="Ejecuta la simulacion para cargar los aeropuertos del periodo." rows={airportsFiltered} itemKey={(a) => a.iata} renderItem={(a) => <AirportItem apt={a} />} resetKey={`Aerop.:${query}`} />}
       </div>
 
       <ColorLegend />
@@ -446,9 +517,177 @@ export default function RightPanel({ onClose, simulationPanelData }) {
   );
 }
 
-function TabBody({ loading, error, refetch, rows, empty, renderItem }) {
-  if (loading) return <LoadingState />;
-  if (error) return <ErrorState error={error} onRetry={refetch} />;
-  if (!rows || rows.length === 0) return <EmptyState title="Sin resultados" message={empty} />;
-  return rows.map(renderItem);
+function TabBody({ loading, error, refetch, rows, empty, renderItem, itemKey, resetKey }) {
+  if (loading) {
+    return <div className="h-full overflow-y-auto px-4 py-4 no-scrollbar"><LoadingState /></div>;
+  }
+  if (error) {
+    return <div className="h-full overflow-y-auto px-4 py-4 no-scrollbar"><ErrorState error={error} onRetry={refetch} /></div>;
+  }
+  if (!rows || rows.length === 0) {
+    return <div className="h-full overflow-y-auto px-4 py-4 no-scrollbar"><EmptyState title="Sin resultados" message={empty} /></div>;
+  }
+  return (
+    <VirtualizedList
+      rows={rows}
+      itemKey={itemKey}
+      renderItem={renderItem}
+      resetKey={resetKey}
+    />
+  );
+}
+
+function VirtualizedList({ rows, itemKey, renderItem, resetKey }) {
+  const containerRef = useRef(null);
+  const heightsRef = useRef(new Map());
+  const [scrollTop, setScrollTop] = useState(0);
+  const [viewportHeight, setViewportHeight] = useState(0);
+  const [measureVersion, setMeasureVersion] = useState(0);
+
+  const getKey = useCallback(
+    (row, index) => String(itemKey?.(row, index) ?? index),
+    [itemKey],
+  );
+
+  const onMeasure = useCallback((key, height) => {
+    if (!Number.isFinite(height) || height <= 0) return;
+    const current = heightsRef.current.get(key);
+    if (current && Math.abs(current - height) < 1) return;
+    heightsRef.current.set(key, height);
+    setMeasureVersion((version) => version + 1);
+  }, []);
+
+  useEffect(() => {
+    const node = containerRef.current;
+    if (!node) return undefined;
+
+    const updateHeight = () => setViewportHeight(node.clientHeight);
+    updateHeight();
+
+    if (typeof ResizeObserver === "undefined") {
+      window.addEventListener("resize", updateHeight);
+      return () => window.removeEventListener("resize", updateHeight);
+    }
+
+    const observer = new ResizeObserver(updateHeight);
+    observer.observe(node);
+    return () => observer.disconnect();
+  }, []);
+
+  useEffect(() => {
+    const node = containerRef.current;
+    if (!node) return;
+    node.scrollTop = 0;
+    setScrollTop(0);
+  }, [resetKey]);
+
+  const layout = useMemo(() => {
+    const positions = [];
+    let totalHeight = 0;
+    rows.forEach((row, index) => {
+      positions[index] = totalHeight;
+      totalHeight += heightsRef.current.get(getKey(row, index)) ?? ESTIMATED_ROW_HEIGHT;
+    });
+    return { positions, totalHeight };
+  }, [rows, getKey, measureVersion]);
+
+  const visibleRange = useMemo(() => {
+    if (rows.length === 0) return { start: 0, end: -1 };
+
+    let low = 0;
+    let high = rows.length - 1;
+    let start = 0;
+    while (low <= high) {
+      const mid = Math.floor((low + high) / 2);
+      const row = rows[mid];
+      const rowBottom = layout.positions[mid]
+        + (heightsRef.current.get(getKey(row, mid)) ?? ESTIMATED_ROW_HEIGHT);
+      if (rowBottom < scrollTop) {
+        low = mid + 1;
+      } else {
+        start = mid;
+        high = mid - 1;
+      }
+    }
+
+    const viewportBottom = scrollTop + viewportHeight;
+    let end = start;
+    while (end < rows.length && layout.positions[end] <= viewportBottom) {
+      end += 1;
+    }
+
+    return {
+      start: Math.max(0, start - VIRTUAL_OVERSCAN),
+      end: Math.min(rows.length - 1, end + VIRTUAL_OVERSCAN),
+    };
+  }, [rows, layout, scrollTop, viewportHeight, getKey]);
+
+  const visibleRows = [];
+  for (let index = visibleRange.start; index <= visibleRange.end; index += 1) {
+    const row = rows[index];
+    if (!row) continue;
+    const key = getKey(row, index);
+    visibleRows.push(
+      <MeasuredVirtualRow
+        key={key}
+        itemKey={key}
+        top={layout.positions[index]}
+        onMeasure={onMeasure}
+      >
+        {renderItem(row, index)}
+      </MeasuredVirtualRow>,
+    );
+  }
+
+  return (
+    <div
+      ref={containerRef}
+      onScroll={(event) => setScrollTop(event.currentTarget.scrollTop)}
+      className="h-full overflow-y-auto px-4 py-4 no-scrollbar"
+    >
+      <div className="relative" style={{ height: layout.totalHeight }}>
+        {visibleRows}
+      </div>
+    </div>
+  );
+}
+
+function MeasuredVirtualRow({ itemKey, top, onMeasure, children }) {
+  const rowRef = useRef(null);
+
+  useEffect(() => {
+    const node = rowRef.current;
+    if (!node) return undefined;
+
+    const report = () => {
+      const child = node.firstElementChild;
+      if (!child) {
+        onMeasure(itemKey, node.getBoundingClientRect().height);
+        return;
+      }
+      const style = window.getComputedStyle(child);
+      const marginY = parseFloat(style.marginTop || "0") + parseFloat(style.marginBottom || "0");
+      onMeasure(itemKey, child.getBoundingClientRect().height + marginY);
+    };
+    report();
+
+    if (typeof ResizeObserver === "undefined") {
+      window.addEventListener("resize", report);
+      return () => window.removeEventListener("resize", report);
+    }
+
+    const observer = new ResizeObserver(report);
+    observer.observe(node);
+    return () => observer.disconnect();
+  }, [itemKey, onMeasure]);
+
+  return (
+    <div
+      ref={rowRef}
+      className="absolute left-0 right-0"
+      style={{ transform: `translateY(${top}px)` }}
+    >
+      {children}
+    </div>
+  );
 }
