@@ -27,6 +27,7 @@ import java.util.concurrent.Executors;
 import java.util.concurrent.ScheduledExecutorService;
 import java.util.concurrent.ScheduledFuture;
 import java.util.concurrent.TimeUnit;
+import java.util.concurrent.atomic.AtomicBoolean;
 import java.util.stream.Collectors;
 
 @Slf4j
@@ -162,8 +163,31 @@ public class SimulacionSesionManager {
     }
 
     private void programarTarea(final SimulacionSesion sesion, final SimpMessagingTemplate broker) {
-        final ScheduledFuture<?> tarea = scheduler.scheduleWithFixedDelay(
-                () -> ejecutarIteracion(sesion, broker),
+        /* scheduleAtFixedRate (en vez de scheduleWithFixedDelay) garantiza
+         * cadencia regular: el tick N+1 dispara TICK_INTERVAL_MS despues del
+         * inicio del tick N, sin importar cuanto tardo en procesarse. Esto
+         * estabiliza la animacion del front (el suavizado del simClock asume
+         * intervalos regulares).
+         *
+         * El AtomicBoolean `iterando` evita el unico problema teorico de
+         * fixed-rate: si una iteracion tarda mas que el periodo, las
+         * siguientes se acumularian en la cola del scheduler. Aca preferimos
+         * saltar el tick atrasado: el suavizado y el snapshot pesado cada 10
+         * ticks ya proveen redundancia. */
+        final AtomicBoolean iterando = new AtomicBoolean(false);
+        final ScheduledFuture<?> tarea = scheduler.scheduleAtFixedRate(
+                () -> {
+                    if (!iterando.compareAndSet(false, true)) {
+                        log.warn("[AeroLuggage/Simulacion] - SKIP tick (anterior aun en curso): sessionId={}",
+                                sesion.getSessionId());
+                        return;
+                    }
+                    try {
+                        ejecutarIteracion(sesion, broker);
+                    } finally {
+                        iterando.set(false);
+                    }
+                },
                 0L,
                 TICK_INTERVAL_MS,
                 TimeUnit.MILLISECONDS

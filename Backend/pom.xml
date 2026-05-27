@@ -72,6 +72,35 @@
             <plugin>
                 <groupId>org.springframework.boot</groupId>
                 <artifactId>spring-boot-maven-plugin</artifactId>
+                <configuration>
+                    <!--
+                        Calibrado para maquinas con 8 GB de RAM:
+
+                        SerialGC en vez de G1GC. G1 reserva ~2x el -Xmx de
+                        espacio virtual upfront (su "G1 virtual space"); en
+                        Windows con pagefile chico eso truena en el arranque
+                        con "archivo de paginacion demasiado pequeno". Serial
+                        solo reserva lo que pide el heap real — virtual space
+                        ≈ -Xmx. Como contra: pausas STW mas largas, pero a
+                        1 Hz de ticks ni se notan.
+
+                        -Xmx2g es generoso para esta simulacion: los datos
+                        vivos rondan 20-50 MB (maletas+rutas+vuelos), el GA
+                        durante planning toma ~50-100 MB transitorios. Si
+                        corres con muchas ventanas + miles de maletas y
+                        empieza a paginar, subir a -Xmx3g maximo (no mas para
+                        dejar respiro al SO + browser + IDE).
+
+                        -Xms128m: arranca chico, crece on-demand.
+                    -->
+                    <jvmArguments>
+                        -Xms128m
+                        -Xmx2g
+                        -XX:+UseSerialGC
+                        -XX:ReservedCodeCacheSize=128m
+                        -XX:MaxDirectMemorySize=128m
+                    </jvmArguments>
+                </configuration>
             </plugin>
 
             <plugin>

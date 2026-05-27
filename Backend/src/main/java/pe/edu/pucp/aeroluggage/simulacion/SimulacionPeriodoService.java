@@ -14,6 +14,17 @@ public class SimulacionPeriodoService {
     private static final DateTimeFormatter FORMATO_FECHA = DateTimeFormatter.ISO_LOCAL_DATE;
     private static final DateTimeFormatter FORMATO_FECHA_HORA = DateTimeFormatter.ISO_LOCAL_DATE_TIME;
 
+    /* Las listas pesadas (pedidos, maletas, rutas, aeropuertos) crecen sin
+     * parar a lo largo de la simulacion. Cada snapshot pesado, al llegar al
+     * front, dispara un `JSON.parse` de cientos de KB que bloquea el main
+     * thread ~30-50 ms — eso se ve como un hiccup en la animacion. Lo
+     * espaciamos a cada 10 ticks (10 s) para que el bloqueo se sienta lo
+     * minimo posible. El panel lateral aguanta 10 s de lag sin problema.
+     *
+     * El frontend tiene guards `Array.isArray(...) ? ... : prev`, asi que un
+     * `null` no rompe nada: conserva el ultimo snapshot recibido. */
+    private static final int SNAPSHOT_PESADO_CADA_N_TICKS = 10;
+
     private final SimulacionSnapshotService snapshotService;
 
     public PeriodoTickDTO ejecutarTick(final SimulacionSesion sesion) {
@@ -29,8 +40,16 @@ public class SimulacionPeriodoService {
         final int capacidadLibrePct = snapshotService.calcularCapacidadLibrePct(sesion);
         final long minutosDesdeInicio = Duration.between(sesion.getFechaInicioUtc(), sesion.getCurrentSimTimeUtc().get()).toMinutes();
         final int diaActual = Math.max(1, (int) (minutosDesdeInicio / (24L * 60L)) + 1);
-        final SimulacionSnapshotService.EntidadesVisibles entidades =
-                snapshotService.mapearEntidadesVisibles(sesion.getRutas(), sesion.getMaletas(), sesion.getCurrentSimTimeUtc().get());
+
+        // Solo recalcular el snapshot completo cada N ticks. En los ticks
+        // ligeros enviamos null y el frontend conserva el snapshot anterior.
+        final boolean incluyeSnapshotPesado = tick == 1 || tick % SNAPSHOT_PESADO_CADA_N_TICKS == 0;
+        final SimulacionSnapshotService.EntidadesVisibles entidades = incluyeSnapshotPesado
+                ? snapshotService.mapearEntidadesVisibles(
+                        sesion.getRutas(),
+                        sesion.getMaletas(),
+                        sesion.getCurrentSimTimeUtc().get())
+                : null;
 
         return PeriodoTickDTO.builder()
                 .withTickActual(tick)
@@ -48,14 +67,19 @@ public class SimulacionPeriodoService {
                 .withMaletasNoAsignadas(sinRuta)
                 .withVuelosActivos(vuelosActivos)
                 .withCapacidadLibrePct(capacidadLibrePct)
-                .withAeropuertos(snapshotService.mapearAeropuertos(sesion.getAeropuertos()))
+                /* Aeropuertos: solo en el snapshot pesado. Sus coordenadas
+                 * y capacidades no cambian; solo `maletasActuales` (un
+                 * contador). El front conserva el ultimo set recibido. */
+                .withAeropuertos(incluyeSnapshotPesado
+                        ? snapshotService.mapearAeropuertos(sesion.getAeropuertos())
+                        : null)
                 .withVuelosInstancia(snapshotService.mapearVuelosInstanciaActivos(
                         sesion.getVuelosInstancia(),
                         sesion.getCurrentSimTimeUtc().get(),
                         sesion.getWindowSizeMinutes()))
-                .withPedidos(entidades.pedidos())
-                .withMaletas(entidades.maletas())
-                .withRutas(entidades.rutas())
+                .withPedidos(entidades != null ? entidades.pedidos() : null)
+                .withMaletas(entidades != null ? entidades.maletas() : null)
+                .withRutas(entidades != null ? entidades.rutas() : null)
                 .build();
     }
 }

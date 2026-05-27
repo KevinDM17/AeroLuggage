@@ -1,5 +1,6 @@
 import { useCallback, useEffect, useState } from "react";
 import { getStompClient, isStompEnabled, whenConnected } from "../api/stomp";
+import { parseStompBody } from "../api/stompParser";
 
 /**
  * Se suscribe a un topic STOMP y devuelve el ultimo mensaje recibido (parseado a JSON).
@@ -25,12 +26,22 @@ export function useStompSubscribe(topic, { enabled = true } = {}) {
         if (cancelled) return;
         setConnected(true);
         subscription = client.subscribe(topic, (message) => {
-          try {
-            setData(JSON.parse(message.body));
-            setError(null);
-          } catch (e) {
-            setError(e);
-          }
+          /* Parseamos via worker para payloads pesados (snapshots de
+           * simulacion). El main thread no se bloquea durante el JSON.parse
+           * de cientos de KB, asi la animacion del mapa sigue a 60-120 fps
+           * sin pausas. parseStompBody resuelve inmediato (sync resolve)
+           * para payloads chicos. */
+          parseStompBody(message.body).then(
+            (parsed) => {
+              if (cancelled) return;
+              setData(parsed);
+              setError(null);
+            },
+            (e) => {
+              if (cancelled) return;
+              setError(e);
+            },
+          );
         });
       })
       .catch((e) => {

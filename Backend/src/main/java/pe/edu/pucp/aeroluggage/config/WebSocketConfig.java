@@ -36,7 +36,14 @@ public class WebSocketConfig implements WebSocketMessageBrokerConfigurer {
 
     @Override
     public void configureWebSocketTransport(final WebSocketTransportRegistration registration) {
-        registration.setMessageSizeLimit(4 * 1024 * 1024);
-        registration.setSendBufferSizeLimit(8 * 1024 * 1024);
+        // Limites generosos: el tick de simulacion incluye snapshots de
+        // pedidos/maletas/rutas que pueden crecer hasta decenas de MB en
+        // periodos largos. SimulacionPeriodoService ya throttlea esas listas
+        // pesadas, pero dejamos espacio para picos sin tumbar la sesion.
+        registration.setMessageSizeLimit(32 * 1024 * 1024);
+        registration.setSendBufferSizeLimit(64 * 1024 * 1024);
+        // Si el cliente no consume rapido y el buffer se llena, mejor cerrar
+        // mas tarde — el default era 10s.
+        registration.setSendTimeLimit(30 * 1000);
     }
 }

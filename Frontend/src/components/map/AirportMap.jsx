@@ -1,4 +1,4 @@
-import { memo, useEffect, useMemo, useRef, useState } from "react";
+import { memo, useEffect, useMemo, useRef } from "react";
 import { MapContainer, TileLayer, Marker, Polyline, useMap } from "react-leaflet";
 import L from "leaflet";
 import { tokens, semaphoreColor } from "../../utils/tokens";
@@ -46,13 +46,8 @@ const getAirportIcon = (airport) => {
   return icon;
 };
 
-const MAX_FLIGHTS_ON_MAP = 30;
-
-/**
- * Selecciona hasta N vuelos para animar en el mapa.
- * Prioriza diversidad de rutas (origen-destino únicos).
- */
-const pickFlightsToAnimate = (flights, airportsByIata, limit) => {
+/* Polylines: dedup por par origen-destino para no superponer N lineas iguales. */
+const dedupRoutesForLines = (flights, airportsByIata) => {
   const seen = new Set();
   const out = [];
   for (const f of flights) {
@@ -61,16 +56,25 @@ const pickFlightsToAnimate = (flights, airportsByIata, limit) => {
     if (seen.has(key)) continue;
     seen.add(key);
     out.push(f);
-    if (out.length >= limit) break;
   }
   return out;
 };
 
-/* Sub-componente que monta el canvas layer y le pasa la lista de aviones. */
-function PlanesCanvasOverlay({ planes }) {
+const parseUtcMs = (value) => {
+  if (!value) return NaN;
+  const withZ = /[zZ]|[+-]\d{2}:?\d{2}$/.test(value) ? value : `${value}Z`;
+  return Date.parse(withZ);
+};
+
+/* Sub-componente que monta el canvas layer, le entrega refs estables
+ * (routes + simClockRef) y arranca/para su animacion segun animateFlights.
+ * El layer corre SU PROPIO requestAnimationFrame internamente — toda la
+ * animacion vive fuera de React. */
+function PlanesCanvasOverlay({ routesRef, simClockRef, animating }) {
   const map = useMap();
   const layerRef = useRef(null);
 
+  // Montar y desmontar el layer junto al mapa.
   useEffect(() => {
     const layer = createPlanesCanvasLayer();
     layer.addTo(map);
@@ -81,9 +85,19 @@ function PlanesCanvasOverlay({ planes }) {
     };
   }, [map]);
 
+  // Reconectar refs si cambian (en la practica son estables).
   useEffect(() => {
-    if (layerRef.current) layerRef.current.setPlanes(planes);
-  }, [planes]);
+    if (layerRef.current) {
+      layerRef.current.setSources(routesRef, simClockRef);
+    }
+  }, [routesRef, simClockRef]);
+
+  // Encender/apagar el rAF interno del layer.
+  useEffect(() => {
+    if (layerRef.current) {
+      layerRef.current.setAnimating(animating);
+    }
+  }, [animating]);
 
   return null;
 }
@@ -94,9 +108,16 @@ function AirportMap({
   airports: airportsProp,
   flights: flightsProp,
   autoload = true,
+  simClockRef = null,
+  animateFlights = false,
+  initialZoom = 4,
+  initialCenter = [20, -40],
 }) {
-  const center = [20, -40];
-  const zoom = 3;
+  /* Zoom 4 (vs el viejo 3) ~duplica la cantidad de pixeles que recorre un
+   * avion por segundo real → el movimiento se siente "fluido" en vez de
+   * "sub-pixel". El usuario puede acercar/alejar normalmente con la rueda. */
+  const center = initialCenter;
+  const zoom = initialZoom;
 
   const { data: fetchedAirports = [] } = useFetch(
     () => (autoload ? listAirports() : Promise.resolve([])),
@@ -118,93 +139,51 @@ function AirportMap({
     return map;
   }, [airports]);
 
-  /* Geometría estática de cada ruta animada: origen, destino, ángulo, color
-   * y deltas pre-calculados. Solo cambia cuando cambian vuelos/aeropuertos,
-   * NO en cada frame. Esto saca toda la trigonometría del hot path. */
+  /* Geometría de cada vuelo: origen, destino, ángulo, color, timestamps de
+   * salida/llegada y deltas pre-calculados. Solo cambia cuando cambia la lista
+   * de vuelos o aeropuertos, NO en cada frame. La posición se interpola en el
+   * raf abajo a partir del simClockRef. */
   const routesGeometry = useMemo(() => {
-    const picked = pickFlightsToAnimate(flights ?? [], airportsByIata, MAX_FLIGHTS_ON_MAP);
-    return picked.map((route) => {
+    const out = [];
+    for (const route of flights ?? []) {
       const origin = airportsByIata.get(route.origin);
       const destination = airportsByIata.get(route.dest);
+      if (!origin || !destination) continue;
+      const depMs = parseUtcMs(route.depTime);
+      const arrMs = parseUtcMs(route.arrTime);
+      if (!Number.isFinite(depMs) || !Number.isFinite(arrMs) || arrMs <= depMs) continue;
       const dLat = destination.lat - origin.lat;
       const dLng = destination.lng - origin.lng;
       const bearing = (Math.atan2(dLng, dLat) * 180) / Math.PI;
-      return {
+      out.push({
         route,
         origin,
         destination,
+        depMs,
+        arrMs,
         dLat,
         dLng,
         planeAngle: bearing - 45,
         color: flightLoadColor(route.used, route.capacity),
-      };
-    });
+      });
+    }
+    return out;
   }, [flights, airportsByIata]);
 
-  /* Animación decorativa: cada vuelo arranca con un progreso aleatorio
-   * y avanza con dt. NO usamos setState para el progress (evita re-renders
-   * 60 veces por segundo) — lo guardamos en un ref y empujamos directamente
-   * la lista de aviones al canvas layer. */
-  const layerSetterRef = useRef(null);
-  const progressesRef = useRef([]);
+  /* Polylines: una sola por par origen-destino, sin importar cuantos vuelos
+   * hagan esa ruta. Solo cambia cuando cambia la lista de vuelos. */
+  const routeLines = useMemo(
+    () => dedupRoutesForLines(flights ?? [], airportsByIata),
+    [flights, airportsByIata],
+  );
 
-  // Reset de progresos cuando cambia la cantidad de rutas
+  /* Animacion fluida: el layer corre su propio rAF interno (ver
+   * PlanesCanvasLayer). Aca solo le entregamos refs estables a las rutas y
+   * al reloj simulado. Las posiciones se computan y se dibujan adentro del
+   * layer, sin tocar React. */
+  const routesRef = useRef(routesGeometry);
   useEffect(() => {
-    progressesRef.current = routesGeometry.map(() => Math.random());
-  }, [routesGeometry.length]);
-
-  /* El raf actualiza progress + computa lista de aviones + la entrega al
-   * canvas layer SIN tocar React state. Resultado: el componente AirportMap
-   * casi no re-renderiza, y todo el costo se concentra en un drawImage
-   * por avión sobre un único <canvas>. */
-  const [planes, setPlanes] = useState([]);
-
-  useEffect(() => {
-    if (routesGeometry.length === 0) {
-      setPlanes([]);
-      return undefined;
-    }
-
-    let raf;
-    let lastTime = performance.now();
-    // Throttle a ~30fps: a escala de mapa mundial el ojo no nota más,
-    // y reducimos a la mitad la carga de actualización.
-    const FRAME_BUDGET_MS = 33;
-    let acc = 0;
-
-    const tick = (time) => {
-      const dt = time - lastTime;
-      lastTime = time;
-      acc += dt;
-
-      // Avanzar progresos siempre (movimiento suave acumulado)
-      const arr = progressesRef.current;
-      for (let i = 0; i < arr.length; i++) {
-        arr[i] = (arr[i] + dt * 0.00005) % 1;
-      }
-
-      // Pero solo enviamos al canvas/state cuando toca un frame
-      if (acc >= FRAME_BUDGET_MS) {
-        acc = 0;
-        const next = new Array(routesGeometry.length);
-        for (let i = 0; i < routesGeometry.length; i++) {
-          const geo = routesGeometry[i];
-          const p = arr[i];
-          next[i] = {
-            lat: geo.origin.lat + geo.dLat * p,
-            lng: geo.origin.lng + geo.dLng * p,
-            angle: geo.planeAngle,
-            color: geo.color,
-          };
-        }
-        setPlanes(next);
-      }
-
-      raf = requestAnimationFrame(tick);
-    };
-
-    raf = requestAnimationFrame(tick);
-    return () => cancelAnimationFrame(raf);
+    routesRef.current = routesGeometry;
   }, [routesGeometry]);
 
   const airportList = useMemo(() => Array.from(airportsByIata.values()), [airportsByIata]);
@@ -221,24 +200,36 @@ function AirportMap({
       >
         <TileLayer url="https://{s}.basemaps.cartocdn.com/dark_nolabels/{z}/{x}/{y}{r}.png" />
 
-        {/* Polylines: solo cambian si cambia la lista de rutas, NO cada frame */}
+        {/* Polylines: una sola por par origen-destino, no cambia cada frame. */}
         {showFlights && showRouteLines &&
-          routesGeometry.map(({ route, origin, destination }) => (
-            <Polyline
-              key={`${route.id ?? `${route.origin}-${route.dest}`}`}
-              positions={[
-                [origin.lat, origin.lng],
-                [destination.lat, destination.lng],
-              ]}
-              color={tokens.success}
-              weight={1.5}
-              opacity={0.3}
-              dashArray="4, 6"
-            />
-          ))}
+          routeLines.map((route) => {
+            const origin = airportsByIata.get(route.origin);
+            const destination = airportsByIata.get(route.dest);
+            return (
+              <Polyline
+                key={`${route.origin}-${route.dest}`}
+                positions={[
+                  [origin.lat, origin.lng],
+                  [destination.lat, destination.lng],
+                ]}
+                color={tokens.success}
+                weight={1.5}
+                opacity={0.3}
+                dashArray="4, 6"
+              />
+            );
+          })}
 
-        {/* Aviones en UN solo canvas (en vez de N markers DOM) */}
-        {showFlights && <PlanesCanvasOverlay planes={planes} />}
+        {/* Aviones en UN solo canvas (en vez de N markers DOM). El layer
+            maneja su propio rAF: le entregamos refs y le decimos cuando
+            animar. */}
+        {showFlights && (
+          <PlanesCanvasOverlay
+            routesRef={routesRef}
+            simClockRef={simClockRef}
+            animating={animateFlights}
+          />
+        )}
 
         {/* Aeropuertos siguen siendo markers DOM (son pocos y no se mueven) */}
         {airportList.map((airport) => (

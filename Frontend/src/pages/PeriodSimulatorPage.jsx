@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useState } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
 import { useOutletContext } from "react-router-dom";
 import { Play, Pause, Square, RotateCw } from "lucide-react";
 import MapDashboard from "../components/simulator/MapDashboard";
@@ -21,8 +21,72 @@ import {
 
 const PERIOD_DAYS = 5;
 const DURATION_SIMULATED_DAY_MS = 10 * 60 * 1000;
-const CLOCK_REFRESH_MS = 33;
+/* 100 ms = 10 Hz para el display del reloj. La animacion del mapa NO depende
+ * de este valor — corre a la tasa nativa del monitor leyendo simClockRef. */
+const CLOCK_REFRESH_MS = 100;
 const SIMULATED_DAY_MS = 24 * 60 * 60 * 1000;
+/* Suavizado del re-anclaje: cada tick mezclamos 15% del valor del back con el
+ * 85% del valor extrapolado del front. Asi los pequenos saltos de latencia
+ * (jitter de red, GC pauses) se disuelven en ~7 ticks en vez de notarse como
+ * un step visible. Mantenemos sync a largo plazo sin jumps abruptos. */
+const CLOCK_REANCHOR_ALPHA = 0.15;
+
+/* Diff estructural: si el contenido visual es identico al previo, preservamos
+ * la referencia anterior para que `AirportMap` (memoizado) NO se re-renderice
+ * y NO reconcilie sus markers/polylines.
+ *
+ * CLAVE: comparamos por TIER de color (verde/amarillo/rojo), no por valor
+ * exacto de `used/capacity`. El back recalcula `capacidadUsada` en cada tick
+ * dentro de `recalcularEstadoSesion`, asi que si comparamos por valor exacto
+ * el diff casi nunca devuelve `true` y el optimo se cae. El tier solo cambia
+ * cuando se cruza un umbral (60% o 85% de ocupacion) — eso si justifica
+ * repintar. El resto del tiempo el avion sigue siendo "el mismo avion verde
+ * en el mismo vuelo", la posicion ya la actualiza el rAF del layer leyendo
+ * simClockRef. */
+const loadTier = (used, capacity) => {
+  const pct = capacity > 0 ? (used / capacity) * 100 : 0;
+  if (pct >= 85) return 2;
+  if (pct >= 60) return 1;
+  return 0;
+};
+
+const flightsEqual = (a, b) => {
+  if (a === b) return true;
+  if (!a || !b || a.length !== b.length) return false;
+  for (let i = 0; i < a.length; i++) {
+    const x = a[i];
+    const y = b[i];
+    if (
+      x.id !== y.id ||
+      x.origin !== y.origin ||
+      x.dest !== y.dest ||
+      x.depTime !== y.depTime ||
+      x.arrTime !== y.arrTime ||
+      loadTier(x.used, x.capacity) !== loadTier(y.used, y.capacity)
+    ) {
+      return false;
+    }
+  }
+  return true;
+};
+
+const airportsEqual = (a, b) => {
+  if (a === b) return true;
+  if (!a || !b || a.length !== b.length) return false;
+  for (let i = 0; i < a.length; i++) {
+    const x = a[i];
+    const y = b[i];
+    if (
+      x.iata !== y.iata ||
+      x.lat !== y.lat ||
+      x.lng !== y.lng ||
+      loadTier(x.used, x.capacity) !== loadTier(y.used, y.capacity)
+    ) {
+      return false;
+    }
+  }
+  return true;
+};
 
 const ESTADO_BACK_A_LOCAL = {
   INICIADA: "running",
@@ -74,6 +138,18 @@ export default function PeriodSimulatorPage() {
   const [tickBaseSimTimeUtc, setTickBaseSimTimeUtc] = useState(null);
   const [tickReceiptElapsedMs, setTickReceiptElapsedMs] = useState(0);
 
+  /* Reloj simulado en un ref mutable. AirportMap lee de aca dentro de su
+   * requestAnimationFrame para extrapolar la posicion de los aviones SIN
+   * disparar re-renders. El ref tiene identidad estable, asi que AirportMap
+   * (memoizado) no se vuelve a renderizar 30 fps por culpa del reloj — solo
+   * cuando llegan datos nuevos (ticks). */
+  const simClockRef = useRef({
+    baseSimMs: null,
+    baseRealMs: 0,
+    speed: 1,
+    running: false,
+  });
+
   useEffect(() => {
     setSimulationPanelData({
       airports: [],
@@ -115,6 +191,35 @@ export default function PeriodSimulatorPage() {
   );
   const hasActiveRun =
     simStatus === "running" || simStatus === "paused" || simStatus === "done";
+
+  /* Cuando el usuario pausa/reanuda, freezamos o reanclamos el reloj sin
+   * tocar el ref desde el cuerpo del render. */
+  useEffect(() => {
+    const clock = simClockRef.current;
+    if (clock.baseSimMs == null) return;
+    if (simStatus === "running") {
+      // Reancla la base real, conservando el simNow visible hasta ahora.
+      const wasPausedAt = clock.baseSimMs;
+      simClockRef.current = {
+        baseSimMs: wasPausedAt,
+        baseRealMs: performance.now(),
+        speed: clock.speed,
+        running: true,
+      };
+    } else {
+      // Congelamos baseSimMs en el simNow extrapolado al momento de pausar.
+      const frozen = clock.running
+        ? clock.baseSimMs +
+          (performance.now() - clock.baseRealMs) * clock.speed
+        : clock.baseSimMs;
+      simClockRef.current = {
+        baseSimMs: frozen,
+        baseRealMs: performance.now(),
+        speed: clock.speed,
+        running: false,
+      };
+    }
+  }, [simStatus]);
 
   useEffect(() => {
     if (USE_MOCK) {
@@ -159,14 +264,52 @@ export default function PeriodSimulatorPage() {
     setCurrentSimTimeUtc(tick.currentSimTimeUtc);
     setTickBaseSimTimeUtc(tick.currentSimTimeUtc);
     setTickReceiptElapsedMs(executionElapsedMs);
+
+    /* Re-anclamos el reloj mutable cada vez que llega un tick, pero
+     * suavemente: mezclamos el valor del back con el extrapolado del front
+     * (CLOCK_REANCHOR_ALPHA) para no notar los pequenos saltos de latencia.
+     * El rAF de AirportMap lee de aca y se mantiene continuo. */
+    const parsedTickMs = Date.parse(`${tick.currentSimTimeUtc}Z`);
+    if (Number.isFinite(parsedTickMs)) {
+      const speed = SIMULATED_DAY_MS / simulatedDayDurationMs;
+      const nowReal = performance.now();
+      const prevClock = simClockRef.current;
+      let nextBaseSimMs;
+      if (prevClock.baseSimMs == null) {
+        // Primer tick: anclamos directo al valor del back.
+        nextBaseSimMs = parsedTickMs;
+      } else {
+        // Calculamos donde estaba extrapolando el front justo antes del tick
+        // y avanzamos un 15% hacia el valor reportado por el back.
+        const frontExtrap = prevClock.running
+          ? prevClock.baseSimMs +
+            (nowReal - prevClock.baseRealMs) * prevClock.speed
+          : prevClock.baseSimMs;
+        nextBaseSimMs =
+          frontExtrap +
+          (parsedTickMs - frontExtrap) * CLOCK_REANCHOR_ALPHA;
+      }
+      simClockRef.current = {
+        baseSimMs: nextBaseSimMs,
+        baseRealMs: nowReal,
+        speed,
+        running: simStatus === "running",
+      };
+    }
     if (Array.isArray(tick.vuelosInstancia)) {
       const adaptedFlights = tick.vuelosInstancia.map(adaptFlightInstance);
       const adaptedAirports = Array.isArray(tick.aeropuertos)
         ? tick.aeropuertos.map(adaptAirport)
         : null;
-      setMapFlights(adaptedFlights);
+      // Diff estructural: preservamos la referencia anterior si el contenido
+      // es identico, asi AirportMap (memoizado) NO se re-renderiza.
+      setMapFlights((prev) =>
+        flightsEqual(prev, adaptedFlights) ? prev : adaptedFlights,
+      );
       if (adaptedAirports) {
-        setMapAirports(adaptedAirports);
+        setMapAirports((prev) =>
+          airportsEqual(prev, adaptedAirports) ? prev : adaptedAirports,
+        );
       }
       setSimulationPanelData((prev) => ({
         ...prev,
@@ -256,14 +399,22 @@ export default function PeriodSimulatorPage() {
         : [];
       setSessionId(result.sessionId ?? null);
       setLastMockState(null);
-      setCurrentSimTimeUtc(result.currentSimTimeUtc ?? `${startDate}T00:00:00`);
-      setTickBaseSimTimeUtc(
-        result.currentSimTimeUtc ?? `${startDate}T00:00:00`,
-      );
+      const initialSimUtc = result.currentSimTimeUtc ?? `${startDate}T00:00:00`;
+      const initialDurationMs =
+        result.duracionDiaSimuladoMs ?? DURATION_SIMULATED_DAY_MS;
+      setCurrentSimTimeUtc(initialSimUtc);
+      setTickBaseSimTimeUtc(initialSimUtc);
       setTickReceiptElapsedMs(0);
-      setSimulatedDayDurationMs(
-        result.duracionDiaSimuladoMs ?? DURATION_SIMULATED_DAY_MS,
-      );
+      setSimulatedDayDurationMs(initialDurationMs);
+
+      /* Anclar el reloj mutable que consume AirportMap. */
+      const initialSimMs = Date.parse(`${initialSimUtc}Z`);
+      simClockRef.current = {
+        baseSimMs: Number.isFinite(initialSimMs) ? initialSimMs : null,
+        baseRealMs: performance.now(),
+        speed: SIMULATED_DAY_MS / initialDurationMs,
+        running: true,
+      };
       setMapAirports(adaptedAirports);
       setMapFlights(adaptedFlights);
       setSimulationPanelData({
@@ -337,6 +488,12 @@ export default function PeriodSimulatorPage() {
       setTickReceiptElapsedMs(0);
       setMapAirports([]);
       setMapFlights([]);
+      simClockRef.current = {
+        baseSimMs: null,
+        baseRealMs: 0,
+        speed: 1,
+        running: false,
+      };
       setSimulationPanelData({
         airports: [],
         flights: [],
@@ -498,7 +655,7 @@ export default function PeriodSimulatorPage() {
       mapAutoload={false}
       airports={mapAirports}
       flights={mapFlights}
-      simulatedNowMs={simulatedNowMs}
+      simClockRef={simClockRef}
       date={simulationClock.date}
       time={`${simulationClock.time} ${simulationClock.timeZone}`}
       metrics={liveMetrics}

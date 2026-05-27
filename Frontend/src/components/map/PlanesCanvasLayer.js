@@ -59,6 +59,10 @@ export const PlanesCanvasLayer = L.Layer.extend({
   initialize(options = {}) {
     L.setOptions(this, options);
     this._planes = [];
+    this._routesRef = null;
+    this._simClockRef = null;
+    this._animating = false;
+    this._raf = null;
   },
 
   onAdd(map) {
@@ -84,6 +88,7 @@ export const PlanesCanvasLayer = L.Layer.extend({
   },
 
   onRemove(map) {
+    this._stopLoop();
     if (this._canvas) L.DomUtil.remove(this._canvas);
     map.off("moveend", this._reset, this);
     map.off("zoomend", this._reset, this);
@@ -94,11 +99,90 @@ export const PlanesCanvasLayer = L.Layer.extend({
   },
 
   /**
-   * Llamado desde React con la lista de aviones a dibujar.
-   * planes: [{ lat, lng, angle, color, key? }]
+   * API IMPERATIVA — el componente React entrega refs estables al layer y
+   * este maneja su propio requestAnimationFrame internamente. Asi la
+   * animacion sobrevive a re-renders de React y a desmontajes parciales
+   * del arbol siempre que el layer no se remueva del mapa.
+   */
+  setSources(routesRef, simClockRef) {
+    this._routesRef = routesRef || null;
+    this._simClockRef = simClockRef || null;
+    // Si no estamos animando, dibujamos un frame fijo con la posicion actual
+    // (util para mostrar planos congelados en pausa o despues de un tick).
+    if (!this._animating) {
+      this._computeAndDraw();
+    }
+  },
+
+  setAnimating(animating) {
+    const next = Boolean(animating);
+    if (next === this._animating) return;
+    this._animating = next;
+    if (next) {
+      this._startLoop();
+    } else {
+      this._stopLoop();
+      this._computeAndDraw(); // un frame final con posiciones congeladas
+    }
+  },
+
+  /**
+   * Legacy: API push (lista pre-computada de planos). Se mantiene por
+   * compatibilidad pero el camino preferido es setSources + setAnimating.
    */
   setPlanes(planes) {
     this._planes = planes || [];
+    this._draw();
+  },
+
+  _startLoop() {
+    if (this._raf) return;
+    const loop = () => {
+      this._computeAndDraw();
+      this._raf = requestAnimationFrame(loop);
+    };
+    this._raf = requestAnimationFrame(loop);
+  },
+
+  _stopLoop() {
+    if (this._raf) {
+      cancelAnimationFrame(this._raf);
+      this._raf = null;
+    }
+  },
+
+  /* Computa las posiciones de los aviones contra el reloj simulado y dibuja.
+   * Vive enteramente dentro del layer: no toca React. */
+  _computeAndDraw() {
+    const routes = this._routesRef ? this._routesRef.current : null;
+    const clock = this._simClockRef ? this._simClockRef.current : null;
+    if (!routes || routes.length === 0 || !clock || clock.baseSimMs == null) {
+      if (this._planes.length !== 0) {
+        this._planes = [];
+      }
+      this._draw();
+      return;
+    }
+    const speed = clock.speed || 1;
+    const simNow = clock.running
+      ? clock.baseSimMs + (performance.now() - clock.baseRealMs) * speed
+      : clock.baseSimMs;
+
+    const out = [];
+    for (let i = 0; i < routes.length; i++) {
+      const geo = routes[i];
+      const total = geo.arrMs - geo.depMs;
+      if (total <= 0) continue;
+      const p = (simNow - geo.depMs) / total;
+      if (p < 0 || p > 1) continue;
+      out.push({
+        lat: geo.origin.lat + geo.dLat * p,
+        lng: geo.origin.lng + geo.dLng * p,
+        angle: geo.planeAngle,
+        color: geo.color,
+      });
+    }
+    this._planes = out;
     this._draw();
   },
 
@@ -136,16 +220,25 @@ export const PlanesCanvasLayer = L.Layer.extend({
     const size = map.getSize();
     ctx.clearRect(0, 0, size.x, size.y);
 
+    /* Extraemos los limites como numeros una vez por frame: evita crear
+     * objetos LatLng dentro de bounds.contains() para cada avion. Con N
+     * aviones a 60 Hz son N*60 allocations menos por segundo. */
     const bounds = map.getBounds();
+    const minLat = bounds.getSouth();
+    const maxLat = bounds.getNorth();
+    const minLng = bounds.getWest();
+    const maxLng = bounds.getEast();
     const half = PLANE_DRAW_SIZE / 2;
+    const planes = this._planes;
+    const len = planes.length;
 
-    for (let i = 0; i < this._planes.length; i++) {
-      const plane = this._planes[i];
+    for (let i = 0; i < len; i++) {
+      const plane = planes[i];
       const lat = plane.lat;
       const lng = plane.lng;
 
-      // Virtualización gratis: si el avión no está visible, no lo dibujamos.
-      if (!bounds.contains([lat, lng])) continue;
+      // Virtualizacion: chequeo numerico inline (sin objetos LatLng).
+      if (lat < minLat || lat > maxLat || lng < minLng || lng > maxLng) continue;
 
       const offscreen = getOffscreenPlane(plane.color);
       if (!offscreen) continue;
