@@ -1,4 +1,4 @@
-import { memo, useEffect, useMemo, useRef, useState } from "react";
+import { useEffect, useMemo, useRef } from "react";
 import { MapContainer, TileLayer, Marker, Polyline, useMap } from "react-leaflet";
 import L from "leaflet";
 import { tokens, semaphoreColor } from "../../utils/tokens";
@@ -20,6 +20,9 @@ const flightLoadColor = (used, capacity) => {
   if (pct >= 60) return tokens.warning;
   return tokens.success;
 };
+
+const normalizeStatus = (status) =>
+  String(status ?? "").trim().toUpperCase().replace(/\s+/g, "_");
 
 /* Cache global de iconos de aeropuerto. Como casi nunca cambian de status
  * y son pocos, el cache hit-rate es ~100% y evita que Leaflet recree el DOM. */
@@ -56,6 +59,7 @@ const pickFlightsToAnimate = (flights, airportsByIata, limit) => {
   const seen = new Set();
   const out = [];
   for (const f of flights) {
+    if (normalizeStatus(f.status) === "CANCELADO") continue;
     if (!airportsByIata.has(f.origin) || !airportsByIata.has(f.dest)) continue;
     const key = `${f.origin}-${f.dest}`;
     if (seen.has(key)) continue;
@@ -66,8 +70,8 @@ const pickFlightsToAnimate = (flights, airportsByIata, limit) => {
   return out;
 };
 
-/* Sub-componente que monta el canvas layer y le pasa la lista de aviones. */
-function PlanesCanvasOverlay({ planes }) {
+/* Sub-componente que monta y anima el canvas layer sin pasar por React state. */
+function PlanesCanvasOverlay({ routesGeometry }) {
   const map = useMap();
   const layerRef = useRef(null);
 
@@ -76,14 +80,29 @@ function PlanesCanvasOverlay({ planes }) {
     layer.addTo(map);
     layerRef.current = layer;
     return () => {
-      map.removeLayer(layer);
       layerRef.current = null;
+      try {
+        if (map?.hasLayer?.(layer)) {
+          map.removeLayer(layer);
+        } else {
+          layer.remove?.();
+        }
+      } catch (error) {
+        console.warn("[AirportMap] No se pudo desmontar la capa de aviones:", error);
+      }
     };
   }, [map]);
 
   useEffect(() => {
-    if (layerRef.current) layerRef.current.setPlanes(planes);
-  }, [planes]);
+    const layer = layerRef.current;
+    if (!layer) return undefined;
+
+    layer.startAnimation(routesGeometry);
+
+    return () => {
+      layer.stopAnimation();
+    };
+  }, [routesGeometry]);
 
   return null;
 }
@@ -141,72 +160,6 @@ function AirportMap({
     });
   }, [flights, airportsByIata]);
 
-  /* Animación decorativa: cada vuelo arranca con un progreso aleatorio
-   * y avanza con dt. NO usamos setState para el progress (evita re-renders
-   * 60 veces por segundo) — lo guardamos en un ref y empujamos directamente
-   * la lista de aviones al canvas layer. */
-  const layerSetterRef = useRef(null);
-  const progressesRef = useRef([]);
-
-  // Reset de progresos cuando cambia la cantidad de rutas
-  useEffect(() => {
-    progressesRef.current = routesGeometry.map(() => Math.random());
-  }, [routesGeometry.length]);
-
-  /* El raf actualiza progress + computa lista de aviones + la entrega al
-   * canvas layer SIN tocar React state. Resultado: el componente AirportMap
-   * casi no re-renderiza, y todo el costo se concentra en un drawImage
-   * por avión sobre un único <canvas>. */
-  const [planes, setPlanes] = useState([]);
-
-  useEffect(() => {
-    if (routesGeometry.length === 0) {
-      setPlanes([]);
-      return undefined;
-    }
-
-    let raf;
-    let lastTime = performance.now();
-    // Throttle a ~30fps: a escala de mapa mundial el ojo no nota más,
-    // y reducimos a la mitad la carga de actualización.
-    const FRAME_BUDGET_MS = 33;
-    let acc = 0;
-
-    const tick = (time) => {
-      const dt = time - lastTime;
-      lastTime = time;
-      acc += dt;
-
-      // Avanzar progresos siempre (movimiento suave acumulado)
-      const arr = progressesRef.current;
-      for (let i = 0; i < arr.length; i++) {
-        arr[i] = (arr[i] + dt * 0.00005) % 1;
-      }
-
-      // Pero solo enviamos al canvas/state cuando toca un frame
-      if (acc >= FRAME_BUDGET_MS) {
-        acc = 0;
-        const next = new Array(routesGeometry.length);
-        for (let i = 0; i < routesGeometry.length; i++) {
-          const geo = routesGeometry[i];
-          const p = arr[i];
-          next[i] = {
-            lat: geo.origin.lat + geo.dLat * p,
-            lng: geo.origin.lng + geo.dLng * p,
-            angle: geo.planeAngle,
-            color: geo.color,
-          };
-        }
-        setPlanes(next);
-      }
-
-      raf = requestAnimationFrame(tick);
-    };
-
-    raf = requestAnimationFrame(tick);
-    return () => cancelAnimationFrame(raf);
-  }, [routesGeometry]);
-
   const airportList = useMemo(() => Array.from(airportsByIata.values()), [airportsByIata]);
 
   return (
@@ -238,7 +191,7 @@ function AirportMap({
           ))}
 
         {/* Aviones en UN solo canvas (en vez de N markers DOM) */}
-        {showFlights && <PlanesCanvasOverlay planes={planes} />}
+        {showFlights && <PlanesCanvasOverlay routesGeometry={routesGeometry} />}
 
         {/* Aeropuertos siguen siendo markers DOM (son pocos y no se mueven) */}
         {airportList.map((airport) => (
@@ -253,4 +206,4 @@ function AirportMap({
   );
 }
 
-export default memo(AirportMap);
+export default AirportMap;

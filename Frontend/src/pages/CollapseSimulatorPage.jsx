@@ -21,19 +21,18 @@ const ESTADO_BACK_A_LOCAL = {
   FINALIZADA: "collapsed",
 };
 
-const emptySimulationPanelData = {
-  airports: [],
-  flights: [],
-  orders: [],
-  bags: [],
-  routes: [],
-  loaded: false,
+const emptyMetrics = {
+  bagsInTransit: 0,
+  bagsDelivered: 0,
+  bagsUnassigned: 0,
+  activeFlights: 0,
+  freeCapacityPct: 0,
 };
 
 export default function CollapseSimulatorPage() {
   const toast = useToast();
   const publish = useStompPublish();
-  const { setSimulationPanelData } = useOutletContext();
+  const { resetSimulationPanelData } = useOutletContext();
 
   const [startDate, setStartDate] = useState(() => new Date().toISOString().slice(0, 10));
   const [sessionId, setSessionId] = useState(null);
@@ -41,13 +40,12 @@ export default function CollapseSimulatorPage() {
   const [runId, setRunId] = useState(0);
 
   const clearSimulationData = () => {
-    setSimulationPanelData(emptySimulationPanelData);
+    resetSimulationPanelData();
   };
 
   useEffect(() => {
     clearSimulationData();
-    return clearSimulationData;
-  }, [setSimulationPanelData]);
+  }, []); // eslint-disable-line react-hooks/exhaustive-deps
 
   /* ============ Modo real: STOMP ============ */
   const tickTopic   = !USE_MOCK && sessionId ? `/topic/simulacion/colapso/${sessionId}` : null;
@@ -108,6 +106,7 @@ export default function CollapseSimulatorPage() {
 
   /* Metricas en vivo solo desde tick WS (cero polling de /status) */
   const liveMetrics = useMemo(() => {
+    if (!hasActiveRun) return emptyMetrics;
     if (USE_MOCK || !tick) return undefined;
     return {
       bagsInTransit:   tick.maletasEnTransito ?? 0,
@@ -116,7 +115,7 @@ export default function CollapseSimulatorPage() {
       activeFlights:   tick.vuelosActivos ?? 0,
       freeCapacityPct: Math.max(0, Math.min(100, 100 - (tick.porcentajeSaturacion ?? 0) * 100)),
     };
-  }, [tick]);
+  }, [tick, hasActiveRun]);
 
   const handleStart = async () => {
     try {
@@ -134,15 +133,15 @@ export default function CollapseSimulatorPage() {
   };
 
   const handleStop = async () => {
+    setSimStatus("idle");
+    setSessionId(null);
+    clearSimulationData();
     try {
       if (USE_MOCK) {
         await stopCollapseSim();
-        setSimStatus("idle");
-        setSessionId(null);
       } else {
         await publish("/app/simulacion/colapso/detener", { sessionId });
       }
-      clearSimulationData();
       toast.push({ type: "warning", title: "Simulación detenida" });
     } catch (err) {
       toast.push({ type: "error", title: "No se pudo detener", message: err.message });

@@ -1,4 +1,5 @@
 import { CheckCircle2, CircleAlert, Luggage, Plane, Warehouse } from "lucide-react";
+import { useLocation } from "react-router-dom";
 import AirportMap from "../map/AirportMap";
 
 /**
@@ -25,6 +26,7 @@ export default function MapDashboard({
   time = "12:34:16 UTC",
   metrics = {},
 }) {
+  const location = useLocation();
   // Cuando no hay tick del back todavia, los KPIs muestran 0. NUNCA hardcodear
   // valores "demo" — eso confunde al usuario haciendole creer que son datos reales.
   const {
@@ -83,6 +85,7 @@ export default function MapDashboard({
       <div className="flex-1 relative w-full h-full bg-canvas p-2 sm:p-4 min-h-0">
         <div className="w-full h-full rounded-2xl overflow-hidden relative shadow-[0_0_40px_rgba(0,0,0,0.5)] border border-slate-700/50">
           <AirportMap
+            key={location.pathname}
             showFlights={showMapFlights}
             showRouteLines={showMapRouteLines}
             airports={airports}

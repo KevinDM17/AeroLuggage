@@ -28,7 +28,7 @@ import {
 
 export const iniciarSimulacionPeriodo = (payload) =>
   USE_MOCK
-    ? mockStartPeriodSim(payload.fechaInicio)
+    ? mockStartPeriodSim(payload.fechaHoraInicio ?? payload.fechaInicio)
     : apiPost("/simulacion/periodo/iniciar", payload);
 
 export const obtenerSnapshotSimulacionPeriodo = (sessionId) =>

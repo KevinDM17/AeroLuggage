@@ -16,23 +16,14 @@ import { USE_MOCK } from "../api/client";
 const TOTAL_DIAS_VIVO = 9999;
 const TICK_MS = 500;
 
-const emptySimulationPanelData = {
-  airports: [],
-  flights: [],
-  orders: [],
-  bags: [],
-  routes: [],
-  loaded: false,
-};
-
 export default function SimulatorPage() {
   const publish = useStompPublish();
-  const { setSimulationPanelData } = useOutletContext();
+  const { resetSimulationPanelData } = useOutletContext();
   const [sessionId, setSessionId] = useState(null);
   const sessionIdRef = useRef(null);
 
   const clearSimulationData = () => {
-    setSimulationPanelData(emptySimulationPanelData);
+    resetSimulationPanelData();
   };
 
   /* Auto-iniciar sesión "día a día" en el back al montar */
@@ -62,7 +53,6 @@ export default function SimulatorPage() {
       if (sid && !USE_MOCK) {
         publish("/app/simulacion/periodo/detener", { sessionId: sid }).catch(() => {});
       }
-      clearSimulationData();
     };
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);

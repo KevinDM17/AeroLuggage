@@ -1,13 +1,14 @@
 import { useEffect, useMemo, useState } from "react";
 import { useLocation } from "react-router-dom";
-import { Filter, PanelRightClose, MapPin, Globe, Info, ChevronDown, Plane, RefreshCw } from "lucide-react";
+import { Ban, Filter, PanelRightClose, MapPin, Globe, Info, ChevronDown, Plane, RefreshCw } from "lucide-react";
 import { useFetch } from "../../hooks/useFetch";
-import { listFlights } from "../../api/flights";
+import { cancelFlight, listFlights } from "../../api/flights";
 import { listOrders } from "../../api/orders";
 import { listAirports } from "../../api/airports";
 import { listMaletas } from "../../api/maletas";
 import { listRutas } from "../../api/rutas";
 import { LoadingState, EmptyState, ErrorState } from "../ui/States";
+import { useToast } from "../ui/Toast";
 
 const FLIGHT_STATUS_FILTERS = [
   { value: "ALL", label: "Todos" },
@@ -27,6 +28,7 @@ const PANEL_TABS = [
 
 const flightStatusColor = (s) => {
   switch ((s ?? "").toUpperCase().replace(/_/g, " ")) {
+    case "PROGRAMADO": return "bg-info text-slate-900";
     case "EN PROGRESO": return "bg-warning text-yellow-900";
     case "CONFIRMADO": return "bg-indigo-600 text-white";
     case "CANCELADO": return "bg-danger text-white";
@@ -63,9 +65,12 @@ const routeStatusColor = (s) => {
   }
 };
 
-function FlightItem({ flight }) {
+function FlightItem({ flight, onCancel, canceling }) {
   const [expanded, setExpanded] = useState(false);
   const pct = flight.capacity > 0 ? Math.round((flight.used / flight.capacity) * 100) : 0;
+  const normalizedStatus = normalizeFlightStatus(flight.status);
+  const canCancel = normalizedStatus === "PROGRAMADO";
+
   return (
     <div className="flex flex-col border-b border-slate-800/50 pb-4 mb-4 last:border-0 last:pb-0 cursor-pointer" onClick={() => setExpanded(!expanded)}>
       <div className="flex justify-between items-start mb-2">
@@ -75,9 +80,25 @@ function FlightItem({ flight }) {
             Capacidad: {flight.used}/{flight.capacity}
           </div>
         </div>
-        <span className={`text-[10px] font-bold px-2 py-1 rounded tracking-wider ${flightStatusColor(flight.status === "En progreso" ? "EN PROGRESO" : flight.status?.toUpperCase())}`}>
-          {(flight.status ?? "").toUpperCase().replace(/_/g, " ")}
-        </span>
+        <div className="flex flex-col items-end gap-2">
+          <span className={`text-[10px] font-bold px-2 py-1 rounded tracking-wider ${flightStatusColor(normalizedStatus)}`}>
+            {normalizedStatus.replace(/_/g, " ")}
+          </span>
+          {canCancel && (
+            <button
+              type="button"
+              onClick={(event) => {
+                event.stopPropagation();
+                onCancel?.(flight);
+              }}
+              disabled={canceling}
+              className="inline-flex items-center gap-1.5 rounded-md border border-danger/40 bg-danger/10 px-2 py-1 text-[10px] font-bold uppercase tracking-wide text-danger transition-colors hover:bg-danger/20 disabled:cursor-not-allowed disabled:opacity-60"
+            >
+              <Ban className="h-3.5 w-3.5" />
+              {canceling ? "Cancelando" : "Cancelar"}
+            </button>
+          )}
+        </div>
       </div>
       {expanded && (
         <div onClick={(e) => e.stopPropagation()} className="cursor-default text-xs text-slate-400">
@@ -338,14 +359,29 @@ function normalizeFlightStatus(status) {
     .replace(/\s+/g, "_");
 }
 
-export default function RightPanel({ onClose, simulationPanelData }) {
+export default function RightPanel({
+  onClose,
+  simulationPanelData,
+  setSimulationPanelData,
+  setCancelledFlightIds,
+}) {
+  const toast = useToast();
   const [activeTab, setActiveTab] = useState("flights");
   const [query, setQuery] = useState("");
   const [flightStatusFilter, setFlightStatusFilter] = useState("ALL");
-  const [visibleFlights, setVisibleFlights] = useState([]);
+  const [cancelingFlightId, setCancelingFlightId] = useState(null);
   const location = useLocation();
   const isSimulator = location.pathname === "/" || location.pathname.startsWith("/simulator");
+  const simulationLoaded = !isSimulator || simulationPanelData?.loaded === true;
   const activeTabLabel = PANEL_TABS.find((tab) => tab.id === activeTab)?.label ?? "";
+
+  useEffect(() => {
+    if (!isSimulator || simulationLoaded) return;
+    setActiveTab("flights");
+    setQuery("");
+    setFlightStatusFilter("ALL");
+    setCancelingFlightId(null);
+  }, [isSimulator, simulationLoaded]);
 
   const onTabChange = (tab) => {
     setActiveTab(tab);
@@ -361,11 +397,11 @@ export default function RightPanel({ onClose, simulationPanelData }) {
   const maletasFetch = useFetch(() => (isSimulator ? Promise.resolve([]) : listMaletas()), [isSimulator]);
   const rutasFetch = useFetch(() => (isSimulator ? Promise.resolve([]) : listRutas()), [isSimulator]);
 
-  const flights = isSimulator ? createStaticSource(simulationPanelData?.flights ?? []) : flightsFetch;
-  const airports = isSimulator ? createStaticSource(simulationPanelData?.airports ?? []) : airportsFetch;
-  const orders = isSimulator ? createStaticSource(simulationPanelData?.orders ?? []) : ordersFetch;
-  const maletas = isSimulator ? createStaticSource(simulationPanelData?.bags ?? []) : maletasFetch;
-  const rutas = isSimulator ? createStaticSource(simulationPanelData?.routes ?? []) : rutasFetch;
+  const flights = isSimulator ? createStaticSource(simulationLoaded ? simulationPanelData?.flights ?? [] : []) : flightsFetch;
+  const airports = isSimulator ? createStaticSource(simulationLoaded ? simulationPanelData?.airports ?? [] : []) : airportsFetch;
+  const orders = isSimulator ? createStaticSource(simulationLoaded ? simulationPanelData?.orders ?? [] : []) : ordersFetch;
+  const maletas = isSimulator ? createStaticSource(simulationLoaded ? simulationPanelData?.bags ?? [] : []) : maletasFetch;
+  const rutas = isSimulator ? createStaticSource(simulationLoaded ? simulationPanelData?.routes ?? [] : []) : rutasFetch;
 
   const activeSource = {
     flights,
@@ -381,13 +417,57 @@ export default function RightPanel({ onClose, simulationPanelData }) {
     return rows.filter((r) => fields.some((f) => String(r[f] ?? "").toLowerCase().includes(q)));
   };
 
-  useEffect(() => {
+  const visibleFlights = useMemo(() => {
     const sourceFlights = Array.isArray(flights.data) ? flights.data : [];
     const byStatus = flightStatusFilter === "ALL"
       ? sourceFlights
       : sourceFlights.filter((flight) => normalizeFlightStatus(flight?.status) === flightStatusFilter);
-    setVisibleFlights(sortFlightsByDepartureAsc(byStatus));
+    return sortFlightsByDepartureAsc(byStatus);
   }, [flights.data, flightStatusFilter]);
+
+  const markFlightAsCanceled = (flightId) => {
+    setCancelledFlightIds?.((previous) => {
+      const next = new Set(previous);
+      next.add(flightId);
+      return next;
+    });
+    setSimulationPanelData?.((previous) => ({
+      ...previous,
+      flights: (previous?.flights ?? []).map((flight) =>
+        flight.id === flightId
+          ? { ...flight, status: "CANCELADO", used: 0 }
+          : flight,
+      ),
+    }));
+  };
+
+  const handleCancelFlight = async (flight) => {
+    const flightId = flight?.id;
+    if (!flightId) return;
+
+    setCancelingFlightId(flightId);
+    try {
+      if (isSimulator) {
+        markFlightAsCanceled(flightId);
+      } else {
+        await cancelFlight(flightId);
+        await flightsFetch.refetch();
+      }
+      toast.push({
+        type: "warning",
+        title: "Vuelo cancelado",
+        message: flightId,
+      });
+    } catch (err) {
+      toast.push({
+        type: "error",
+        title: "No se pudo cancelar el vuelo",
+        message: err.message,
+      });
+    } finally {
+      setCancelingFlightId(null);
+    }
+  };
 
   const ordersFiltered = useMemo(() => filterByText(orders.data ?? [], ["id", "idPedido", "clientId", "idCliente", "origin", "dest", "status", "estado"]), [orders.data, query]);
   const airportsFiltered = useMemo(() => filterByText(airports.data ?? [], ["iata", "city", "continent"]), [airports.data, query]);
@@ -400,7 +480,14 @@ export default function RightPanel({ onClose, simulationPanelData }) {
         {...flights}
         empty="Ejecuta la simulacion para cargar los vuelos del periodo."
         rows={visibleFlights}
-        renderItem={(f, index) => <FlightItem key={f.id ?? `${f.origin}-${f.dest}-${index}`} flight={f} />}
+        renderItem={(f, index) => (
+          <FlightItem
+            key={f.id ?? `${f.origin}-${f.dest}-${index}`}
+            flight={f}
+            onCancel={handleCancelFlight}
+            canceling={cancelingFlightId === f.id}
+          />
+        )}
       />
     ),
     orders: (
@@ -504,7 +591,7 @@ export default function RightPanel({ onClose, simulationPanelData }) {
         </button>
       </div>
 
-      <div key={activeTab} className="flex-1 overflow-y-auto px-4 py-4 no-scrollbar">
+      <div key={`${activeTab}-${simulationLoaded ? "loaded" : "empty"}`} className="flex-1 overflow-y-auto px-4 py-4 no-scrollbar">
         {tabContent}
       </div>
 

@@ -1,19 +1,55 @@
 import { cn } from "../../utils/cn";
-import { Link, useLocation } from "react-router-dom";
-import { PanelLeftClose, RotateCw, Spline, Calendar, Clock, Plane, Building, Package } from "lucide-react";
+import { useLocation, useNavigate } from "react-router-dom";
+import {
+  PanelLeftClose,
+  RotateCw,
+  Spline,
+  Calendar,
+  Clock,
+  Plane,
+  Building,
+  Package,
+} from "lucide-react";
 
-export default function Sidebar({ onClose }) {
+export default function Sidebar({ onClose, closeOnNavigate = false }) {
   const location = useLocation();
+  const navigate = useNavigate();
+
+  const handleNavigate = (to) => {
+    if (location.pathname !== to) {
+      navigate(to);
+    }
+    if (closeOnNavigate) onClose?.();
+  };
+
+  const navItemClass = (isActive, nested = false) =>
+    cn(
+      "flex w-full items-center gap-3 rounded-lg px-3 py-2 text-left transition-colors",
+      nested ? "text-sm" : "",
+      isActive
+        ? "bg-blue-600/20 text-blue-400"
+        : nested
+          ? "bg-surface-2 text-slate-300 hover:bg-slate-800"
+          : "text-slate-400 hover:bg-slate-800 hover:text-slate-300",
+    );
 
   return (
     <div className="w-64 shrink-0 bg-surface-1 border-r border-slate-800 h-screen flex flex-col text-slate-300 relative z-[9999]">
       <div className="px-4 py-5 flex items-center justify-between gap-2 border-b border-transparent">
         <div className="flex items-center gap-3 min-w-0">
           <div className="text-blue-500 shrink-0">
-            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" className="w-7 h-7">
-              <path d="M21 16V8a2 2 0 0 0-1-1.73l-7-4a2 2 0 0 0-2 0l-7 4A2 2 0 0 0 3 8v8a2 2 0 0 0 1 1.73l7 4a2 2 0 0 0 2 0l7-4A2 2 0 0 0 21 16z"></path>
-              <polyline points="3.27 6.96 12 12.01 20.73 6.96"></polyline>
-              <line x1="12" y1="22.08" x2="12" y2="12"></line>
+            <svg
+              viewBox="0 0 24 24"
+              fill="none"
+              stroke="currentColor"
+              strokeWidth="2"
+              strokeLinecap="round"
+              strokeLinejoin="round"
+              className="w-7 h-7"
+            >
+              <path d="M21 16V8a2 2 0 0 0-1-1.73l-7-4a2 2 0 0 0-2 0l-7 4A2 2 0 0 0 3 8v8a2 2 0 0 0 1 1.73l7 4a2 2 0 0 0 2 0l7-4A2 2 0 0 0 21 16z" />
+              <polyline points="3.27 6.96 12 12.01 20.73 6.96" />
+              <line x1="12" y1="22.08" x2="12" y2="12" />
             </svg>
           </div>
           <span className="text-lg font-bold text-white tracking-wide truncate">AeroLuggage</span>
@@ -22,7 +58,7 @@ export default function Sidebar({ onClose }) {
           <button
             type="button"
             onClick={onClose}
-            aria-label="Cerrar menú lateral"
+            aria-label="Cerrar menu lateral"
             className="shrink-0 p-1.5 hover:bg-slate-800 rounded text-slate-400 hover:text-white transition-colors"
           >
             <PanelLeftClose className="w-5 h-5" />
@@ -31,13 +67,14 @@ export default function Sidebar({ onClose }) {
       </div>
 
       <nav className="flex-1 py-2 px-3 space-y-1 overflow-y-auto">
-        <Link
-          to="/"
-          className={cn("flex items-center gap-3 px-3 py-2 rounded-lg transition-colors duration-200", location.pathname === '/' ? "bg-blue-600/20 text-blue-400" : "text-slate-400 hover:bg-slate-800 hover:text-slate-300")}
+        <button
+          type="button"
+          onClick={() => handleNavigate("/")}
+          className={navItemClass(location.pathname === "/")}
         >
           <RotateCw className="w-4 h-4" />
-          <span className="font-medium text-sm">Operaciones día a día</span>
-        </Link>
+          <span className="font-medium text-sm">Operaciones dia a dia</span>
+        </button>
 
         <div className="pt-2">
           <div className="flex items-center gap-3 px-3 py-2 text-slate-400">
@@ -45,46 +82,50 @@ export default function Sidebar({ onClose }) {
             <span className="font-medium text-sm">Simulaciones</span>
           </div>
           <div className="flex flex-col gap-1 ml-[1.65rem] mt-1 pr-3 border-l border-slate-800 pl-4">
-            <Link
-              to="/simulator/period"
-              className={cn(
-                "flex items-center gap-3 px-3 py-2 rounded-lg transition-colors text-sm",
-                location.pathname === "/simulator/period"
-                  ? "bg-blue-600/20 text-blue-400"
-                  : "bg-surface-2 text-slate-300 hover:bg-slate-800"
-              )}
+            <button
+              type="button"
+              onClick={() => handleNavigate("/simulator/period")}
+              className={navItemClass(location.pathname === "/simulator/period", true)}
             >
               <Calendar className="w-4 h-4 text-blue-500" />
               Por periodo
-            </Link>
-            <Link
-              to="/simulator/collapse"
-              className={cn(
-                "flex items-center gap-3 px-3 py-2 rounded-lg transition-colors text-sm",
-                location.pathname === "/simulator/collapse"
-                  ? "bg-blue-600/20 text-blue-400"
-                  : "bg-surface-2 text-slate-300 hover:bg-slate-800"
-              )}
+            </button>
+            <button
+              type="button"
+              onClick={() => handleNavigate("/simulator/collapse")}
+              className={navItemClass(location.pathname === "/simulator/collapse", true)}
             >
               <Clock className="w-4 h-4 text-blue-500" />
               Hasta colapso
-            </Link>
+            </button>
           </div>
         </div>
 
         <div className="space-y-1 pt-2">
-          <Link to="/airports" className={cn("flex items-center gap-3 px-3 py-2 rounded-lg transition-colors text-sm", location.pathname === '/airports' ? "bg-blue-600/20 text-blue-400" : "text-slate-400 hover:bg-slate-800 hover:text-slate-300")}>
+          <button
+            type="button"
+            onClick={() => handleNavigate("/airports")}
+            className={navItemClass(location.pathname === "/airports")}
+          >
             <Building className="w-4 h-4" />
             <span className="font-medium">Aeropuertos</span>
-          </Link>
-          <Link to="/flights" className={cn("flex items-center gap-3 px-3 py-2 rounded-lg transition-colors text-sm", location.pathname === '/flights' ? "bg-blue-600/20 text-blue-400" : "text-slate-400 hover:bg-slate-800 hover:text-slate-300")}>
+          </button>
+          <button
+            type="button"
+            onClick={() => handleNavigate("/flights")}
+            className={navItemClass(location.pathname === "/flights")}
+          >
             <Plane className="w-4 h-4" />
             <span className="font-medium">Vuelos</span>
-          </Link>
-          <Link to="/orders" className={cn("flex items-center gap-3 px-3 py-2 rounded-lg transition-colors text-sm", location.pathname === '/orders' ? "bg-blue-600/20 text-blue-400" : "text-slate-400 hover:bg-slate-800 hover:text-slate-300")}>
+          </button>
+          <button
+            type="button"
+            onClick={() => handleNavigate("/orders")}
+            className={navItemClass(location.pathname === "/orders")}
+          >
             <Package className="w-4 h-4" />
             <span className="font-medium">Pedidos</span>
-          </Link>
+          </button>
         </div>
       </nav>
 

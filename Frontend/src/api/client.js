@@ -4,6 +4,7 @@
  */
 
 const BASE_URL = import.meta.env.BACKEND_API_BASE_URL ?? "http://localhost:8080/api";
+const REQUEST_TIMEOUT_MS = 60_000;
 
 export const USE_MOCK = import.meta.env.VITE_USE_MOCK === "true";
 
@@ -18,8 +19,11 @@ export class ApiError extends Error {
 
 async function request(method, path, body) {
   const url = `${BASE_URL}${path}`;
+  const controller = new AbortController();
+  const timeoutId = window.setTimeout(() => controller.abort(), REQUEST_TIMEOUT_MS);
   const init = {
     method,
+    signal: controller.signal,
     headers: { "Content-Type": "application/json", Accept: "application/json" },
   };
   if (body !== undefined) init.body = JSON.stringify(body);
@@ -28,7 +32,12 @@ async function request(method, path, body) {
   try {
     res = await fetch(url, init);
   } catch (e) {
+    if (e?.name === "AbortError") {
+      throw new ApiError(`Tiempo de espera agotado al conectar con ${url}`, { status: 0 });
+    }
     throw new ApiError(`No se pudo conectar con ${url}`, { status: 0 });
+  } finally {
+    window.clearTimeout(timeoutId);
   }
 
   const text = await res.text();

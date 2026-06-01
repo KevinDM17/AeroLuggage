@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useState } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
 import { useOutletContext } from "react-router-dom";
 import { Play, Square, RotateCw } from "lucide-react";
 import MapDashboard from "../components/simulator/MapDashboard";
@@ -53,23 +53,28 @@ const getDisplayedDay = (progress, hasActiveRun) => {
   return clamp(Math.ceil((progress / 100) * PERIOD_DAYS), 1, PERIOD_DAYS);
 };
 
-const emptySimulationPanelData = {
-  airports: [],
-  flights: [],
-  orders: [],
-  bags: [],
-  routes: [],
-  loaded: false,
+const emptyMetrics = {
+  bagsInTransit: 0,
+  bagsDelivered: 0,
+  bagsUnassigned: 0,
+  activeFlights: 0,
+  freeCapacityPct: 0,
 };
 
 export default function PeriodSimulatorPage() {
   const toast = useToast();
   const publish = useStompPublish();
-  const { setSimulationPanelData } = useOutletContext();
+  const {
+    setSimulationPanelData,
+    resetSimulationPanelData,
+    cancelledFlightIds,
+    setCancelledFlightIds,
+  } = useOutletContext();
 
   const [startDate, setStartDate] = useState(() =>
     new Date().toISOString().slice(0, 10),
   );
+  const [startTime, setStartTime] = useState("00:00");
   const [sessionId, setSessionId] = useState(null);
   const [simStatus, setSimStatus] = useState("idle");
   const [runId, setRunId] = useState(0);
@@ -83,19 +88,24 @@ export default function PeriodSimulatorPage() {
   );
   const [tickBaseSimTimeUtc, setTickBaseSimTimeUtc] = useState(null);
   const [tickReceiptElapsedMs, setTickReceiptElapsedMs] = useState(0);
+  const ignoreTicksRef = useRef(true);
 
   const clearSimulationData = () => {
     setMapAirports([]);
     setMapFlights([]);
-    setSimulationPanelData(emptySimulationPanelData);
+    resetSimulationPanelData();
   };
 
+  const applyCancelledFlights = (flights) =>
+    flights.map((flight) =>
+      cancelledFlightIds?.has(flight.id)
+        ? { ...flight, status: "CANCELADO", used: 0 }
+        : flight,
+    );
+
   useEffect(() => {
-    setSimulationPanelData(emptySimulationPanelData);
-    return () => {
-      setSimulationPanelData(emptySimulationPanelData);
-    };
-  }, [setSimulationPanelData]);
+    resetSimulationPanelData();
+  }, []); // eslint-disable-line react-hooks/exhaustive-deps
 
   const tickTopic =
     !USE_MOCK && sessionId ? `/topic/simulacion/${sessionId}` : null;
@@ -117,6 +127,9 @@ export default function PeriodSimulatorPage() {
   );
   const hasActiveRun =
     simStatus === "running" || simStatus === "paused" || simStatus === "done";
+  const isStarting = simStatus === "starting";
+  const isSimulationLocked =
+    isStarting || simStatus === "running" || simStatus === "paused";
 
   useEffect(() => {
     if (USE_MOCK) {
@@ -143,6 +156,7 @@ export default function PeriodSimulatorPage() {
       });
     }
     if (estadoMessage.estado === "DETENIDA") {
+      ignoreTicksRef.current = true;
       setSessionId(null);
       setCurrentSimTimeUtc(null);
       setTickBaseSimTimeUtc(null);
@@ -161,13 +175,15 @@ export default function PeriodSimulatorPage() {
   }, [executionElapsedMs, mockState, lastMockState, simulatedDayDurationMs]);
 
   useEffect(() => {
-    if (simStatus === "idle") return;
+    if (ignoreTicksRef.current || simStatus === "idle" || isStarting) return;
     if (!tick?.currentSimTimeUtc) return;
     setCurrentSimTimeUtc(tick.currentSimTimeUtc);
     setTickBaseSimTimeUtc(tick.currentSimTimeUtc);
     setTickReceiptElapsedMs(executionElapsedMs);
     if (Array.isArray(tick.vuelosInstancia)) {
-      const adaptedFlights = tick.vuelosInstancia.map(adaptFlightInstance);
+      const adaptedFlights = applyCancelledFlights(
+        tick.vuelosInstancia.map(adaptFlightInstance),
+      );
       const adaptedAirports = Array.isArray(tick.aeropuertos)
         ? tick.aeropuertos.map(adaptAirport)
         : null;
@@ -193,7 +209,7 @@ export default function PeriodSimulatorPage() {
         loaded: true,
       }));
     }
-  }, [tick, executionElapsedMs, simStatus]); // eslint-disable-line react-hooks/exhaustive-deps
+  }, [tick, executionElapsedMs, simStatus, cancelledFlightIds]); // eslint-disable-line react-hooks/exhaustive-deps
 
   const simulatedNowMs = useMemo(() => {
     const base = tickBaseSimTimeUtc ?? currentSimTimeUtc;
@@ -226,6 +242,7 @@ export default function PeriodSimulatorPage() {
   }, [simulatedNowMs]);
 
   const liveMetrics = useMemo(() => {
+    if (!hasActiveRun) return emptyMetrics;
     if (USE_MOCK) {
       return mockState
         ? {
@@ -246,12 +263,29 @@ export default function PeriodSimulatorPage() {
       activeFlights: tick.vuelosActivos ?? 0,
       freeCapacityPct: tick.capacidadLibrePct ?? 0,
     };
-  }, [tick, mockState]);
+  }, [tick, mockState, hasActiveRun]);
 
   const handleStart = async () => {
+    const startDateTime = `${startDate}T${startTime || "00:00"}:00`;
+    ignoreTicksRef.current = true;
+    setSimStatus("starting");
+    setSessionId(null);
+    setCurrentSimTimeUtc(null);
+    setTickBaseSimTimeUtc(null);
+    setTickReceiptElapsedMs(0);
+    clearSimulationData();
+    toast.push({
+      type: "info",
+      title: "Iniciando simulación",
+      message: `Preparando datos desde ${startDate} ${startTime || "00:00"}.`,
+      duration: 2500,
+    });
+
     try {
       const result = await iniciarSimulacionPeriodo({
         fechaInicio: startDate,
+        horaInicio: startTime || "00:00",
+        fechaHoraInicio: startDateTime,
         totalDias: PERIOD_DAYS,
         duracionDiaSimuladoMs: DURATION_SIMULATED_DAY_MS,
       });
@@ -261,11 +295,13 @@ export default function PeriodSimulatorPage() {
       const adaptedFlights = Array.isArray(result.vuelosInstancia)
         ? result.vuelosInstancia.map(adaptFlightInstance)
         : [];
+      setCancelledFlightIds(new Set());
+      ignoreTicksRef.current = false;
       setSessionId(result.sessionId ?? null);
       setLastMockState(null);
-      setCurrentSimTimeUtc(result.currentSimTimeUtc ?? `${startDate}T00:00:00`);
+      setCurrentSimTimeUtc(result.currentSimTimeUtc ?? startDateTime);
       setTickBaseSimTimeUtc(
-        result.currentSimTimeUtc ?? `${startDate}T00:00:00`,
+        result.currentSimTimeUtc ?? startDateTime,
       );
       setTickReceiptElapsedMs(0);
       setSimulatedDayDurationMs(
@@ -290,9 +326,16 @@ export default function PeriodSimulatorPage() {
       toast.push({
         type: "info",
         title: "Simulación iniciada",
-        message: `Inicio: ${startDate} · ${PERIOD_DAYS} días`,
+        message: `Inicio: ${startDate} ${startTime || "00:00"} · ${PERIOD_DAYS} días`,
       });
     } catch (err) {
+      ignoreTicksRef.current = true;
+      setSimStatus("idle");
+      setSessionId(null);
+      setCurrentSimTimeUtc(null);
+      setTickBaseSimTimeUtc(null);
+      setTickReceiptElapsedMs(0);
+      clearSimulationData();
       toast.push({
         type: "error",
         title: "No se pudo iniciar",
@@ -315,18 +358,19 @@ export default function PeriodSimulatorPage() {
   };
 
   const handleStop = async () => {
+    ignoreTicksRef.current = true;
+    setSimStatus("idle");
+    setSessionId(null);
+    setCurrentSimTimeUtc(null);
+    setTickBaseSimTimeUtc(null);
+    setTickReceiptElapsedMs(0);
+    clearSimulationData();
     try {
       if (USE_MOCK) {
         await stopPeriodSim();
       } else {
         await publish("/app/simulacion/periodo/detener", { sessionId });
       }
-      setSimStatus("idle");
-      setSessionId(null);
-      setCurrentSimTimeUtc(null);
-      setTickBaseSimTimeUtc(null);
-      setTickReceiptElapsedMs(0);
-      clearSimulationData();
       toast.push({ type: "warning", title: "Simulación detenida" });
     } catch (err) {
       toast.push({
@@ -381,7 +425,24 @@ export default function PeriodSimulatorPage() {
           type="date"
           value={startDate}
           onChange={(e) => setStartDate(e.target.value)}
-          disabled={simStatus === "running" || simStatus === "paused"}
+          disabled={isSimulationLocked}
+          className="bg-surface-2 border border-slate-700 rounded-lg px-3 py-1.5 text-sm text-slate-200 outline-none focus:border-blue-500 disabled:opacity-50"
+        />
+      </div>
+
+      <div className="flex flex-col">
+        <label
+          htmlFor="period-start-time"
+          className="text-[10px] text-slate-400 uppercase tracking-wider font-medium"
+        >
+          Hora de inicio
+        </label>
+        <input
+          id="period-start-time"
+          type="time"
+          value={startTime}
+          onChange={(e) => setStartTime(e.target.value)}
+          disabled={isSimulationLocked}
           className="bg-surface-2 border border-slate-700 rounded-lg px-3 py-1.5 text-sm text-slate-200 outline-none focus:border-blue-500 disabled:opacity-50"
         />
       </div>
@@ -412,6 +473,14 @@ export default function PeriodSimulatorPage() {
           className="self-end bg-blue-600 hover:bg-blue-500 text-white px-4 py-2 rounded-lg flex items-center gap-2 font-medium text-sm transition-colors"
         >
           <Play className="w-4 h-4" /> Ejecutar
+        </button>
+      ) : isStarting ? (
+        <button
+          type="button"
+          disabled
+          className="self-end bg-blue-600/60 text-white px-4 py-2 rounded-lg flex items-center gap-2 font-medium text-sm cursor-wait"
+        >
+          <Play className="w-4 h-4" /> Iniciando...
         </button>
       ) : simStatus === "paused" ? (
         <>

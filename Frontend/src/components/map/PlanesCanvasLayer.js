@@ -59,6 +59,10 @@ export const PlanesCanvasLayer = L.Layer.extend({
   initialize(options = {}) {
     L.setOptions(this, options);
     this._planes = [];
+    this._routesGeometry = [];
+    this._progresses = [];
+    this._animationFrame = 0;
+    this._animationActive = false;
   },
 
   onAdd(map) {
@@ -84,13 +88,18 @@ export const PlanesCanvasLayer = L.Layer.extend({
   },
 
   onRemove(map) {
-    if (this._canvas) L.DomUtil.remove(this._canvas);
-    map.off("moveend", this._reset, this);
-    map.off("zoomend", this._reset, this);
-    map.off("resize", this._reset, this);
-    map.off("zoomanim", this._animateZoom, this);
+    this.stopAnimation();
+    const targetMap = map || this._map;
+    if (targetMap) {
+      targetMap.off("moveend", this._reset, this);
+      targetMap.off("zoomend", this._reset, this);
+      targetMap.off("resize", this._reset, this);
+      targetMap.off("zoomanim", this._animateZoom, this);
+    }
+    if (this._canvas?.parentNode) L.DomUtil.remove(this._canvas);
     this._canvas = null;
     this._ctx = null;
+    this._map = null;
   },
 
   /**
@@ -98,8 +107,71 @@ export const PlanesCanvasLayer = L.Layer.extend({
    * planes: [{ lat, lng, angle, color, key? }]
    */
   setPlanes(planes) {
+    if (!this._map || !this._canvas) return;
     this._planes = planes || [];
     this._draw();
+  },
+
+  startAnimation(routesGeometry = []) {
+    this.stopAnimation();
+    this._routesGeometry = routesGeometry;
+    this._progresses = routesGeometry.map(() => Math.random());
+
+    if (!this._map || !this._canvas || routesGeometry.length === 0) {
+      this.setPlanes([]);
+      return;
+    }
+
+    this._animationActive = true;
+    let lastTime = performance.now();
+    let acc = 0;
+    const frameBudgetMs = 33;
+
+    const tick = (time) => {
+      if (!this._animationActive) return;
+
+      const dt = time - lastTime;
+      lastTime = time;
+      acc += dt;
+
+      for (let i = 0; i < this._progresses.length; i++) {
+        this._progresses[i] = (this._progresses[i] + dt * 0.00005) % 1;
+      }
+
+      if (acc >= frameBudgetMs) {
+        acc = 0;
+        this.setPlanes(this._buildPlaneSnapshots());
+      }
+
+      this._animationFrame = requestAnimationFrame(tick);
+    };
+
+    this.setPlanes(this._buildPlaneSnapshots());
+    this._animationFrame = requestAnimationFrame(tick);
+  },
+
+  stopAnimation() {
+    this._animationActive = false;
+    if (this._animationFrame) {
+      cancelAnimationFrame(this._animationFrame);
+      this._animationFrame = 0;
+    }
+    this._routesGeometry = [];
+    this._progresses = [];
+    this._planes = [];
+    this._draw();
+  },
+
+  _buildPlaneSnapshots() {
+    return this._routesGeometry.map((geo, index) => {
+      const progress = this._progresses[index] ?? 0;
+      return {
+        lat: geo.origin.lat + geo.dLat * progress,
+        lng: geo.origin.lng + geo.dLng * progress,
+        angle: geo.planeAngle,
+        color: geo.color,
+      };
+    });
   },
 
   _reset() {
@@ -120,6 +192,7 @@ export const PlanesCanvasLayer = L.Layer.extend({
   },
 
   _animateZoom(e) {
+    if (!this._canvas || !this._map) return;
     // Mantener el canvas alineado mientras el mapa hace zoom animado.
     const scale = this._map.getZoomScale(e.zoom, this._map.getZoom());
     const offset = this._map
