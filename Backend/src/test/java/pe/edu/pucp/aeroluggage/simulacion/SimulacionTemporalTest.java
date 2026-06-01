@@ -50,8 +50,8 @@ import pe.edu.pucp.aeroluggage.dominio.enums.Semaforo;
 
 class SimulacionTemporalTest {
 
-    private static final Path DOCS = Path.of("Documentos");
-    private static final Path PARAMS_FILE = Path.of("test_params.txt");
+    private static final Path DOCS = Path.of("src", "main", "resources", "datos");
+    private static final Path PARAMS_FILE = Path.of("experimental", "parametros", "test_params.txt");
     private static final DateTimeFormatter FMT = DateTimeFormatter.ISO_LOCAL_DATE;
 
     private static Properties params;

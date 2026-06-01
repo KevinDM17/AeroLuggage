@@ -1,6 +1,7 @@
 # Algoritmos a ejecutar (true/false)
 ejecutar.ga=true
 ejecutar.aco=true
+ejecutar.alns=true
 
 # ---------- Parametros globales ----------
 minutosConexion=10
@@ -17,9 +18,9 @@ exp.w7Espera=10
 simulacion.fecha.inicio=2027-02-07
 simulacion.fecha.fin=2027-02-07
 simulacion.ventana.dias=4
-simulacion.iteraciones=30
+simulacion.iteraciones=1
 simulacion.programada.sa.segundos=0
-simulacion.programada.k=720
+simulacion.programada.k=180
 simulacion.programada.sleep.habilitado=true
 
 # ---------- Parametros GA ----------
@@ -61,3 +62,32 @@ aco.penalizacionIncumplimiento=300
 aco.penalizacionSobrecargaVuelo=200
 aco.penalizacionSobrecargaAlmacen=120
 aco.penalizacionReplanificacion=25
+
+# ---------- Parametros ALNS ----------
+alns.maxIteraciones=150
+alns.maxIteracionesSinMejora=40
+alns.tiempoMaximoMs=30000
+alns.qMin=1
+alns.qMax=6
+alns.qCritical=4
+alns.maxReintentosRuteo=6
+alns.minutosConexion=10
+alns.tiempoRecojo=10
+alns.umbralCriticoAeropuerto=0.85
+alns.temperaturaInicial=5.0
+alns.factorEnfriamiento=0.98
+alns.semilla=42
+alns.pesoMaletasNoEnrutadas=1000
+alns.pesoMaletasFueraDePlazo=800
+alns.pesoOverflowVuelos=700
+alns.pesoOverflowAeropuertos=700
+alns.pesoOcupacionPromedioVuelos=5
+alns.pesoOcupacionPromedioAeropuertos=5
+alns.pesoHolgura=3
+alns.segmentoIteraciones=15
+alns.sigma1=10
+alns.sigma2=6
+alns.sigma3=2
+alns.sigma4=0
+alns.rho=0.2
+alns.pesoMinimoOperador=0.1

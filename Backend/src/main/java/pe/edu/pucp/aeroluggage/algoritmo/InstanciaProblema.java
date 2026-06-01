@@ -6,11 +6,14 @@ import java.util.ArrayList;
 import java.util.HashMap;
 import java.util.List;
 import java.util.Map;
+import java.util.NavigableMap;
+import java.util.TreeMap;
 
 import pe.edu.pucp.aeroluggage.algoritmo.common.GrafoTiempoExpandido;
 import pe.edu.pucp.aeroluggage.dominio.entidades.Aeropuerto;
 import pe.edu.pucp.aeroluggage.dominio.entidades.Maleta;
 import pe.edu.pucp.aeroluggage.dominio.entidades.Pedido;
+import pe.edu.pucp.aeroluggage.dominio.entidades.Ruta;
 import pe.edu.pucp.aeroluggage.dominio.entidades.VueloInstancia;
 import pe.edu.pucp.aeroluggage.dominio.entidades.VueloProgramado;
 import pe.edu.pucp.aeroluggage.dominio.enums.EstadoVuelo;
@@ -25,6 +28,10 @@ public class InstanciaProblema {
     private GrafoTiempoExpandido grafo;
     private long minutosConexion = 10L;
     private long tiempoRecojo = 10L;
+    private LocalDateTime fechaEvaluacion;
+    private ArrayList<Ruta> rutasComprometidas;
+    private Map<String, Integer> ocupacionBaseAeropuerto;
+    private Map<String, NavigableMap<LocalDateTime, Integer>> eventosBaseAeropuerto;
 
     private Map<String, Aeropuerto> indiceAeropuertos;
     private Map<String, Maleta> indiceMaletas;
@@ -36,6 +43,9 @@ public class InstanciaProblema {
         this.vuelosProgramados = new ArrayList<>();
         this.vuelosInstancia = new ArrayList<>();
         this.aeropuertos = new ArrayList<>();
+        this.rutasComprometidas = new ArrayList<>();
+        this.ocupacionBaseAeropuerto = new HashMap<>();
+        this.eventosBaseAeropuerto = new HashMap<>();
     }
 
     public InstanciaProblema(final String idInstanciaProblema, final ArrayList<Maleta> maletas,
@@ -201,6 +211,52 @@ public class InstanciaProblema {
 
     public void setTiempoRecojo(final long tiempoRecojo) {
         this.tiempoRecojo = tiempoRecojo;
+    }
+
+    public LocalDateTime getFechaEvaluacion() {
+        return fechaEvaluacion;
+    }
+
+    public void setFechaEvaluacion(final LocalDateTime fechaEvaluacion) {
+        this.fechaEvaluacion = fechaEvaluacion;
+    }
+
+    public ArrayList<Ruta> getRutasComprometidas() {
+        return new ArrayList<>(rutasComprometidas);
+    }
+
+    public void setRutasComprometidas(final List<Ruta> rutasComprometidas) {
+        this.rutasComprometidas = rutasComprometidas == null
+                ? new ArrayList<>()
+                : new ArrayList<>(rutasComprometidas);
+    }
+
+    public Map<String, Integer> getOcupacionBaseAeropuerto() {
+        return new HashMap<>(ocupacionBaseAeropuerto);
+    }
+
+    public void setOcupacionBaseAeropuerto(final Map<String, Integer> ocupacionBaseAeropuerto) {
+        this.ocupacionBaseAeropuerto = ocupacionBaseAeropuerto == null
+                ? new HashMap<>()
+                : new HashMap<>(ocupacionBaseAeropuerto);
+    }
+
+    public Map<String, NavigableMap<LocalDateTime, Integer>> getEventosBaseAeropuerto() {
+        final Map<String, NavigableMap<LocalDateTime, Integer>> copia = new HashMap<>();
+        for (final Map.Entry<String, NavigableMap<LocalDateTime, Integer>> entry : eventosBaseAeropuerto.entrySet()) {
+            copia.put(entry.getKey(), new TreeMap<>(entry.getValue()));
+        }
+        return copia;
+    }
+
+    public void setEventosBaseAeropuerto(final Map<String, NavigableMap<LocalDateTime, Integer>> eventosBaseAeropuerto) {
+        final Map<String, NavigableMap<LocalDateTime, Integer>> copia = new HashMap<>();
+        if (eventosBaseAeropuerto != null) {
+            for (final Map.Entry<String, NavigableMap<LocalDateTime, Integer>> entry : eventosBaseAeropuerto.entrySet()) {
+                copia.put(entry.getKey(), entry.getValue() == null ? new TreeMap<>() : new TreeMap<>(entry.getValue()));
+            }
+        }
+        this.eventosBaseAeropuerto = copia;
     }
 
     public Pedido buscarPedido(final String idPedido) {

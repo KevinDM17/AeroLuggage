@@ -25,7 +25,7 @@ import pe.edu.pucp.aeroluggage.dominio.entidades.VueloProgramado;
 @Getter
 public class SimulacionSesion {
 
-    private static final int DEFAULT_WINDOW_SIZE_MINUTES = 180;
+    private static final int DEFAULT_WINDOW_SIZE_MINUTES = 60;
     private static final long SIMULATED_DAY_MS = 24L * 60L * 60L * 1000L;
 
     private final String sessionId;
@@ -50,6 +50,7 @@ public class SimulacionSesion {
     private volatile List<Pedido> pedidos = List.of();
     private volatile List<Maleta> maletas = List.of();
     private volatile List<Ruta> rutas = List.of();
+    private volatile List<ResumenVentanaPlanificacion> resumenesVentana = List.of();
     private volatile Map<String, Maleta> maletasPorId = Map.of();
     private volatile ScheduledFuture<?> tareaScheduled;
 
@@ -156,9 +157,29 @@ public class SimulacionSesion {
         this.pedidos = pedidos == null ? List.of() : List.copyOf(new ArrayList<>(pedidos));
         this.maletas = maletas == null ? List.of() : List.copyOf(new ArrayList<>(maletas));
         this.rutas = rutas == null ? List.of() : List.copyOf(new ArrayList<>(rutas));
+        this.resumenesVentana = List.of();
         this.maletasPorId = this.maletas.stream()
                 .filter(m -> m != null && m.getIdMaleta() != null)
                 .collect(Collectors.toUnmodifiableMap(Maleta::getIdMaleta, m -> m, (a, b) -> a));
+    }
+
+    public synchronized void registrarResumenVentana(final ResumenVentanaPlanificacion resumen) {
+        if (resumen == null || resumen.windowId() == null) {
+            return;
+        }
+        final List<ResumenVentanaPlanificacion> actualizados = new ArrayList<>(this.resumenesVentana);
+        actualizados.removeIf(item -> resumen.windowId().equals(item.windowId()));
+        actualizados.add(resumen);
+        actualizados.sort((primero, segundo) -> primero.startUtc().compareTo(segundo.startUtc()));
+        this.resumenesVentana = List.copyOf(actualizados);
+    }
+
+    public record ResumenVentanaPlanificacion(String windowId,
+                                              LocalDateTime startUtc,
+                                              LocalDateTime endUtc,
+                                              int maletasEvaluadas,
+                                              int maletasEnrutadas,
+                                              int maletasSinRuta) {
     }
 
     private SimulacionVentana buildWindowFor(final LocalDateTime dateTime, final String status) {

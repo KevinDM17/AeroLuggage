@@ -12,6 +12,7 @@ import org.springframework.web.bind.annotation.RestController;
 import org.springframework.web.server.ResponseStatusException;
 import pe.edu.pucp.aeroluggage.dto.simulacion.rest.SimulacionIniciarRequest;
 import pe.edu.pucp.aeroluggage.dto.simulacion.rest.SimulacionInicioResponse;
+import pe.edu.pucp.aeroluggage.dto.simulacion.rest.SimulacionResultadoFinalResponse;
 import pe.edu.pucp.aeroluggage.servicios.query.SimulacionInicioQueryService;
 import pe.edu.pucp.aeroluggage.simulacion.SimulacionSesionManager;
 import pe.edu.pucp.aeroluggage.dto.simulacion.ws.SimulacionEstadoDTO;
@@ -51,6 +52,19 @@ public class SimulacionPeriodoRestController {
                         .withEstado("ACTUALIZADA")
                         .withMensaje("Snapshot de simulacion actualizado")
                         .build(),
+                sesion
+        );
+    }
+
+    @GetMapping("/{sessionId}/resultado-final")
+    public SimulacionResultadoFinalResponse resultadoFinal(@PathVariable final String sessionId) {
+        final var sesion = sesionManager.obtenerSesionFinalizada(sessionId);
+        if (sesion == null) {
+            throw new ResponseStatusException(NOT_FOUND, "Resultado final de simulacion no encontrado: " + sessionId);
+        }
+        return simulacionInicioQueryService.construirResultadoFinal(
+                "FINALIZADA",
+                "Resultado final de simulacion",
                 sesion
         );
     }
