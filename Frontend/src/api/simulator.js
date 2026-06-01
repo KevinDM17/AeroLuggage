@@ -15,7 +15,7 @@ import {
  *
  * REST (lo que el front llama directo):
  *   POST /api/simulacion/periodo/iniciar
- *     Body: SimulacionIniciarDTO { fechaInicio: "YYYY-MM-DD", totalDias, duracionDiaSimuladoMs }
+ *     Body: SimulacionIniciarDTO { fechaInicio: "YYYY-MM-DD", totalDias }
  *     Response: SimulacionInicioResponse {
  *       sessionId, estado, mensaje, fechaInicio, totalDias, aeropuertos, vuelosInstancia
  *     }

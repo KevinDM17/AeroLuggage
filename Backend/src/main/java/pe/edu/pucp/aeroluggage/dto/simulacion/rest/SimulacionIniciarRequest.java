@@ -1,6 +1,5 @@
 package pe.edu.pucp.aeroluggage.dto.simulacion.rest;
 
-import com.fasterxml.jackson.annotation.JsonAlias;
 import lombok.Getter;
 import lombok.NoArgsConstructor;
 import lombok.Setter;
@@ -10,8 +9,6 @@ import lombok.Setter;
 @NoArgsConstructor
 public class SimulacionIniciarRequest {
 
-    @JsonAlias("intervaloTickMs")
-    private long duracionDiaSimuladoMs;
     private String fechaInicio;
     private int totalDias;
 }
