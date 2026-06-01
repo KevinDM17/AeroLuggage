@@ -1,6 +1,6 @@
 import { useEffect, useMemo, useState } from "react";
 import { useOutletContext } from "react-router-dom";
-import { Play, Pause, Square, RotateCw } from "lucide-react";
+import { Play, Square, RotateCw } from "lucide-react";
 import MapDashboard from "../components/simulator/MapDashboard";
 import { usePolling } from "../hooks/usePolling";
 import { useElapsedTimer } from "../hooks/useElapsedTimer";
@@ -22,6 +22,7 @@ import {
 const PERIOD_DAYS = 5;
 const DURATION_SIMULATED_DAY_MS = 10 * 60 * 1000;
 const CLOCK_REFRESH_MS = 33;
+const MAP_REFRESH_MS = 500;
 const SIMULATED_DAY_MS = 24 * 60 * 60 * 1000;
 
 const ESTADO_BACK_A_LOCAL = {
@@ -52,6 +53,15 @@ const getDisplayedDay = (progress, hasActiveRun) => {
   return clamp(Math.ceil((progress / 100) * PERIOD_DAYS), 1, PERIOD_DAYS);
 };
 
+const emptySimulationPanelData = {
+  airports: [],
+  flights: [],
+  orders: [],
+  bags: [],
+  routes: [],
+  loaded: false,
+};
+
 export default function PeriodSimulatorPage() {
   const toast = useToast();
   const publish = useStompPublish();
@@ -74,24 +84,16 @@ export default function PeriodSimulatorPage() {
   const [tickBaseSimTimeUtc, setTickBaseSimTimeUtc] = useState(null);
   const [tickReceiptElapsedMs, setTickReceiptElapsedMs] = useState(0);
 
+  const clearSimulationData = () => {
+    setMapAirports([]);
+    setMapFlights([]);
+    setSimulationPanelData(emptySimulationPanelData);
+  };
+
   useEffect(() => {
-    setSimulationPanelData({
-      airports: [],
-      flights: [],
-      orders: [],
-      bags: [],
-      routes: [],
-      loaded: false,
-    });
+    setSimulationPanelData(emptySimulationPanelData);
     return () => {
-      setSimulationPanelData({
-        airports: [],
-        flights: [],
-        orders: [],
-        bags: [],
-        routes: [],
-        loaded: false,
-      });
+      setSimulationPanelData(emptySimulationPanelData);
     };
   }, [setSimulationPanelData]);
 
@@ -105,7 +107,7 @@ export default function PeriodSimulatorPage() {
 
   const { data: mockState } = usePolling(getPeriodSimState, {
     enabled: USE_MOCK && simStatus === "running",
-    intervalMs: 1000,
+    intervalMs: MAP_REFRESH_MS,
   });
 
   const executionElapsedMs = useElapsedTimer(
@@ -142,6 +144,10 @@ export default function PeriodSimulatorPage() {
     }
     if (estadoMessage.estado === "DETENIDA") {
       setSessionId(null);
+      setCurrentSimTimeUtc(null);
+      setTickBaseSimTimeUtc(null);
+      setTickReceiptElapsedMs(0);
+      clearSimulationData();
     }
   }, [mockState, estadoMessage]); // eslint-disable-line react-hooks/exhaustive-deps
 
@@ -155,6 +161,7 @@ export default function PeriodSimulatorPage() {
   }, [executionElapsedMs, mockState, lastMockState, simulatedDayDurationMs]);
 
   useEffect(() => {
+    if (simStatus === "idle") return;
     if (!tick?.currentSimTimeUtc) return;
     setCurrentSimTimeUtc(tick.currentSimTimeUtc);
     setTickBaseSimTimeUtc(tick.currentSimTimeUtc);
@@ -186,7 +193,7 @@ export default function PeriodSimulatorPage() {
         loaded: true,
       }));
     }
-  }, [tick, executionElapsedMs]); // eslint-disable-line react-hooks/exhaustive-deps
+  }, [tick, executionElapsedMs, simStatus]); // eslint-disable-line react-hooks/exhaustive-deps
 
   const simulatedNowMs = useMemo(() => {
     const base = tickBaseSimTimeUtc ?? currentSimTimeUtc;
@@ -294,22 +301,6 @@ export default function PeriodSimulatorPage() {
     }
   };
 
-  const handlePause = async () => {
-    if (USE_MOCK) {
-      toast.push({ type: "warning", title: "Pausa no soportada en modo mock" });
-      return;
-    }
-    try {
-      await publish("/app/simulacion/periodo/pausar", { sessionId });
-    } catch (err) {
-      toast.push({
-        type: "error",
-        title: "No se pudo pausar",
-        message: err.message,
-      });
-    }
-  };
-
   const handleResume = async () => {
     if (USE_MOCK) return;
     try {
@@ -335,16 +326,7 @@ export default function PeriodSimulatorPage() {
       setCurrentSimTimeUtc(null);
       setTickBaseSimTimeUtc(null);
       setTickReceiptElapsedMs(0);
-      setMapAirports([]);
-      setMapFlights([]);
-      setSimulationPanelData({
-        airports: [],
-        flights: [],
-        orders: [],
-        bags: [],
-        routes: [],
-        loaded: false,
-      });
+      clearSimulationData();
       toast.push({ type: "warning", title: "Simulación detenida" });
     } catch (err) {
       toast.push({
@@ -449,24 +431,13 @@ export default function PeriodSimulatorPage() {
           </button>
         </>
       ) : (
-        <>
-          {!USE_MOCK && (
-            <button
-              type="button"
-              onClick={handlePause}
-              className="self-end bg-warning/10 hover:bg-warning/20 text-warning border border-warning/40 px-4 py-2 rounded-lg flex items-center gap-2 font-medium text-sm transition-colors"
-            >
-              <Pause className="w-4 h-4" /> Pausar
-            </button>
-          )}
-          <button
-            type="button"
-            onClick={handleStop}
-            className="self-end bg-danger/10 hover:bg-danger/20 text-danger border border-danger/40 px-4 py-2 rounded-lg flex items-center gap-2 font-medium text-sm transition-colors"
-          >
-            <Square className="w-4 h-4" /> Detener
-          </button>
-        </>
+        <button
+          type="button"
+          onClick={handleStop}
+          className="self-end bg-danger/10 hover:bg-danger/20 text-danger border border-danger/40 px-4 py-2 rounded-lg flex items-center gap-2 font-medium text-sm transition-colors"
+        >
+          <Square className="w-4 h-4" /> Detener
+        </button>
       )}
 
       {simStatus !== "idle" && (

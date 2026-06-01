@@ -1,4 +1,5 @@
 import { useEffect, useMemo, useRef, useState } from "react";
+import { useOutletContext } from "react-router-dom";
 import MapDashboard from "../components/simulator/MapDashboard";
 import { useStompPublish, useStompSubscribe } from "../hooks/useStomp";
 import { usePolling } from "../hooks/usePolling";
@@ -13,16 +14,31 @@ import { USE_MOCK } from "../api/client";
  * al montar y la detiene al desmontar. Cero polling: los KPIs llegan por WS.
  */
 const TOTAL_DIAS_VIVO = 9999;
-const TICK_MS = 1000;
+const TICK_MS = 500;
+
+const emptySimulationPanelData = {
+  airports: [],
+  flights: [],
+  orders: [],
+  bags: [],
+  routes: [],
+  loaded: false,
+};
 
 export default function SimulatorPage() {
   const publish = useStompPublish();
+  const { setSimulationPanelData } = useOutletContext();
   const [sessionId, setSessionId] = useState(null);
   const sessionIdRef = useRef(null);
+
+  const clearSimulationData = () => {
+    setSimulationPanelData(emptySimulationPanelData);
+  };
 
   /* Auto-iniciar sesión "día a día" en el back al montar */
   useEffect(() => {
     let cancelled = false;
+    clearSimulationData();
     (async () => {
       try {
         const today = new Date().toISOString().slice(0, 10);
@@ -46,6 +62,7 @@ export default function SimulatorPage() {
       if (sid && !USE_MOCK) {
         publish("/app/simulacion/periodo/detener", { sessionId: sid }).catch(() => {});
       }
+      clearSimulationData();
     };
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
@@ -57,7 +74,7 @@ export default function SimulatorPage() {
   /* Modo mock: leemos el estado mock del simulador con un poll corto solo en dev */
   const { data: mockState } = usePolling(getPeriodSimState, {
     enabled: USE_MOCK,
-    intervalMs: 1000,
+    intervalMs: TICK_MS,
   });
 
   const metrics = useMemo(() => {

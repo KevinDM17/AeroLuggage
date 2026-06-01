@@ -1,4 +1,5 @@
 import { useEffect, useMemo, useState } from "react";
+import { useOutletContext } from "react-router-dom";
 import { Play, Square, AlertTriangle } from "lucide-react";
 import MapDashboard from "../components/simulator/MapDashboard";
 import { usePolling } from "../hooks/usePolling";
@@ -10,7 +11,7 @@ import { USE_MOCK } from "../api/client";
 import { formatDateTimeDisplay, formatElapsedHMS } from "../utils/formatting";
 
 const WARNING_AT_MS = 60_000;
-const TICK_MS = 1000;
+const TICK_MS = 500;
 
 const ESTADO_BACK_A_LOCAL = {
   INICIADA: "running",
@@ -20,14 +21,33 @@ const ESTADO_BACK_A_LOCAL = {
   FINALIZADA: "collapsed",
 };
 
+const emptySimulationPanelData = {
+  airports: [],
+  flights: [],
+  orders: [],
+  bags: [],
+  routes: [],
+  loaded: false,
+};
+
 export default function CollapseSimulatorPage() {
   const toast = useToast();
   const publish = useStompPublish();
+  const { setSimulationPanelData } = useOutletContext();
 
   const [startDate, setStartDate] = useState(() => new Date().toISOString().slice(0, 10));
   const [sessionId, setSessionId] = useState(null);
   const [simStatus, setSimStatus] = useState("idle");
   const [runId, setRunId] = useState(0);
+
+  const clearSimulationData = () => {
+    setSimulationPanelData(emptySimulationPanelData);
+  };
+
+  useEffect(() => {
+    clearSimulationData();
+    return clearSimulationData;
+  }, [setSimulationPanelData]);
 
   /* ============ Modo real: STOMP ============ */
   const tickTopic   = !USE_MOCK && sessionId ? `/topic/simulacion/colapso/${sessionId}` : null;
@@ -39,7 +59,7 @@ export default function CollapseSimulatorPage() {
   /* ============ Modo mock: polling local ============ */
   const { data: mockState } = usePolling(getCollapseSimState, {
     enabled: USE_MOCK && simStatus === "running",
-    intervalMs: 1000,
+    intervalMs: TICK_MS,
   });
 
   /* Sincroniza estado local con el origen activo */
@@ -60,6 +80,7 @@ export default function CollapseSimulatorPage() {
     }
     if (estadoMessage.estado === "DETENIDA") {
       setSessionId(null);
+      clearSimulationData();
     }
   }, [mockState, estadoMessage]); // eslint-disable-line react-hooks/exhaustive-deps
 
@@ -121,6 +142,7 @@ export default function CollapseSimulatorPage() {
       } else {
         await publish("/app/simulacion/colapso/detener", { sessionId });
       }
+      clearSimulationData();
       toast.push({ type: "warning", title: "Simulación detenida" });
     } catch (err) {
       toast.push({ type: "error", title: "No se pudo detener", message: err.message });
