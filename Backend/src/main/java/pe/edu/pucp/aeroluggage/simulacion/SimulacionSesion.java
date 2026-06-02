@@ -179,7 +179,8 @@ public class SimulacionSesion {
                                               LocalDateTime endUtc,
                                               int maletasEvaluadas,
                                               int maletasEnrutadas,
-                                              int maletasSinRuta) {
+                                              int maletasSinRuta,
+                                              long tiempoPlanificacionMs) {
     }
 
     private SimulacionVentana buildWindowFor(final LocalDateTime dateTime, final String status) {

@@ -339,6 +339,7 @@ public class SimulacionInicioQueryService {
                         .withMaletasEvaluadas(resumen.maletasEvaluadas())
                         .withMaletasEnrutadas(resumen.maletasEnrutadas())
                         .withMaletasSinRuta(resumen.maletasSinRuta())
+                        .withTiempoPlanificacionMs(resumen.tiempoPlanificacionMs())
                         .build())
                 .toList();
     }

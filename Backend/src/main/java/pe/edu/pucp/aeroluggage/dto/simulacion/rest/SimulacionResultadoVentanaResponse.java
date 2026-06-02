@@ -13,4 +13,5 @@ public class SimulacionResultadoVentanaResponse {
     private int maletasEvaluadas;
     private int maletasEnrutadas;
     private int maletasSinRuta;
+    private long tiempoPlanificacionMs;
 }

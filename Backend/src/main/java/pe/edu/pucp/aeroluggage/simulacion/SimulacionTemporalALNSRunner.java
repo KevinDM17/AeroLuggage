@@ -282,6 +282,7 @@ public final class SimulacionTemporalALNSRunner {
             System.out.printf("  Enrutadas por ALNS: %d%n", enrutadasVentana);
             System.out.printf("  Sin ruta en esta ventana: %d%n", sinRutaVentana);
             System.out.printf("  Porcentaje enrutado: %.1f%%%n", porcentaje);
+            System.out.printf("  Tiempo planificador (ms): %d%n", alns.getTiempoEjecucionMs());
             System.out.printf("  Pendientes tras ventana: %d%n", pendientes.size());
             if (solucion != null) {
                 System.out.printf("  Fitness: %.4f%n", solucion.getFitness());

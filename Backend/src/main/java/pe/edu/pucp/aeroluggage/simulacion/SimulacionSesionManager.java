@@ -244,7 +244,8 @@ public class SimulacionSesionManager {
                             ventana.getEndUtc(),
                             0,
                             0,
-                            0
+                            0,
+                            0L
                     ));
                 }
                 return;
@@ -267,7 +268,8 @@ public class SimulacionSesionManager {
                             ventana.getEndUtc(),
                             instancia.getMaletas().size(),
                             0,
-                            instancia.getMaletas().size()
+                            instancia.getMaletas().size(),
+                            alns.getTiempoEjecucionMs()
                     ));
                 }
                 return;
@@ -286,7 +288,8 @@ public class SimulacionSesionManager {
                         ventana.getEndUtc(),
                         evaluadas,
                         enrutadas,
-                        sinRuta
+                        sinRuta,
+                        alns.getTiempoEjecucionMs()
                 ));
             }
 

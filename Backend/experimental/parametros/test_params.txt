@@ -20,7 +20,7 @@ simulacion.fecha.fin=2027-02-07
 simulacion.ventana.dias=4
 simulacion.iteraciones=1
 simulacion.programada.sa.segundos=0
-simulacion.programada.k=180
+simulacion.programada.k=60
 simulacion.programada.sleep.habilitado=true
 
 # ---------- Parametros GA ----------
