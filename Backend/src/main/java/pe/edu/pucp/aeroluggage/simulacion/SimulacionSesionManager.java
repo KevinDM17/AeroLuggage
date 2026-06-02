@@ -46,9 +46,9 @@ public class SimulacionSesionManager {
     private static final String ESTADO_DETENIDA = "DETENIDA";
     private static final String ESTADO_FINALIZADA = "FINALIZADA";
     private static final String ESTADO_PLANIFICACION_COMPLETADA = "PLANIFICACION_COMPLETADA";
-    private static final long TICK_INTERVAL_MS = 1000L;
 
     private final SimulacionPeriodoService periodoService;
+    private final SimulacionConfiguracion config;
     private final Map<String, SimulacionSesion> sesionesActivas = new ConcurrentHashMap<>();
     private final Map<String, SimulacionSesion> sesionesFinalizadas = new ConcurrentHashMap<>();
     private final Map<String, String> wsSessionIdASimSessionId = new ConcurrentHashMap<>();
@@ -65,7 +65,9 @@ public class SimulacionSesionManager {
                 sessionId,
                 fechaInicio,
                 params.getTotalDias(),
-                params.getDuracionDiaSimuladoMs()
+                config.getDuracionDiaSimuladoMs(),
+                config.getWindowSizeMinutes(),
+                config.getWindowSpacingMinutes()
         );
 
         sesionesActivas.put(sessionId, sesion);
@@ -170,10 +172,11 @@ public class SimulacionSesionManager {
     }
 
     private void programarTarea(final SimulacionSesion sesion, final SimpMessagingTemplate broker) {
+        final long tickIntervalMs = config.getTickIntervalMs();
         final ScheduledFuture<?> tarea = scheduler.scheduleWithFixedDelay(
                 () -> ejecutarIteracion(sesion, broker),
                 0L,
-                TICK_INTERVAL_MS,
+                tickIntervalMs,
                 TimeUnit.MILLISECONDS
         );
         sesion.setTareaScheduled(tarea);
@@ -244,7 +247,8 @@ public class SimulacionSesionManager {
                             ventana.getEndUtc(),
                             0,
                             0,
-                            0
+                            0,
+                            0L
                     ));
                 }
                 return;
@@ -267,7 +271,8 @@ public class SimulacionSesionManager {
                             ventana.getEndUtc(),
                             instancia.getMaletas().size(),
                             0,
-                            instancia.getMaletas().size()
+                            instancia.getMaletas().size(),
+                            alns.getTiempoEjecucionMs()
                     ));
                 }
                 return;
@@ -286,7 +291,8 @@ public class SimulacionSesionManager {
                         ventana.getEndUtc(),
                         evaluadas,
                         enrutadas,
-                        sinRuta
+                        sinRuta,
+                        alns.getTiempoEjecucionMs()
                 ));
             }
 
