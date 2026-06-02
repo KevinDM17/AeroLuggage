@@ -32,6 +32,7 @@ import pe.edu.pucp.aeroluggage.dominio.entidades.VueloProgramado;
 import pe.edu.pucp.aeroluggage.dominio.enums.Continente;
 import pe.edu.pucp.aeroluggage.servicios.GeneradorVuelosInstancia;
 
+@Deprecated
 public final class CargadorDatosPrueba {
     public static final int DIAS_VUELOS_REPETIDOS = 7;
 

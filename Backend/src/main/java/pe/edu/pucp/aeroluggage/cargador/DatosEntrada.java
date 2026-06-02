@@ -15,10 +15,10 @@ public final class DatosEntrada {
     }
 
     public ArrayList<Pedido> getPedidos() {
-        return new ArrayList<>(pedidos);
+        return pedidos;
     }
 
     public ArrayList<Maleta> getMaletas() {
-        return new ArrayList<>(maletas);
+        return maletas;
     }
 }
