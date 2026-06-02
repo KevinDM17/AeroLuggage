@@ -20,7 +20,6 @@ import {
 } from "../utils/formatting";
 
 const PERIOD_DAYS = 5;
-const DURATION_SIMULATED_DAY_MS = 10 * 60 * 1000;
 const CLOCK_REFRESH_MS = 33;
 const SIMULATED_DAY_MS = 24 * 60 * 60 * 1000;
 
@@ -68,9 +67,7 @@ export default function PeriodSimulatorPage() {
   const [mapFlights, setMapFlights] = useState([]);
   const [showRouteLines, setShowRouteLines] = useState(true);
   const [currentSimTimeUtc, setCurrentSimTimeUtc] = useState(null);
-  const [simulatedDayDurationMs, setSimulatedDayDurationMs] = useState(
-    DURATION_SIMULATED_DAY_MS,
-  );
+  const [simulatedDayDurationMs, setSimulatedDayDurationMs] = useState(null);
   const [tickBaseSimTimeUtc, setTickBaseSimTimeUtc] = useState(null);
   const [tickReceiptElapsedMs, setTickReceiptElapsedMs] = useState(0);
 
@@ -246,7 +243,6 @@ export default function PeriodSimulatorPage() {
       const result = await iniciarSimulacionPeriodo({
         fechaInicio: startDate,
         totalDias: PERIOD_DAYS,
-        duracionDiaSimuladoMs: DURATION_SIMULATED_DAY_MS,
       });
       const adaptedAirports = Array.isArray(result.aeropuertos)
         ? result.aeropuertos.map(adaptAirport)
@@ -261,9 +257,7 @@ export default function PeriodSimulatorPage() {
         result.currentSimTimeUtc ?? `${startDate}T00:00:00`,
       );
       setTickReceiptElapsedMs(0);
-      setSimulatedDayDurationMs(
-        result.duracionDiaSimuladoMs ?? DURATION_SIMULATED_DAY_MS,
-      );
+      setSimulatedDayDurationMs(result.duracionDiaSimuladoMs);
       setMapAirports(adaptedAirports);
       setMapFlights(adaptedFlights);
       setSimulationPanelData({

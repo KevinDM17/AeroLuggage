@@ -31,8 +31,8 @@ public class SimulacionPeriodoRestController {
 
     @PostMapping("/iniciar")
     public SimulacionInicioResponse iniciar(@RequestBody final SimulacionIniciarRequest params) {
-        log.info("[AeroLuggage/SimulacionRest] - API-CALL/iniciar: fechaInicio: {}, totalDias: {}, duracionDiaSimuladoMs: {}",
-                params.getFechaInicio(), params.getTotalDias(), params.getDuracionDiaSimuladoMs());
+        log.info("[AeroLuggage/SimulacionRest] - API-CALL/iniciar: fechaInicio: {}, totalDias: {}",
+                params.getFechaInicio(), params.getTotalDias());
         final SimulacionEstadoDTO estado = sesionManager.iniciar(params, broker);
         return simulacionInicioQueryService.construirRespuestaInicio(
                 estado,

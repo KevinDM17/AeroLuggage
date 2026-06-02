@@ -7,10 +7,10 @@ public class ParametrosALNS {
     private int qMin = 1;
     private int qMax = 6;
     private int qCritical = 4;
-    private int maxReintentosRuteo = 6;
+    private int maxReintentosRuteo = 40;
     private long minutosConexion = 10L;
     private long tiempoRecojo = 10L;
-    private double umbralCriticoAeropuerto = 0.85D;
+    private double umbralCriticoAeropuerto = 0.25D;
     private double temperaturaInicial = 5.0D;
     private double factorEnfriamiento = 0.98D;
     private long semilla = 42L;

@@ -25,7 +25,6 @@ import pe.edu.pucp.aeroluggage.dominio.entidades.VueloProgramado;
 @Getter
 public class SimulacionSesion {
 
-    private static final int DEFAULT_WINDOW_SIZE_MINUTES = 60;
     private static final long SIMULATED_DAY_MS = 24L * 60L * 60L * 1000L;
 
     private final String sessionId;
@@ -33,6 +32,7 @@ public class SimulacionSesion {
     private final int totalDias;
     private final long duracionDiaSimuladoMs;
     private final int windowSizeMinutes;
+    private final int windowSpacingMinutes;
     private final LocalDateTime fechaInicioUtc;
     private final LocalDateTime fechaFinUtc;
     private final long startedAtRealMs;
@@ -58,12 +58,15 @@ public class SimulacionSesion {
             final String sessionId,
             final LocalDate fechaInicio,
             final int totalDias,
-            final long duracionDiaSimuladoMs) {
+            final long duracionDiaSimuladoMs,
+            final int windowSizeMinutes,
+            final int windowSpacingMinutes) {
         this.sessionId = sessionId;
         this.fechaInicio = fechaInicio;
         this.totalDias = totalDias;
         this.duracionDiaSimuladoMs = Math.max(1L, duracionDiaSimuladoMs);
-        this.windowSizeMinutes = DEFAULT_WINDOW_SIZE_MINUTES;
+        this.windowSizeMinutes = Math.max(1, windowSizeMinutes);
+        this.windowSpacingMinutes = Math.max(1, windowSpacingMinutes);
         this.fechaInicioUtc = fechaInicio.atStartOfDay();
         this.fechaFinUtc = fechaInicioUtc.plusDays(Math.max(0L, totalDias));
         this.startedAtRealMs = System.currentTimeMillis();
@@ -98,7 +101,7 @@ public class SimulacionSesion {
         if (active == null) {
             return buildWindowFor(currentSimTimeUtc.get(), "PENDING");
         }
-        final LocalDateTime nextStart = active.getEndUtc();
+        final LocalDateTime nextStart = active.getStartUtc().plusMinutes(windowSpacingMinutes);
         if (!nextStart.isBefore(fechaFinUtc)) {
             return null;
         }
@@ -186,8 +189,8 @@ public class SimulacionSesion {
     private SimulacionVentana buildWindowFor(final LocalDateTime dateTime, final String status) {
         final long minutesFromStart = Duration.between(fechaInicioUtc, dateTime).toMinutes();
         final long safeMinutesFromStart = Math.max(0L, minutesFromStart);
-        final long bucket = safeMinutesFromStart / windowSizeMinutes;
-        final LocalDateTime windowStart = fechaInicioUtc.plusMinutes(bucket * windowSizeMinutes);
+        final long bucket = safeMinutesFromStart / windowSpacingMinutes;
+        final LocalDateTime windowStart = fechaInicioUtc.plusMinutes(bucket * windowSpacingMinutes);
         LocalDateTime windowEnd = windowStart.plusMinutes(windowSizeMinutes);
         if (windowEnd.isAfter(fechaFinUtc)) {
             windowEnd = fechaFinUtc;
