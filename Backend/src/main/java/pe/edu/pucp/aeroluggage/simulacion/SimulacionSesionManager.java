@@ -24,6 +24,7 @@ import java.nio.file.Files;
 import java.nio.file.Path;
 import java.time.LocalDate;
 import java.time.LocalDateTime;
+import java.time.LocalTime;
 import java.util.ArrayList;
 import java.util.HashMap;
 import java.util.List;
@@ -68,9 +69,13 @@ public class SimulacionSesionManager {
 
         final String sessionId = UUID.randomUUID().toString();
         final LocalDate fechaInicio = LocalDate.parse(params.getFechaInicio());
+        final LocalTime horaInicio = params.getHoraInicio() != null && !params.getHoraInicio().isBlank()
+                ? LocalTime.parse(params.getHoraInicio())
+                : LocalTime.MIDNIGHT;
         final SimulacionSesion sesion = new SimulacionSesion(
                 sessionId,
                 fechaInicio,
+                horaInicio,
                 params.getTotalDias(),
                 config.getDuracionDiaSimuladoMs(),
                 config.getWindowSizeMinutes(),

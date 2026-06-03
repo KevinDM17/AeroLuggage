@@ -82,14 +82,14 @@ export default function PeriodSimulatorPage() {
   const [showRouteLines, setShowRouteLines] = useState(true);
   const [currentSimTimeUtc, setCurrentSimTimeUtc] = useState(null);
   const [simulatedDayDurationMs, setSimulatedDayDurationMs] = useState(null);
-  const [tickBaseSimTimeUtc, setTickBaseSimTimeUtc] = useState(null);
-  const [tickReceiptElapsedMs, setTickReceiptElapsedMs] = useState(0);
   const ignoreTicksRef = useRef(true);
+  const startSimMsRef = useRef(null);
 
   const clearSimulationData = () => {
     setMapAirports([]);
     setMapFlights([]);
     resetSimulationPanelData();
+    startSimMsRef.current = null;
   };
 
   const applyCancelledFlights = (flights) =>
@@ -155,8 +155,7 @@ export default function PeriodSimulatorPage() {
       ignoreTicksRef.current = true;
       setSessionId(null);
       setCurrentSimTimeUtc(null);
-      setTickBaseSimTimeUtc(null);
-      setTickReceiptElapsedMs(0);
+
       clearSimulationData();
     }
   }, [mockState, estadoMessage]); // eslint-disable-line react-hooks/exhaustive-deps
@@ -173,9 +172,13 @@ export default function PeriodSimulatorPage() {
   useEffect(() => {
     if (ignoreTicksRef.current || simStatus === "idle" || isStarting) return;
     if (!tick?.currentSimTimeUtc) return;
+
+    if (startSimMsRef.current == null) {
+      const ms = Date.parse(`${tick.currentSimTimeUtc}Z`);
+      if (Number.isFinite(ms)) startSimMsRef.current = ms;
+    }
+
     setCurrentSimTimeUtc(tick.currentSimTimeUtc);
-    setTickBaseSimTimeUtc(tick.currentSimTimeUtc);
-    setTickReceiptElapsedMs(executionElapsedMs);
     if (Array.isArray(tick.vuelosInstancia)) {
       const adaptedFlights = applyCancelledFlights(
         tick.vuelosInstancia.map(adaptFlightInstance),
@@ -208,24 +211,20 @@ export default function PeriodSimulatorPage() {
   }, [tick, executionElapsedMs, simStatus, cancelledFlightIds]); // eslint-disable-line react-hooks/exhaustive-deps
 
   const simulatedNowMs = useMemo(() => {
-    const base = tickBaseSimTimeUtc ?? currentSimTimeUtc;
-    if (!base) return null;
-    const parsed = Date.parse(`${base}Z`);
-    if (!Number.isFinite(parsed)) return null;
-    if (simStatus !== "running") return parsed;
+    const startMs = startSimMsRef.current;
+    if (startMs == null) {
+      if (!currentSimTimeUtc) return null;
+      const parsed = Date.parse(`${currentSimTimeUtc}Z`);
+      return Number.isFinite(parsed) ? parsed : null;
+    }
+    if (simStatus !== "running") return startMs;
 
-    const elapsedSinceTickMs = Math.max(
-      0,
-      executionElapsedMs - tickReceiptElapsedMs,
-    );
-    const simulatedDeltaMs = elapsedSinceTickMs;
-    return parsed + simulatedDeltaMs;
+    const ratio = 86400000 / simulatedDayDurationMs;
+    return startMs + executionElapsedMs * ratio;
   }, [
-    tickBaseSimTimeUtc,
     currentSimTimeUtc,
     simStatus,
     executionElapsedMs,
-    tickReceiptElapsedMs,
     simulatedDayDurationMs,
   ]);
 
@@ -266,8 +265,6 @@ export default function PeriodSimulatorPage() {
     setSimStatus("starting");
     setSessionId(null);
     setCurrentSimTimeUtc(null);
-    setTickBaseSimTimeUtc(null);
-    setTickReceiptElapsedMs(0);
     clearSimulationData();
     toast.push({
       type: "info",
@@ -294,10 +291,6 @@ export default function PeriodSimulatorPage() {
       setSessionId(result.sessionId ?? null);
       setLastMockState(null);
       setCurrentSimTimeUtc(result.currentSimTimeUtc ?? startDateTime);
-      setTickBaseSimTimeUtc(
-        result.currentSimTimeUtc ?? startDateTime,
-      );
-      setTickReceiptElapsedMs(0);
       setSimulatedDayDurationMs(result.duracionDiaSimuladoMs);
       setMapAirports(adaptedAirports);
       setMapFlights(adaptedFlights);
@@ -325,8 +318,7 @@ export default function PeriodSimulatorPage() {
       setSimStatus("idle");
       setSessionId(null);
       setCurrentSimTimeUtc(null);
-      setTickBaseSimTimeUtc(null);
-      setTickReceiptElapsedMs(0);
+
       clearSimulationData();
       toast.push({
         type: "error",
@@ -354,8 +346,6 @@ export default function PeriodSimulatorPage() {
     setSimStatus("idle");
     setSessionId(null);
     setCurrentSimTimeUtc(null);
-    setTickBaseSimTimeUtc(null);
-    setTickReceiptElapsedMs(0);
     clearSimulationData();
     try {
       if (USE_MOCK) {
@@ -391,13 +381,10 @@ export default function PeriodSimulatorPage() {
           Fecha/hora simulada
         </div>
         <div className="text-lg font-bold text-info tabular-nums">
-          {simulationClock.date} - {simulationClock.time}{" "}
-          {simulationClock.timeZone}
-          {tick?.currentWindowId
-            ? ` - ${tick.currentWindowId}`
-            : displayedDay
-              ? ` - dia ${displayedDay}/${PERIOD_DAYS}`
-              : ""}
+          {simulationClock.date} - {simulationClock.time} UTC
+          {displayedDay
+            ? ` - dia ${displayedDay}/${PERIOD_DAYS}`
+            : ""}
         </div>
       </div>
     </div>
@@ -531,8 +518,9 @@ export default function PeriodSimulatorPage() {
       airports={mapAirports}
       flights={mapFlights}
       simulatedNowMs={simulatedNowMs}
+      simulatedDayDurationMs={simulatedDayDurationMs}
       date={simulationClock.date}
-      time={`${simulationClock.time} ${simulationClock.timeZone}`}
+      time={simulationClock.time}
       metrics={liveMetrics}
     />
   );

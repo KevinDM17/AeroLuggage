@@ -55,7 +55,7 @@ export const formatUtcDateTimeDisplay = (value) => {
 
   return {
     date: `${date.getUTCFullYear()}-${padDatePart(date.getUTCMonth() + 1)}-${padDatePart(date.getUTCDate())}`,
-    time: `${padDatePart(date.getUTCHours())}:${padDatePart(date.getUTCMinutes())}:${padDatePart(date.getUTCSeconds())}`,
+    time: `${padDatePart(date.getUTCHours())}:${padDatePart(date.getUTCMinutes())}`,
     timeZone: "UTC",
   };
 };

@@ -5,6 +5,7 @@ import lombok.Getter;
 import java.time.Duration;
 import java.time.LocalDate;
 import java.time.LocalDateTime;
+import java.time.LocalTime;
 import java.util.ArrayList;
 import java.util.List;
 import java.util.Map;
@@ -61,6 +62,7 @@ public class SimulacionSesion {
     public SimulacionSesion(
             final String sessionId,
             final LocalDate fechaInicio,
+            final LocalTime horaInicio,
             final int totalDias,
             final long duracionDiaSimuladoMs,
             final int windowSizeMinutes,
@@ -71,7 +73,7 @@ public class SimulacionSesion {
         this.duracionDiaSimuladoMs = Math.max(1L, duracionDiaSimuladoMs);
         this.windowSizeMinutes = Math.max(1, windowSizeMinutes);
         this.windowSpacingMinutes = Math.max(1, windowSpacingMinutes);
-        this.fechaInicioUtc = fechaInicio.atStartOfDay();
+        this.fechaInicioUtc = LocalDateTime.of(fechaInicio, horaInicio);
         this.fechaFinUtc = fechaInicioUtc.plusDays(Math.max(0L, totalDias));
         this.startedAtRealMs = System.currentTimeMillis();
         this.currentSimTimeUtc = new AtomicReference<>(fechaInicioUtc);

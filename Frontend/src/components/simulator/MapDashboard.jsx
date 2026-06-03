@@ -22,6 +22,7 @@ export default function MapDashboard({
   airports,
   flights,
   simulatedNowMs,
+  simulatedDayDurationMs,
   date = "18-03-26",
   time = "12:34:16 UTC",
   metrics = {},
@@ -92,6 +93,7 @@ export default function MapDashboard({
             flights={flights}
             autoload={mapAutoload}
             simulatedNowMs={simulatedNowMs}
+            simulatedDayDurationMs={simulatedDayDurationMs}
             animateFlights={animateMapFlights}
           />
 

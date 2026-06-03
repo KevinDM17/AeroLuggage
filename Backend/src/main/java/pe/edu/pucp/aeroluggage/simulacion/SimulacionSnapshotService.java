@@ -10,6 +10,7 @@ import pe.edu.pucp.aeroluggage.dominio.enums.EstadoMaleta;
 import pe.edu.pucp.aeroluggage.dominio.enums.EstadoPedido;
 import pe.edu.pucp.aeroluggage.dominio.enums.EstadoRuta;
 import pe.edu.pucp.aeroluggage.dominio.enums.EstadoVuelo;
+import pe.edu.pucp.aeroluggage.config.SistemaConfiguracion;
 import pe.edu.pucp.aeroluggage.dto.simulacion.rest.AeropuertoResponse;
 import pe.edu.pucp.aeroluggage.dto.simulacion.rest.MaletaSimulacionResponse;
 import pe.edu.pucp.aeroluggage.dto.simulacion.rest.PedidoSimulacionResponse;
@@ -31,8 +32,15 @@ public class SimulacionSnapshotService {
 
     private static final DateTimeFormatter ISO_DATE_TIME = DateTimeFormatter.ISO_LOCAL_DATE_TIME;
 
+    private final SistemaConfiguracion sistemaConfiguracion;
+
+    public SimulacionSnapshotService(final SistemaConfiguracion sistemaConfiguracion) {
+        this.sistemaConfiguracion = sistemaConfiguracion;
+    }
+
     public void recalcularEstadoSesion(final SimulacionSesion sesion) {
         final LocalDateTime simTimeUtc = sesion.getCurrentSimTimeUtc().get();
+        final LocalDateTime fechaInicioUtc = sesion.getFechaInicioUtc();
         final Map<String, Maleta> maletasPorId = sesion.getMaletasPorId();
         final Map<String, Ruta> rutaPorMaleta = new HashMap<>();
         for (final Ruta ruta : sesion.getRutas()) {
@@ -61,7 +69,7 @@ public class SimulacionSnapshotService {
             }
             final Ruta ruta = rutaPorMaleta.get(maleta.getIdMaleta());
             final String ubicacionActual = actualizarEstadoMaleta(maleta, ruta, simTimeUtc);
-            if (ubicacionActual != null) {
+            if (ubicacionActual != null && !maleta.getFechaRegistro().isBefore(fechaInicioUtc)) {
                 maletasPorAeropuerto.merge(ubicacionActual, 1, Integer::sum);
             }
             if (maleta.getPedido() != null && maleta.getPedido().getIdPedido() != null) {
@@ -176,7 +184,8 @@ public class SimulacionSnapshotService {
                 continue;
             }
             final boolean enProgreso = vuelo.getEstado() == EstadoVuelo.EN_PROGRESO;
-            final boolean proximoEnVentana = vuelo.getEstado() == EstadoVuelo.PROGRAMADO
+            final boolean proximoEnVentana = (vuelo.getEstado() == EstadoVuelo.PROGRAMADO
+                    || vuelo.getEstado() == EstadoVuelo.CONFIRMADO)
                     && vuelo.getFechaSalida() != null
                     && !vuelo.getFechaSalida().isAfter(limiteVentana);
             if (!enProgreso && !proximoEnVentana) {
@@ -245,6 +254,10 @@ public class SimulacionSnapshotService {
                 vuelo.setEstado(EstadoVuelo.FINALIZADO);
             } else if (vuelo.getFechaSalida() != null && !vuelo.getFechaSalida().isAfter(simTimeUtc)) {
                 vuelo.setEstado(EstadoVuelo.EN_PROGRESO);
+            } else if (vuelo.getFechaSalida() != null
+                    && !vuelo.getFechaSalida().minusMinutes(sistemaConfiguracion.getUmbralConfirmacionMinutos())
+                            .isAfter(simTimeUtc)) {
+                vuelo.setEstado(EstadoVuelo.CONFIRMADO);
             } else {
                 vuelo.setEstado(EstadoVuelo.PROGRAMADO);
             }

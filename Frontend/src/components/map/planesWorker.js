@@ -1,8 +1,9 @@
 let routes = [];
 let running = false;
 let rafTimer = 0;
-let simTimeAnchor = null;
-let realAnchor = 0;
+let startMs = null;
+let dayDurationMs = 86400000;
+let realStartMs = 0;
 
 const TICK_INTERVAL_MS = 33;
 
@@ -10,8 +11,8 @@ function tick() {
   if (!running) return;
 
   const now = performance.now();
-  const realElapsed = now - realAnchor;
-  const simTime = simTimeAnchor !== null ? simTimeAnchor + realElapsed : null;
+  const ratio = 86400000 / dayDurationMs;
+  const simTime = startMs !== null ? startMs + (now - realStartMs) * ratio : null;
 
   const planes = [];
   for (let i = 0; i < routes.length; i++) {
@@ -53,9 +54,13 @@ self.onmessage = (e) => {
   switch (msg.type) {
     case 'init':
       routes = msg.routes || [];
-      simTimeAnchor = typeof msg.simTime === 'number' && Number.isFinite(msg.simTime)
-        ? msg.simTime : null;
-      realAnchor = performance.now();
+      dayDurationMs = typeof msg.dayDurationMs === 'number' && msg.dayDurationMs > 0
+        ? msg.dayDurationMs : 86400000;
+      if (startMs == null) {
+        startMs = typeof msg.simTime === 'number' && Number.isFinite(msg.simTime)
+          ? msg.simTime : null;
+        realStartMs = performance.now();
+      }
       if (routes.length === 0) {
         stopLoop();
         self.postMessage({ type: 'positions', planes: [] });
@@ -66,6 +71,7 @@ self.onmessage = (e) => {
     case 'stop':
       stopLoop();
       routes = [];
+      startMs = null;
       self.postMessage({ type: 'positions', planes: [] });
       break;
   }

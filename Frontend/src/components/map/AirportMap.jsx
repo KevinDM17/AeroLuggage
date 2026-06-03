@@ -100,6 +100,7 @@ function AirportMap({
   flights: flightsProp,
   autoload = true,
   simulatedNowMs,
+  simulatedDayDurationMs,
 }) {
   const initialViewState = {
     longitude: -40,
@@ -188,9 +189,12 @@ function AirportMap({
     }
     const simTimeMs = typeof simulatedNowMs === "number" && Number.isFinite(simulatedNowMs)
       ? simulatedNowMs : null;
+    const dayDurMs = typeof simulatedDayDurationMs === "number" && simulatedDayDurationMs > 0
+      ? simulatedDayDurationMs : 86400000;
     worker.postMessage({
       type: "init",
       simTime: simTimeMs,
+      dayDurationMs: dayDurMs,
       routes: routesGeometry.map((g) => ({
         id: g.id,
         oLng: g.oLng,
@@ -203,7 +207,7 @@ function AirportMap({
         arrMs: g.arrMs,
       })),
     });
-  }, [routesGeometry, showFlights, simulatedNowMs]);
+  }, [routesGeometry, showFlights, simulatedNowMs, simulatedDayDurationMs]);
 
   /* Capas de deck.gl. Se recalculan en cada render — son objetos baratos,
    * deck.gl hace el diff por id (`id` prop) y solo redibuja lo que cambió. */
