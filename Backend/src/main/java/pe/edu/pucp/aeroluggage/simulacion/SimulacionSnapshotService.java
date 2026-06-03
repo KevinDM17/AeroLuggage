@@ -175,15 +175,18 @@ public class SimulacionSnapshotService {
     }
 
     public List<VueloInstanciaResponse> mapearVuelosInstanciaActivos(final List<VueloInstancia> vuelosInstancia,
-                                                                      final LocalDateTime simTimeUtc,
-                                                                      final int windowMinutes) {
+                                                                       final LocalDateTime simTimeUtc,
+                                                                       final int windowMinutes,
+                                                                       final LocalDateTime fechaInicioUtc) {
         final LocalDateTime limiteVentana = simTimeUtc.plusMinutes(windowMinutes);
         final List<VueloInstanciaResponse> resultado = new ArrayList<>();
         for (final VueloInstancia vuelo : vuelosInstancia) {
             if (vuelo == null) {
                 continue;
             }
-            final boolean enProgreso = vuelo.getEstado() == EstadoVuelo.EN_PROGRESO;
+            final boolean enProgreso = vuelo.getEstado() == EstadoVuelo.EN_PROGRESO
+                    && vuelo.getFechaSalida() != null
+                    && !vuelo.getFechaSalida().isBefore(fechaInicioUtc);
             final boolean proximoEnVentana = (vuelo.getEstado() == EstadoVuelo.PROGRAMADO
                     || vuelo.getEstado() == EstadoVuelo.CONFIRMADO)
                     && vuelo.getFechaSalida() != null
@@ -221,6 +224,9 @@ public class SimulacionSnapshotService {
         final Map<String, Integer> usoPorVuelo = new HashMap<>();
         for (final Ruta ruta : rutas) {
             if (ruta == null || ruta.getSubrutas() == null || ruta.getSubrutas().isEmpty()) {
+                continue;
+            }
+            if (ruta.getEstado() == EstadoRuta.REPLANIFICADA || ruta.getEstado() == EstadoRuta.FALLIDA) {
                 continue;
             }
             final Maleta maleta = ruta.getIdMaleta() != null ? maletasPorId.get(ruta.getIdMaleta()) : null;

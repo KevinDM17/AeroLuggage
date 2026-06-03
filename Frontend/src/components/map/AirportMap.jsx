@@ -62,31 +62,22 @@ const PLANE_ICON_MAPPING = {
   plane: { x: 0, y: 0, width: PLANE_ICON_SIZE_PX, height: PLANE_ICON_SIZE_PX, mask: true },
 };
 
-const MAX_FLIGHTS_ON_MAP = 200; // Antes era 30 — con GPU podemos mostrar muchos más.
+const MAX_FLIGHTS_ON_MAP = 1000;
 
 const pickFlightsToAnimate = (flights, airportsByIata, limit) => {
-  const seen = new Set();
   const out = [];
   for (const f of flights) {
     if (normalizeStatus(f.status) === "CANCELADO") continue;
     if (!airportsByIata.has(f.origin) || !airportsByIata.has(f.dest)) continue;
-    const key = `${f.origin}-${f.dest}`;
-    if (seen.has(key)) continue;
-    seen.add(key);
     out.push(f);
     if (out.length >= limit) break;
   }
   return out;
 };
 
-/* Estilo de mapa: usa CartoDB dark (mismo look que antes con Leaflet) pero
- * vectorial vía MapLibre. Si en algún momento se rompe el host de Carto,
- * basta con cambiar esta URL. */
-const MAP_STYLE = "https://basemaps.cartocdn.com/gl/dark-matter-nolabels-gl-style/style.json";
+const MAP_STYLE = import.meta.env.VITE_MAP_STYLE_URL
+  ?? "https://basemaps.cartocdn.com/gl/dark-matter-nolabels-gl-style/style.json";
 
-/* DeckGLOverlay: integra deck.gl como capa interleaved dentro de MapLibre.
- * Esto hace que las capas de deck.gl se rendericen en el MISMO contexto WebGL
- * que el mapa — un solo canvas, sin desincronización en pan/zoom. */
 function DeckGLOverlay(props) {
   const overlay = useControl(() => new MapboxOverlay(props));
   overlay.setProps(props);
@@ -133,7 +124,16 @@ function AirportMap({
   /* Geometría estática de rutas — solo cambia con vuelos/aeropuertos, NO por frame. */
   const routesGeometry = useMemo(() => {
     const picked = pickFlightsToAnimate(flights ?? [], airportsByIata, MAX_FLIGHTS_ON_MAP);
-    return picked.map((route, idx) => {
+    const nowMs = typeof simulatedNowMs === "number" && Number.isFinite(simulatedNowMs)
+      ? simulatedNowMs : null;
+    const enProgreso = picked.filter((route) => {
+      if (nowMs == null) return true;
+      const salidaMs = Date.parse(`${route.depTime}Z`);
+      const llegadaMs = Date.parse(`${route.arrTime}Z`);
+      if (!Number.isFinite(salidaMs) || !Number.isFinite(llegadaMs)) return false;
+      return nowMs >= salidaMs && nowMs < llegadaMs;
+    });
+    return enProgreso.map((route, idx) => {
       const origin = airportsByIata.get(route.origin);
       const destination = airportsByIata.get(route.dest);
       const dLat = destination.lat - origin.lat;
@@ -155,7 +155,7 @@ function AirportMap({
         arrMs: Number.isFinite(llegadaMs) ? llegadaMs : null,
       };
     });
-  }, [flights, airportsByIata]);
+  }, [flights, airportsByIata, simulatedNowMs]);
 
   /* Estado de las posiciones animadas — viene del worker. */
   const [planes, setPlanes] = useState([]);

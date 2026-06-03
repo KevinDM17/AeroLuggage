@@ -4,6 +4,7 @@ import lombok.extern.slf4j.Slf4j;
 import org.springframework.stereotype.Service;
 import pe.edu.pucp.aeroluggage.cargador.CargadorEnvios;
 import pe.edu.pucp.aeroluggage.cargador.DatosEntrada;
+import pe.edu.pucp.aeroluggage.config.SimulacionParams;
 import pe.edu.pucp.aeroluggage.dominio.entidades.Aeropuerto;
 import pe.edu.pucp.aeroluggage.dominio.entidades.Maleta;
 import pe.edu.pucp.aeroluggage.dominio.entidades.Pedido;
@@ -27,15 +28,16 @@ import java.util.Map;
 @Service
 public class ServicioCargaSimulacion {
 
-    private static final long MAX_DIAS_VUELOS_INSTANCIAS = 30L;
-
     private final AeropuertoRepositorio aeropuertoRepositorio;
     private final VueloProgramadoRepositorio vueloProgramadoRepositorio;
+    private final SimulacionParams simulacionParams;
 
     public ServicioCargaSimulacion(final AeropuertoRepositorio aeropuertoRepositorio,
-                                   final VueloProgramadoRepositorio vueloProgramadoRepositorio) {
+                                   final VueloProgramadoRepositorio vueloProgramadoRepositorio,
+                                   final SimulacionParams simulacionParams) {
         this.aeropuertoRepositorio = aeropuertoRepositorio;
         this.vueloProgramadoRepositorio = vueloProgramadoRepositorio;
+        this.simulacionParams = simulacionParams;
     }
 
     public void cargarDatosSimulacion(final SimulacionSesion sesion, final Path enviosPath) {
@@ -46,7 +48,7 @@ public class ServicioCargaSimulacion {
 
         final LocalDate fechaInicio = sesion.getFechaInicio();
         final LocalDate fechaFin = fechaInicio.plusDays(Math.max(0L, sesion.getTotalDias() - 1L));
-        final long diasVuelos = Math.min(sesion.getTotalDias() + 2L, MAX_DIAS_VUELOS_INSTANCIAS);
+        final long diasVuelos = Math.min(sesion.getTotalDias() + 2L, simulacionParams.getMaxDiasVuelosInstancias());
         final LocalDate fechaFinVuelos = fechaInicio.plusDays(diasVuelos);
 
         final List<VueloInstancia> vuelosInstancia = generarVuelosInstancia(

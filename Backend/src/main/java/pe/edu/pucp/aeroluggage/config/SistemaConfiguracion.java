@@ -6,7 +6,7 @@ import org.springframework.stereotype.Component;
 
 @Component
 @ConfigurationProperties(prefix = "vuelos")
-@PropertySource(value = "classpath:sistem_params.yml", factory = YamlPropertySourceFactory.class)
+@PropertySource(value = "classpath:system_params.yml", factory = YamlPropertySourceFactory.class)
 public class SistemaConfiguracion {
 
     private int umbralConfirmacionMinutos = 30;

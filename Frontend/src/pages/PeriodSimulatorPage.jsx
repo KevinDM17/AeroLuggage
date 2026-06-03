@@ -145,6 +145,7 @@ export default function PeriodSimulatorPage() {
     const local = ESTADO_BACK_A_LOCAL[estadoMessage.estado] ?? simStatus;
     if (local !== simStatus) setSimStatus(local);
     if (estadoMessage.estado === "FINALIZADA") {
+      ignoreTicksRef.current = true;
       toast.push({
         type: "success",
         title: "Simulación completada",
@@ -197,6 +198,7 @@ export default function PeriodSimulatorPage() {
         orders: Array.isArray(tick.pedidos) ? tick.pedidos : prev.orders,
         bags: Array.isArray(tick.maletas) ? tick.maletas : prev.bags,
         routes: Array.isArray(tick.rutas) ? tick.rutas : prev.routes,
+        sessionId: sessionId,
         loaded: true,
       }));
     } else {
@@ -205,6 +207,7 @@ export default function PeriodSimulatorPage() {
         orders: Array.isArray(tick.pedidos) ? tick.pedidos : prev.orders,
         bags: Array.isArray(tick.maletas) ? tick.maletas : prev.bags,
         routes: Array.isArray(tick.rutas) ? tick.rutas : prev.routes,
+        sessionId: sessionId,
         loaded: true,
       }));
     }
@@ -217,7 +220,11 @@ export default function PeriodSimulatorPage() {
       const parsed = Date.parse(`${currentSimTimeUtc}Z`);
       return Number.isFinite(parsed) ? parsed : null;
     }
-    if (simStatus !== "running") return startMs;
+    if (simStatus !== "running") {
+      if (!currentSimTimeUtc) return startMs;
+      const parsed = Date.parse(`${currentSimTimeUtc}Z`);
+      return Number.isFinite(parsed) ? parsed : startMs;
+    }
 
     const ratio = 86400000 / simulatedDayDurationMs;
     return startMs + executionElapsedMs * ratio;
@@ -300,6 +307,7 @@ export default function PeriodSimulatorPage() {
         orders: [],
         bags: [],
         routes: [],
+        sessionId: sessionId,
         loaded: true,
       });
       setRunId((current) => current + 1);

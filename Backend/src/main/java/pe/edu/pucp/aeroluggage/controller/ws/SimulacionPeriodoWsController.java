@@ -43,4 +43,13 @@ public class SimulacionPeriodoWsController {
         sesionManager.registrarWsSession(wsSessionId, comando.getSessionId());
         sesionManager.detener(comando.getSessionId(), broker);
     }
+
+    @MessageMapping("/simulacion/periodo/cancelar-vuelo")
+    public void cancelarVuelo(final SimulacionComandoDTO comando, final SimpMessageHeaderAccessor accessor) {
+        final String wsSessionId = accessor.getSessionId();
+        log.info("[AeroLuggage/Simulacion] - WS/cancelar-vuelo: sessionId: {}, vuelo: {}, wsSession: {}",
+                comando.getSessionId(), comando.getIdVueloInstancia(), wsSessionId);
+        sesionManager.registrarWsSession(wsSessionId, comando.getSessionId());
+        sesionManager.cancelarVuelo(comando.getSessionId(), comando.getIdVueloInstancia(), broker);
+    }
 }

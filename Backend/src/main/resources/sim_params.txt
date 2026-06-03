@@ -1,4 +1,0 @@
-simulacion.duracionDiaSimuladoMs=600000
-simulacion.ventana.tamanioMinutos=120
-simulacion.ventana.espaciadoMinutos=120
-simulacion.tickIntervalMs=1000

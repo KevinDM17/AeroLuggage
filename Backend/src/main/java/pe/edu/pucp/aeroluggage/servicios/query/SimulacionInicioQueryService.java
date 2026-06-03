@@ -34,12 +34,14 @@ public class SimulacionInicioQueryService {
     private static final String ENVIOS_FOLDER_KEY = "ENVIOS_FOLDER_PATH";
     private static final String DEFAULT_ENVIOS_PATH = "datos/Envios";
     private static final DateTimeFormatter ISO_DATE_TIME = DateTimeFormatter.ISO_LOCAL_DATE_TIME;
-    private final Dotenv dotenv = Dotenv.configure().ignoreIfMissing().load();
+    private final Dotenv dotenv;
     private final SimulacionSnapshotService snapshotService;
     private final ServicioCargaSimulacion servicioCargaSimulacion;
 
-    public SimulacionInicioQueryService(final SimulacionSnapshotService snapshotService,
+    public SimulacionInicioQueryService(final Dotenv dotenv,
+                                        final SimulacionSnapshotService snapshotService,
                                         final ServicioCargaSimulacion servicioCargaSimulacion) {
+        this.dotenv = dotenv;
         this.snapshotService = snapshotService;
         this.servicioCargaSimulacion = servicioCargaSimulacion;
     }

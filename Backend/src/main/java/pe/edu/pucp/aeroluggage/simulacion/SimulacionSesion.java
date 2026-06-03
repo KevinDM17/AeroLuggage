@@ -58,6 +58,8 @@ public class SimulacionSesion {
     private volatile Map<String, Maleta> maletasPorId = Map.of();
     private volatile ScheduledFuture<?> tareaScheduled;
     private final ConcurrentHashMap<String, MaletaFallos> evaluacionesMaletas = new ConcurrentHashMap<>();
+    private final List<SegmentoReplanificacion> segmentosReplanificacion = new CopyOnWriteArrayList<>();
+    private final AtomicBoolean replanificacionPendiente = new AtomicBoolean(false);
 
     public SimulacionSesion(
             final String sessionId,
@@ -135,6 +137,36 @@ public class SimulacionSesion {
 
     public void marcarVentanaPlanificada(final String windowId) {
         ultimaVentanaPlanificada.set(windowId);
+    }
+
+    public record SegmentoReplanificacion(
+            String idMaleta,
+            String origenActual,
+            String destinoOriginal,
+            LocalDateTime tDisponible,
+            LocalDateTime tLimite
+    ) {}
+
+    public void agregarSegmentoReplanificacion(final SegmentoReplanificacion segmento) {
+        segmentosReplanificacion.add(segmento);
+    }
+
+    public List<SegmentoReplanificacion> obtenerSegmentosReplanificacion() {
+        final List<SegmentoReplanificacion> copia = new ArrayList<>(segmentosReplanificacion);
+        segmentosReplanificacion.clear();
+        return copia;
+    }
+
+    public boolean marcarReplanificacionPendiente() {
+        return replanificacionPendiente.compareAndSet(false, true);
+    }
+
+    public boolean isReplanificacionPendiente() {
+        return replanificacionPendiente.get();
+    }
+
+    public void limpiarReplanificacionPendiente() {
+        replanificacionPendiente.set(false);
     }
 
     public synchronized void agregarRutas(final List<Ruta> nuevasRutas) {

@@ -13,9 +13,14 @@ public class CorsConfig implements WebMvcConfigurer {
     private static final String FRONTEND_URL_KEY = "FRONTEND_URL";
     private static final String DEFAULT_FRONTEND_ORIGINS = "http://localhost:5173";
 
+    private final Dotenv dotenv;
+
+    public CorsConfig(final Dotenv dotenv) {
+        this.dotenv = dotenv;
+    }
+
     @Override
     public void addCorsMappings(final CorsRegistry registry) {
-        final Dotenv dotenv = Dotenv.configure().ignoreIfMissing().load();
         final String frontendUrl = dotenv.get(FRONTEND_URL_KEY, DEFAULT_FRONTEND_ORIGINS);
         final String[] allowedOrigins = Arrays.stream(frontendUrl.split(","))
                 .map(String::trim)

@@ -7,6 +7,7 @@ import org.springframework.stereotype.Service;
 import pe.edu.pucp.aeroluggage.cargador.CargadorDatosPrueba;
 import pe.edu.pucp.aeroluggage.cargador.DatosEntrada;
 import pe.edu.pucp.aeroluggage.cargador.GeneradorVueloInstancias;
+import pe.edu.pucp.aeroluggage.config.SimulacionParams;
 import pe.edu.pucp.aeroluggage.dominio.entidades.Aeropuerto;
 import pe.edu.pucp.aeroluggage.dominio.entidades.Maleta;
 import pe.edu.pucp.aeroluggage.dominio.entidades.Pedido;
@@ -32,11 +33,16 @@ public class SimulacionBootstrapService {
     private static final String DEFAULT_ENVIOS_PATH = "datos/Envios";
     private static final long MAX_DIAS_VUELOS_INSTANCIAS = 30L;
 
-    private final Dotenv dotenv = Dotenv.configure().ignoreIfMissing().load();
+    private final Dotenv dotenv;
     private final SimulacionSnapshotService snapshotService;
+    private final SimulacionParams simulacionParams;
 
-    public SimulacionBootstrapService(final SimulacionSnapshotService snapshotService) {
+    public SimulacionBootstrapService(final Dotenv dotenv,
+                                      final SimulacionSnapshotService snapshotService,
+                                      final SimulacionParams simulacionParams) {
+        this.dotenv = dotenv;
         this.snapshotService = snapshotService;
+        this.simulacionParams = simulacionParams;
     }
 
     public void ensureSnapshotLoaded(final SimulacionSesion sesion) {
@@ -56,7 +62,7 @@ public class SimulacionBootstrapService {
             final Map<String, Aeropuerto> indiceAeropuertos = CargadorDatosPrueba.indexarAeropuertos(aeropuertos);
             final LocalDate fechaInicio = sesion.getFechaInicio();
             final LocalDate fechaFin = fechaInicio.plusDays(Math.max(0L, sesion.getTotalDias() - 1L));
-            final long diasVuelos = Math.min(sesion.getTotalDias() - 1L, MAX_DIAS_VUELOS_INSTANCIAS);
+            final long diasVuelos = Math.min(sesion.getTotalDias() - 1L, simulacionParams.getMaxDiasVuelosInstancias());
             final LocalDate fechaFinVuelos = fechaInicio.plusDays(Math.max(0L, diasVuelos));
             final ArrayList<VueloProgramado> vuelosProgramados = CargadorDatosPrueba.cargarVuelosProgramados(
                     vuelosPath,

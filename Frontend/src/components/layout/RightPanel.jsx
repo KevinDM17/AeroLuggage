@@ -2,6 +2,7 @@ import { useEffect, useMemo, useState } from "react";
 import { useLocation } from "react-router-dom";
 import { Ban, Filter, PanelRightClose, MapPin, Globe, Info, ChevronDown, Plane, RefreshCw } from "lucide-react";
 import { useFetch } from "../../hooks/useFetch";
+import { useStompPublish } from "../../hooks/useStomp";
 import { cancelFlight, listFlights } from "../../api/flights";
 import { listOrders } from "../../api/orders";
 import { listAirports } from "../../api/airports";
@@ -370,6 +371,8 @@ export default function RightPanel({
   const [query, setQuery] = useState("");
   const [flightStatusFilter, setFlightStatusFilter] = useState("ALL");
   const [cancelingFlightId, setCancelingFlightId] = useState(null);
+  const publish = useStompPublish();
+  const sessionId = simulationPanelData?.sessionId ?? null;
   const location = useLocation();
   const isSimulator = location.pathname === "/" || location.pathname.startsWith("/simulator");
   const simulationLoaded = !isSimulator || simulationPanelData?.loaded === true;
@@ -449,6 +452,12 @@ export default function RightPanel({
     try {
       if (isSimulator) {
         markFlightAsCanceled(flightId);
+        if (sessionId) {
+          publish("/app/simulacion/periodo/cancelar-vuelo", {
+            sessionId,
+            idVueloInstancia: flightId,
+          });
+        }
       } else {
         await cancelFlight(flightId);
         await flightsFetch.refetch();
@@ -482,7 +491,7 @@ export default function RightPanel({
         rows={visibleFlights}
         renderItem={(f, index) => (
           <FlightItem
-            key={f.id ?? `${f.origin}-${f.dest}-${index}`}
+            key={`${f.id}-${index}`}
             flight={f}
             onCancel={handleCancelFlight}
             canceling={cancelingFlightId === f.id}

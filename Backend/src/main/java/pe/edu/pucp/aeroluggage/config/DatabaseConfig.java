@@ -14,10 +14,15 @@ public class DatabaseConfig {
 
     private static final String DB_URL_KEY = "DB_URL";
 
-    @Bean
+    private final Dotenv dotenv;
+
+    public DatabaseConfig(final Dotenv dotenv) {
+        this.dotenv = dotenv;
+    }
+
     @Primary
+    @Bean
     public DataSource dataSource() {
-        final Dotenv dotenv = Dotenv.configure().ignoreIfMissing().load();
         final String jdbcUrl = dotenv.get(DB_URL_KEY);
 
         final HikariConfig config = new HikariConfig();

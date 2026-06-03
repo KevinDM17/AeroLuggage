@@ -1,0 +1,42 @@
+negocio:
+  minutos-conexion: 10
+  minutos-recojo: 10
+  umbral-confirmacion-minutos: 30
+
+simulacion:
+  duracion-dia-simulado-ms: 600000
+  ventana:
+    tamanio-minutos: 120
+    espaciado-minutos: 120
+  tick-interval-ms: 1000
+  max-dias-vuelos-instancias: 30
+
+algoritmos:
+  alns:
+    max-iteraciones: 150
+    max-iteraciones-sin-mejora: 40
+    tiempo-maximo-ms: 30000
+    q-min: 1
+    q-max: 6
+    q-critical: 4
+    max-reintentos-ruteo: 40
+    umbral-critico-aeropuerto: 0.25
+    temperatura-inicial: 5.0
+    factor-enfriamiento: 0.98
+    semilla: 42
+    pesos:
+      maletas-no-enrutadas: 1000
+      maletas-fuera-de-plazo: 800
+      overflow-vuelos: 700
+      overflow-aeropuertos: 700
+      ocupacion-promedio-vuelos: 5
+      ocupacion-promedio-aeropuertos: 5
+      holgura: 3
+    adaptativo:
+      segmento-iteraciones: 15
+      sigma-1: 10
+      sigma-2: 6
+      sigma-3: 2
+      sigma-4: 0
+      rho: 0.2
+      peso-minimo-operador: 0.1

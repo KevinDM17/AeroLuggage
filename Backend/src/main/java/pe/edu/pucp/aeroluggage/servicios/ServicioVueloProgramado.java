@@ -25,27 +25,18 @@ public class ServicioVueloProgramado {
 
     private final VueloProgramadoRepositorio vueloProgramadoRepositorio;
     private final AeropuertoRepositorio aeropuertoRepositorio;
+    private final Dotenv dotenv;
 
-    public ServicioVueloProgramado(VueloProgramadoRepositorio vueloProgramadoRepositorio,
-                                   AeropuertoRepositorio aeropuertoRepositorio) {
+    public ServicioVueloProgramado(final VueloProgramadoRepositorio vueloProgramadoRepositorio,
+                                   final AeropuertoRepositorio aeropuertoRepositorio,
+                                   final Dotenv dotenv) {
         this.vueloProgramadoRepositorio = vueloProgramadoRepositorio;
         this.aeropuertoRepositorio = aeropuertoRepositorio;
-    }
-
-    @Transactional
-    public List<VueloProgramado> cargar(MultipartFile archivo) throws IOException {
-        Path temp = Files.createTempFile("planes-vuelo-", ".txt");
-        try (InputStream is = archivo.getInputStream()) {
-            Files.copy(is, temp, StandardCopyOption.REPLACE_EXISTING);
-            return persistir(cargarDesdeRuta(temp));
-        } finally {
-            Files.deleteIfExists(temp);
-        }
+        this.dotenv = dotenv;
     }
 
     @Transactional
     public List<VueloProgramado> cargarDesdeRecursos() throws IOException {
-        final Dotenv dotenv = Dotenv.configure().ignoreIfMissing().load();
         ClassPathResource recurso = new ClassPathResource(dotenv.get("PLANES_VUELO_FILE_PATH"));
         Path temp = Files.createTempFile("planes-vuelo-", ".txt");
         try (InputStream is = recurso.getInputStream()) {

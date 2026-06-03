@@ -4,7 +4,7 @@
  */
 
 const BASE_URL = import.meta.env.BACKEND_API_BASE_URL ?? "http://localhost:8080/api";
-const REQUEST_TIMEOUT_MS = 60_000;
+const REQUEST_TIMEOUT_MS = Number(import.meta.env.VITE_API_TIMEOUT_MS) || 60_000;
 
 export const USE_MOCK = import.meta.env.VITE_USE_MOCK === "true";
 

@@ -24,28 +24,23 @@ public class ServicioAeropuerto {
     private static final String AEROPUERTO_FILE = "AEROPUERTO_FILE_PATH";
 
     private final AeropuertoRepositorio aeropuertoRepositorio;
-    private final JdbcTemplate jdbcTemplate;
+    private final CiudadRepositorio ciudadRepositorio;
+    private final ContinenteRepositorio continenteRepositorio;
+    private final Dotenv dotenv;
 
-    public ServicioAeropuerto(AeropuertoRepositorio aeropuertoRepositorio, JdbcTemplate jdbcTemplate) {
+    public ServicioAeropuerto(final AeropuertoRepositorio aeropuertoRepositorio,
+                              final CiudadRepositorio ciudadRepositorio,
+                              final ContinenteRepositorio continenteRepositorio,
+                              final Dotenv dotenv) {
         this.aeropuertoRepositorio = aeropuertoRepositorio;
-        this.jdbcTemplate = jdbcTemplate;
-    }
-
-    @Transactional
-    public List<Aeropuerto> cargar(MultipartFile archivo) throws IOException {
-        Path temp = Files.createTempFile("aeropuertos-", ".txt");
-        try (InputStream is = archivo.getInputStream()) {
-            Files.copy(is, temp, StandardCopyOption.REPLACE_EXISTING);
-            return persistir(CargadorAeropuertos.cargar(temp));
-        } finally {
-            Files.deleteIfExists(temp);
-        }
+        this.ciudadRepositorio = ciudadRepositorio;
+        this.continenteRepositorio = continenteRepositorio;
+        this.dotenv = dotenv;
     }
 
     @Transactional
     public List<Aeropuerto> cargarDesdeRecursos() throws IOException {
-        final Dotenv dotevn = Dotenv.configure().ignoreIfMissing().load();
-        ClassPathResource recurso = new ClassPathResource(dotevn.get(AEROPUERTO_FILE));
+        ClassPathResource recurso = new ClassPathResource(dotenv.get(AEROPUERTO_FILE));
         Path temp = Files.createTempFile("aeropuertos-", ".txt");
         try (InputStream is = recurso.getInputStream()) {
             Files.copy(is, temp, StandardCopyOption.REPLACE_EXISTING);

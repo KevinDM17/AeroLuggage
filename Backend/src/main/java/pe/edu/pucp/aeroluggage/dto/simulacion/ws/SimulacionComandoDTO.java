@@ -10,4 +10,5 @@ import lombok.Setter;
 public class SimulacionComandoDTO {
 
     private String sessionId;
+    private String idVueloInstancia;
 }

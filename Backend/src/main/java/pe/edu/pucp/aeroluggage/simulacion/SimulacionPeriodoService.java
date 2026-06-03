@@ -52,7 +52,8 @@ public class SimulacionPeriodoService {
                 .withVuelosInstancia(snapshotService.mapearVuelosInstanciaActivos(
                         sesion.getVuelosInstancia(),
                         sesion.getCurrentSimTimeUtc().get(),
-                        sesion.getWindowSizeMinutes()))
+                        sesion.getWindowSizeMinutes(),
+                        sesion.getFechaInicioUtc()))
                 .withPedidos(entidades.pedidos())
                 .withMaletas(entidades.maletas())
                 .withRutas(entidades.rutas())

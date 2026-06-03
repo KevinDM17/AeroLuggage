@@ -39,9 +39,9 @@ export function getStompClient() {
 
   _client = new Client({
     webSocketFactory: () => new SockJS(WS_ENDPOINT),
-    reconnectDelay: 5000,
-    heartbeatIncoming: 10000,
-    heartbeatOutgoing: 10000,
+    reconnectDelay: Number(import.meta.env.VITE_WS_RECONNECT_DELAY_MS) || 5000,
+    heartbeatIncoming: Number(import.meta.env.VITE_WS_HEARTBEAT_IN_MS) || 10000,
+    heartbeatOutgoing: Number(import.meta.env.VITE_WS_HEARTBEAT_OUT_MS) || 10000,
     debug: () => {},
     onConnect: () => {
       _connected = true;
