@@ -22,7 +22,6 @@ import {
 const PERIOD_DAYS = 5;
 const CLOCK_REFRESH_MS = 33;
 const MAP_REFRESH_MS = 500;
-const SIMULATED_DAY_MS = 24 * 60 * 60 * 1000;
 
 const ESTADO_BACK_A_LOCAL = {
   INICIADA: "running",
@@ -219,8 +218,7 @@ export default function PeriodSimulatorPage() {
       0,
       executionElapsedMs - tickReceiptElapsedMs,
     );
-    const simulatedDeltaMs =
-      elapsedSinceTickMs * (SIMULATED_DAY_MS / simulatedDayDurationMs);
+    const simulatedDeltaMs = elapsedSinceTickMs;
     return parsed + simulatedDeltaMs;
   }, [
     tickBaseSimTimeUtc,

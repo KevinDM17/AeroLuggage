@@ -99,6 +99,7 @@ function AirportMap({
   airports: airportsProp,
   flights: flightsProp,
   autoload = true,
+  simulatedNowMs,
 }) {
   const initialViewState = {
     longitude: -40,
@@ -136,8 +137,9 @@ function AirportMap({
       const destination = airportsByIata.get(route.dest);
       const dLat = destination.lat - origin.lat;
       const dLng = destination.lng - origin.lng;
-      // bearing en grados; deck.gl IconLayer gira en sentido horario con 0 = norte.
       const bearing = (Math.atan2(dLng, dLat) * 180) / Math.PI;
+      const salidaMs = Date.parse(`${route.depTime}Z`);
+      const llegadaMs = Date.parse(`${route.arrTime}Z`);
       return {
         id: route.id ?? `${route.origin}-${route.dest}-${idx}`,
         origin,
@@ -148,6 +150,8 @@ function AirportMap({
         dLat,
         angle: bearing,
         color: hexToRgba(flightLoadColor(route.used, route.capacity)),
+        depMs: Number.isFinite(salidaMs) ? salidaMs : null,
+        arrMs: Number.isFinite(llegadaMs) ? llegadaMs : null,
       };
     });
   }, [flights, airportsByIata]);
@@ -182,8 +186,11 @@ function AirportMap({
       setPlanes([]);
       return;
     }
+    const simTimeMs = typeof simulatedNowMs === "number" && Number.isFinite(simulatedNowMs)
+      ? simulatedNowMs : null;
     worker.postMessage({
       type: "init",
+      simTime: simTimeMs,
       routes: routesGeometry.map((g) => ({
         id: g.id,
         oLng: g.oLng,
@@ -192,9 +199,11 @@ function AirportMap({
         dLat: g.dLat,
         angle: g.angle,
         color: g.color,
+        depMs: g.depMs,
+        arrMs: g.arrMs,
       })),
     });
-  }, [routesGeometry, showFlights]);
+  }, [routesGeometry, showFlights, simulatedNowMs]);
 
   /* Capas de deck.gl. Se recalculan en cada render — son objetos baratos,
    * deck.gl hace el diff por id (`id` prop) y solo redibuja lo que cambió. */
@@ -307,6 +316,7 @@ function AirportMap({
         initialViewState={initialViewState}
         mapStyle={MAP_STYLE}
         attributionControl={false}
+        renderWorldCopies={false}
         style={{ width: "100%", height: "100%", background: tokens.canvas }}
       >
         <DeckGLOverlay layers={layers} interleaved />
