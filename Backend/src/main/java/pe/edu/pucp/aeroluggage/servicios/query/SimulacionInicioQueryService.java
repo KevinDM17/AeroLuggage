@@ -19,6 +19,7 @@ import pe.edu.pucp.aeroluggage.simulacion.SimulacionSnapshotService;
 import pe.edu.pucp.aeroluggage.simulacion.SimulacionVentana;
 
 import java.io.IOException;
+import java.nio.file.Files;
 import java.nio.file.Path;
 import java.time.LocalDate;
 import java.time.LocalDateTime;
