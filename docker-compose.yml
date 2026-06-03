@@ -11,7 +11,7 @@ services:
       SERVER_PORT: 8080
     restart: unless-stopped
     healthcheck:
-      test: ["CMD-SHELL", "wget -qO- http://localhost:8080/api/seed > /dev/null 2>&1 || exit 1"]
+      test: ["CMD", "wget", "-qO-", "http://localhost:8080/"]
       interval: 10s
       timeout: 5s
       retries: 5

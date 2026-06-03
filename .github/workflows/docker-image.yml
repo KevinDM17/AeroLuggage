@@ -98,7 +98,7 @@ jobs:
             docker compose pull && \
             docker compose down && \
             docker compose up -d && \
-            sleep 10 && \
+            sleep 25 && \
             curl -X POST "http://localhost:8082/api/seed?clean=true" && \
             docker image prune -f
           "
