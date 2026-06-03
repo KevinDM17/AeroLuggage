@@ -65,7 +65,7 @@ jobs:
           context: ./Frontend
           file: ./Frontend/Dockerfile
           build-args: |
-            BACKEND_API_BASE_URL=
+            BACKEND_API_BASE_URL=/api
             BACKEND_WS_BASE_URL=
           push: true
           tags: ${{ env.REGISTRY }}/${{ env.LOWER_OWNER }}/aeroluggage-frontend:latest

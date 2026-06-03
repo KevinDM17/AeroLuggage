@@ -10,7 +10,7 @@ services:
     image: ghcr.io/kevindm17/aeroluggage-frontend:latest
     build:
       args:
-        BACKEND_API_BASE_URL: ""
+        BACKEND_API_BASE_URL: /api
         BACKEND_WS_BASE_URL: ""
     ports:
       - "127.0.0.1:3000:80"
