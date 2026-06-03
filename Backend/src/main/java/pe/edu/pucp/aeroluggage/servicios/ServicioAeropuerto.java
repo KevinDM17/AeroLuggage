@@ -24,17 +24,14 @@ public class ServicioAeropuerto {
     private static final String AEROPUERTO_FILE = "AEROPUERTO_FILE_PATH";
 
     private final AeropuertoRepositorio aeropuertoRepositorio;
-    private final CiudadRepositorio ciudadRepositorio;
-    private final ContinenteRepositorio continenteRepositorio;
+    private final JdbcTemplate jdbcTemplate;
     private final Dotenv dotenv;
 
     public ServicioAeropuerto(final AeropuertoRepositorio aeropuertoRepositorio,
-                              final CiudadRepositorio ciudadRepositorio,
-                              final ContinenteRepositorio continenteRepositorio,
+                              final JdbcTemplate jdbcTemplate,
                               final Dotenv dotenv) {
         this.aeropuertoRepositorio = aeropuertoRepositorio;
-        this.ciudadRepositorio = ciudadRepositorio;
-        this.continenteRepositorio = continenteRepositorio;
+        this.jdbcTemplate = jdbcTemplate;
         this.dotenv = dotenv;
     }
 
