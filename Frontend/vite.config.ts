@@ -32,5 +32,25 @@ export default defineConfig(({mode}) => {
       // Do not modifyâfile watching is disabled to prevent flickering during agent edits.
       hmr: process.env.DISABLE_HMR !== 'true',
     },
+    build: {
+      // Separar libs grandes (MapLibre + deck.gl) en chunks dedicados.
+      // Beneficio: el navegador cachea esos chunks aparte; cuando cambias
+      // codigo de la app, no re-descarga 1MB+ de libs. Ademas paraleliza
+      // mejor la descarga inicial.
+      rollupOptions: {
+        output: {
+          manualChunks: {
+            maplibre: ['maplibre-gl', 'react-map-gl/maplibre'],
+            deckgl: [
+              '@deck.gl/core',
+              '@deck.gl/react',
+              '@deck.gl/layers',
+              '@deck.gl/mapbox',
+            ],
+          },
+        },
+      },
+      chunkSizeWarningLimit: 1200,
+    },
   };
 });
