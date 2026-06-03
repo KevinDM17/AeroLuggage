@@ -91,6 +91,7 @@ jobs:
         run: |
           sshpass -p "$SERVER_PASS" ssh -o StrictHostKeyChecking=no "$SERVER_USER@$SERVER_HOST" "
             cd /opt/aeroluggage && \
+            git pull origin deployment && \
             export BACKEND_IMAGE='$BACKEND_IMAGE' && \
             export FRONTEND_IMAGE='$FRONTEND_IMAGE' && \
             docker login ghcr.io -u '${{ github.actor }}' -p '${{ secrets.GITHUB_TOKEN }}' && \
