@@ -1,5 +1,4 @@
 @import "tailwindcss";
-@import "leaflet/dist/leaflet.css";
 
 @theme {
   /* Surfaces — niveles de elevación, del más profundo al más alto */
@@ -16,12 +15,6 @@
   --color-warning: #ffd700;
   --color-danger:  #ff3b30;
   --color-info:    #3abff8;
-}
-
-/* Leaflet map styles overriding reset defaults if necessary */
-.leaflet-container {
-  font-family: inherit;
-  background-color: var(--color-canvas) !important;
 }
 
 @layer base {

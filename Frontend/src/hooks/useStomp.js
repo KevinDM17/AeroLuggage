@@ -15,7 +15,12 @@ export function useStompSubscribe(topic, { enabled = true } = {}) {
   const [connected, setConnected] = useState(false);
 
   useEffect(() => {
-    if (!enabled || !topic || !isStompEnabled()) return undefined;
+    if (!enabled || !topic || !isStompEnabled()) {
+      setData(null);
+      setError(null);
+      setConnected(false);
+      return undefined;
+    }
 
     let subscription = null;
     let cancelled = false;

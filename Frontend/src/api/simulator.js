@@ -28,7 +28,7 @@ import {
 
 export const iniciarSimulacionPeriodo = (payload) =>
   USE_MOCK
-    ? mockStartPeriodSim(payload.fechaInicio)
+    ? mockStartPeriodSim(payload.fechaHoraInicio ?? payload.fechaInicio)
     : apiPost("/simulacion/periodo/iniciar", payload);
 
 export const obtenerSnapshotSimulacionPeriodo = (sessionId) =>
@@ -62,7 +62,7 @@ export const iniciarSimulacionColapso = (payload) =>
     : apiPost("/simulacion/colapso/iniciar", payload);
 
 export const startCollapseSim = (startDate) =>
-  iniciarSimulacionColapso({ fechaInicio: startDate, intervaloTickMs: 1000 });
+  iniciarSimulacionColapso({ fechaInicio: startDate, intervaloTickMs: 500 });
 
 export const stopCollapseSim = () =>
   USE_MOCK ? mockStopCollapseSim() : Promise.reject(new Error("Pendiente en back"));

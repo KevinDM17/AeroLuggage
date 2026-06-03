@@ -1,10 +1,18 @@
-import { useState, useEffect } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { Outlet, useLocation } from "react-router-dom";
 import { PanelLeftOpen, PanelRightOpen } from "lucide-react";
 import Sidebar from "./Sidebar";
 import RightPanel from "./RightPanel";
 
 const DESKTOP_BREAKPOINT = 1024;
+const EMPTY_SIMULATION_PANEL_DATA = {
+  airports: [],
+  flights: [],
+  orders: [],
+  bags: [],
+  routes: [],
+  loaded: false,
+};
 
 function getIsDesktop() {
   if (typeof window === "undefined") return true;
@@ -15,15 +23,11 @@ export default function MainLayout() {
   const [isDesktop, setIsDesktop] = useState(getIsDesktop);
   const [leftOpen, setLeftOpen] = useState(getIsDesktop);
   const [rightOpen, setRightOpen] = useState(getIsDesktop);
-  const [simulationPanelData, setSimulationPanelData] = useState({
-    airports: [],
-    flights: [],
-    orders: [],
-    bags: [],
-    routes: [],
-    loaded: false,
-  });
+  const [simulationPanelData, setSimulationPanelData] = useState(EMPTY_SIMULATION_PANEL_DATA);
+  const [cancelledFlightIds, setCancelledFlightIds] = useState(() => new Set());
+  const [panelResetVersion, setPanelResetVersion] = useState(0);
   const location = useLocation();
+  const previousIsSimulatorRef = useRef(null);
 
   const isSimulator = location.pathname === "/" || location.pathname.startsWith("/simulator");
 
@@ -56,6 +60,30 @@ export default function MainLayout() {
 
   const closeLeft = () => setLeftOpen(false);
   const closeRight = () => setRightOpen(false);
+  const resetSimulationPanelData = useCallback(() => {
+    setSimulationPanelData({ ...EMPTY_SIMULATION_PANEL_DATA });
+    setCancelledFlightIds(new Set());
+    setPanelResetVersion((current) => current + 1);
+  }, []);
+
+  useEffect(() => {
+    const previousIsSimulator = previousIsSimulatorRef.current;
+    if (previousIsSimulator === true && !isSimulator) {
+      resetSimulationPanelData();
+    }
+    previousIsSimulatorRef.current = isSimulator;
+  }, [isSimulator, resetSimulationPanelData]);
+
+  const layoutContext = useMemo(
+    () => ({
+      simulationPanelData,
+      setSimulationPanelData,
+      resetSimulationPanelData,
+      cancelledFlightIds,
+      setCancelledFlightIds,
+    }),
+    [simulationPanelData, resetSimulationPanelData, cancelledFlightIds],
+  );
 
   return (
     <div className="flex h-screen overflow-hidden bg-surface-1 text-slate-200 font-sans relative">
@@ -89,13 +117,13 @@ export default function MainLayout() {
               : "fixed inset-y-0 left-0 z-[9995] max-w-[85%] shadow-2xl"
           }
         >
-          <Sidebar onClose={closeLeft} />
+          <Sidebar onClose={closeLeft} closeOnNavigate={!isDesktop} />
         </div>
       )}
 
       <div className="flex-1 flex flex-col h-full overflow-hidden relative border-r border-slate-800 min-w-0">
-        <main className="flex-1 overflow-hidden bg-canvas">
-          <Outlet context={{ simulationPanelData, setSimulationPanelData }} />
+        <main key={location.pathname} className="flex-1 overflow-hidden bg-canvas">
+          <Outlet context={layoutContext} />
         </main>
       </div>
 
@@ -118,7 +146,13 @@ export default function MainLayout() {
               : "fixed inset-y-0 right-0 z-[9995] max-w-[90%] shadow-2xl"
           }
         >
-          <RightPanel onClose={closeRight} simulationPanelData={simulationPanelData} />
+          <RightPanel
+            key={panelResetVersion}
+            onClose={closeRight}
+            simulationPanelData={simulationPanelData}
+            setSimulationPanelData={setSimulationPanelData}
+            setCancelledFlightIds={setCancelledFlightIds}
+          />
         </div>
       )}
     </div>
