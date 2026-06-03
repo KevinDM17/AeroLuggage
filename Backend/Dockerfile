@@ -8,17 +8,15 @@ RUN mvn -B dependency:go-offline
 COPY src ./src
 RUN mvn -B clean package -DskipTests
 
-FROM maven:3.9.9-eclipse-temurin-21-alpine
+FROM eclipse-temurin:21-alpine AS runtime
 
 WORKDIR /app
 
-COPY --from=build /root/.m2 /root/.m2
-COPY --from=build /app/pom.xml ./pom.xml
-COPY --from=build /app/src ./src
-COPY --from=build /app/target ./target
+COPY --from=build /app/target/*.jar ./app.jar
+COPY .env ./.env
 
 RUN mkdir -p /app/database
 
 EXPOSE 8080
 
-ENTRYPOINT ["sh", "-c", "java $JAVA_OPTS -jar /app/target/*.jar"]
+ENTRYPOINT ["sh", "-c", "java $JAVA_OPTS -jar /app/app.jar"]

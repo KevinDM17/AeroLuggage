@@ -1,0 +1,33 @@
+services:
+  backend:
+    build: ./Backend
+    ports:
+      - "8080:8080"
+    volumes:
+      - aeroluggage-db:/app/database
+    env_file: ./Backend/.env
+    environment:
+      SERVER_PORT: 8080
+    restart: unless-stopped
+    healthcheck:
+      test: ["CMD-SHELL", "wget -qO- http://localhost:8080/api/seed > /dev/null 2>&1 || exit 1"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+      start_period: 30s
+
+  frontend:
+    build:
+      context: ./Frontend
+      dockerfile: Dockerfile
+      args:
+        BACKEND_API_BASE_URL: http://backend:8080/api
+        BACKEND_WS_BASE_URL: http://backend:8080
+    ports:
+      - "3000:80"
+    depends_on:
+      - backend
+    restart: unless-stopped
+
+volumes:
+  aeroluggage-db:

@@ -31,7 +31,7 @@ jobs:
         uses: docker/build-push-action@v5
         with:
           context: ./Backend
-          file: ./Dockerfile_backend
+          file: ./Backend/Dockerfile
           push: true
           tags: ${{ env.BACKEND_IMAGE }}
           cache-from: type=gha
@@ -58,7 +58,7 @@ jobs:
         uses: docker/build-push-action@v5
         with:
           context: ./Frontend
-          file: ./Dockerfile_frontend
+          file: ./Frontend/Dockerfile
           push: true
           tags: ${{ env.FRONTEND_IMAGE }}
           cache-from: type=gha
@@ -89,6 +89,7 @@ jobs:
             docker compose pull && \
             docker compose down && \
             docker compose up -d && \
-            docker compose exec -T backend mvn exec:java@seed -Dargs='clean' && \
+            sleep 10 && \
+            curl -X POST "http://localhost:8080/api/seed?clean=true" && \
             docker image prune -f
           "

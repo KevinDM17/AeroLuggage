@@ -1,0 +1,8 @@
+target/
+database/
+.git/
+.gitignore
+*.md
+Makefile
+Dockerfile
+.dockerignore
