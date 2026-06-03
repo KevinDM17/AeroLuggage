@@ -2,7 +2,7 @@ services:
   backend:
     build: ./Backend
     ports:
-      - "8080:8080"
+      - "8082:8080"
     volumes:
       - aeroluggage-db:/app/database
     env_file: ./Backend/.env

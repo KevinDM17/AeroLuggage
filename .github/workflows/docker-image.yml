@@ -6,8 +6,8 @@ on:
       - deployment
 
 env:
-  BACKEND_IMAGE: ghcr.io/${{ github.repository_owner }}/aeroluggage-backend:latest
-  FRONTEND_IMAGE: ghcr.io/${{ github.repository_owner }}/aeroluggage-frontend:latest
+  BACKEND_IMAGE: ghcr.io/${{ lower(github.repository_owner) }}/aeroluggage-backend:latest
+  FRONTEND_IMAGE: ghcr.io/${{ lower(github.repository_owner) }}/aeroluggage-frontend:latest
 
 jobs:
   build-backend:
@@ -90,6 +90,6 @@ jobs:
             docker compose down && \
             docker compose up -d && \
             sleep 10 && \
-            curl -X POST "http://localhost:8080/api/seed?clean=true" && \
+            curl -X POST "http://localhost:8082/api/seed?clean=true" && \
             docker image prune -f
           "
