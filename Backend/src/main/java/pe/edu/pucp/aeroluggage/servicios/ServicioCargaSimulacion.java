@@ -46,14 +46,14 @@ public class ServicioCargaSimulacion {
 
         final LocalDate fechaInicio = sesion.getFechaInicio();
         final LocalDate fechaFin = fechaInicio.plusDays(Math.max(0L, sesion.getTotalDias() - 1L));
-        final long diasVuelos = Math.min(sesion.getTotalDias() - 1L, MAX_DIAS_VUELOS_INSTANCIAS);
-        final LocalDate fechaFinVuelos = fechaInicio.plusDays(Math.max(0L, diasVuelos));
+        final long diasVuelos = Math.min(sesion.getTotalDias() + 2L, MAX_DIAS_VUELOS_INSTANCIAS);
+        final LocalDate fechaFinVuelos = fechaInicio.plusDays(diasVuelos);
 
         final List<VueloInstancia> vuelosInstancia = generarVuelosInstancia(
                 vuelosProgramados, fechaInicio, fechaFinVuelos);
 
         log.info("[AeroLuggage/Simulacion] - SNAPSHOT: sessionId={}, totalDias={}, diasVuelos={}, vuelosInstancia={}",
-                sesion.getSessionId(), sesion.getTotalDias(), diasVuelos + 1, vuelosInstancia.size());
+                sesion.getSessionId(), sesion.getTotalDias(), diasVuelos, vuelosInstancia.size());
 
         final DatosEntrada datosEntrada = CargadorEnvios.cargarEnviosEnRango(
                 enviosPath, indiceAeropuertos, fechaInicio, fechaFin);

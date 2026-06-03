@@ -51,6 +51,7 @@ final class ALNSReparador {
         for (final Maleta maleta : pendientes) {
             final Ruta ruta = encontrarMejorInsercion(estado, maleta, parametros, ALNSUtil.siguienteIdRuta(secuencia));
             if (ruta != null && ruta.getEstado() != EstadoRuta.FALLIDA) {
+                estado.registrarFalloMaleta(maleta.getIdMaleta(), null);
                 estado.reemplazarRuta(ruta);
             }
             secuencia++;
@@ -80,9 +81,15 @@ final class ALNSReparador {
                 }
             }
             if (mejorMaleta == null) {
+                for (final Maleta restante : restantes) {
+                    if (!estado.getRazonesFallo().containsKey(restante.getIdMaleta())) {
+                        estado.registrarFalloMaleta(restante.getIdMaleta(), "sin_ruta_en_grafo");
+                    }
+                }
                 break;
             }
             if (mejorRuta != null && mejorRuta.getEstado() != EstadoRuta.FALLIDA) {
+                estado.registrarFalloMaleta(mejorMaleta.getIdMaleta(), null);
                 estado.reemplazarRuta(mejorRuta);
             }
             restantes.remove(mejorMaleta);
@@ -96,41 +103,68 @@ final class ALNSReparador {
                                         final String idRuta) {
         final InstanciaProblema instancia = estado.getInstancia();
         final Pedido pedido = maleta == null ? null : maleta.getPedido();
+        final String idMaleta = maleta == null ? null : maleta.getIdMaleta();
         if (pedido == null || pedido.getAeropuertoOrigen() == null || pedido.getAeropuertoDestino() == null) {
+            estado.registrarFalloMaleta(idMaleta, "pedido_invalido");
             return null;
         }
         final GrafoTiempoExpandido grafo = instancia.getGrafo();
         if (grafo == null) {
+            estado.registrarFalloMaleta(idMaleta, "grafo_no_disponible");
             return null;
         }
         final LocalDateTime listo = ALNSUtil.max(instancia.getFechaEvaluacion(), pedido.getFechaRegistro());
+        final LocalDateTime tLimite = pedido.getFechaHoraPlazo();
+        if (tLimite != null && !listo.isBefore(tLimite)) {
+            estado.registrarFalloMaleta(idMaleta, "maleta_vencida");
+            return null;
+        }
         final Set<String> bloqueados = new HashSet<>();
+        final String icaoOrigen = pedido.getAeropuertoOrigen().getIdAeropuerto();
+        final String icaoDestino = pedido.getAeropuertoDestino().getIdAeropuerto();
+        if (icaoOrigen != null && icaoOrigen.equals(icaoDestino)) {
+            estado.registrarFalloMaleta(idMaleta, "origen_igual_destino");
+            return null;
+        }
         Ruta mejor = null;
         double mejorCosto = Double.POSITIVE_INFINITY;
+        boolean dijkstraExitoso = false;
+        String ultimaRazon = null;
+        String ultimoVuelo = null;
         for (int intento = 0; intento <= Math.max(1, parametros.getMaxReintentosRuteo()); intento++) {
             final List<VueloInstancia> camino = DijkstraRuteador.rutear(
                     pedido.getAeropuertoOrigen(),
                     pedido.getAeropuertoDestino(),
                     listo,
-                    pedido.getFechaHoraPlazo(),
+                    tLimite,
                     grafo,
                     parametros.getMinutosConexion(),
                     bloqueados
             );
             if (camino == null) {
+                if (!dijkstraExitoso) {
+                    ultimaRazon = "sin_ruta_en_grafo";
+                }
                 break;
             }
+            dijkstraExitoso = true;
             final Ruta candidata = ALNSUtil.crearRuta(idRuta, maleta, camino, EstadoRuta.PLANIFICADA);
             final String conflictoVuelo = primerVueloSaturado(camino, estado.getUsoPorVuelo());
             if (conflictoVuelo != null) {
+                ultimaRazon = "vuelo_saturado";
+                ultimoVuelo = conflictoVuelo;
                 bloqueados.add(conflictoVuelo);
                 continue;
             }
             final boolean aeropuertoValido = validarAeropuertos(candidata, estado);
             if (!aeropuertoValido) {
-                final VueloInstancia vueloConflicto = camino.isEmpty() ? null : camino.get(Math.min(camino.size() - 1, intento % camino.size()));
+                ultimaRazon = "aeropuerto_saturado";
+                final VueloInstancia vueloConflicto = camino.isEmpty()
+                        ? null
+                        : camino.get(Math.min(camino.size() - 1, intento % camino.size()));
                 if (vueloConflicto != null && vueloConflicto.getIdVueloInstancia() != null) {
-                    bloqueados.add(vueloConflicto.getIdVueloInstancia());
+                    ultimoVuelo = vueloConflicto.getIdVueloInstancia();
+                    bloqueados.add(ultimoVuelo);
                 }
                 continue;
             }
@@ -142,6 +176,12 @@ final class ALNSReparador {
             if (mejor != null) {
                 break;
             }
+        }
+        if (mejor == null && idMaleta != null) {
+            final String razonFinal = ultimoVuelo != null
+                    ? ultimaRazon + ":" + ultimoVuelo
+                    : ultimaRazon;
+            estado.registrarFalloMaleta(idMaleta, razonFinal);
         }
         return mejor;
     }

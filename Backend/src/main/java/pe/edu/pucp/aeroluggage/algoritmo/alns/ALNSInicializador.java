@@ -2,6 +2,7 @@ package pe.edu.pucp.aeroluggage.algoritmo.alns;
 
 import java.util.ArrayList;
 import java.util.List;
+import java.util.Map;
 
 import pe.edu.pucp.aeroluggage.algoritmo.InstanciaProblema;
 import pe.edu.pucp.aeroluggage.algoritmo.Solucion;
@@ -12,10 +13,10 @@ final class ALNSInicializador {
         throw new UnsupportedOperationException("This class should never be instantiated");
     }
 
-    static Solucion construir(final InstanciaProblema instancia, final ParametrosALNS parametros) {
+    static ResultadoInicial construir(final InstanciaProblema instancia, final ParametrosALNS parametros) {
         final Solucion solucion = new Solucion();
         if (instancia == null || instancia.getMaletas().isEmpty()) {
-            return solucion;
+            return new ResultadoInicial(solucion, Map.of());
         }
         final ALNSEstado estado = new ALNSEstado(instancia, solucion);
         final List<Maleta> maletas = new ArrayList<>(estado.getMaletasNoComprometidas());
@@ -29,6 +30,9 @@ final class ALNSInicializador {
                 estado.reemplazarRuta(ruta);
             }
         }
-        return estado.getSolucionActual();
+        return new ResultadoInicial(estado.getSolucionActual(), estado.getRazonesFallo());
+    }
+
+    record ResultadoInicial(Solucion solucion, Map<String, String> razonesFallo) {
     }
 }

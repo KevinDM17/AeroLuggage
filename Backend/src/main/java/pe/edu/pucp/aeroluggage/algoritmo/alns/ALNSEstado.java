@@ -29,6 +29,7 @@ final class ALNSEstado {
     private final Map<String, Ruta> rutaPorMaleta;
     private final Map<String, Integer> usoPorVuelo;
     private final Map<String, NavigableMap<LocalDateTime, Integer>> eventosAeropuerto;
+    private final Map<String, String> razonesFallo = new HashMap<>();
 
     ALNSEstado(final InstanciaProblema instancia, final Solucion solucionInicial) {
         this.instancia = instancia;
@@ -41,14 +42,23 @@ final class ALNSEstado {
         this.usoPorVuelo = new HashMap<>();
         this.eventosAeropuerto = ALNSUtil.clonarEventos(instancia.getEventosBaseAeropuerto());
 
-        for (final Ruta ruta : instancia.getRutasComprometidas()) {
-            if (ruta == null || ruta.getIdMaleta() == null) {
-                continue;
+        if (instancia.getEventosBaseAeropuerto().isEmpty()) {
+            for (final Ruta ruta : instancia.getRutasComprometidas()) {
+                if (ruta == null || ruta.getIdMaleta() == null) {
+                    continue;
+                }
+                rutasComprometidasPorMaleta.put(ruta.getIdMaleta(), ruta);
+                idsMaletasComprometidas.add(ruta.getIdMaleta());
+                registrarEventosRuta(ruta);
             }
-            rutasComprometidasPorMaleta.put(ruta.getIdMaleta(), ruta);
-            idsMaletasComprometidas.add(ruta.getIdMaleta());
-            registrarUsoRuta(ruta);
-            registrarEventosRuta(ruta);
+        } else {
+            for (final Ruta ruta : instancia.getRutasComprometidas()) {
+                if (ruta == null || ruta.getIdMaleta() == null) {
+                    continue;
+                }
+                rutasComprometidasPorMaleta.put(ruta.getIdMaleta(), ruta);
+                idsMaletasComprometidas.add(ruta.getIdMaleta());
+            }
         }
 
         this.solucionActual = solucionInicial == null ? new Solucion() : solucionInicial.clonarProfundo();
@@ -71,6 +81,7 @@ final class ALNSEstado {
 
     ALNSEstado clonar() {
         final ALNSEstado clon = new ALNSEstado(this.instancia, this.solucionActual);
+        clon.razonesFallo.putAll(this.razonesFallo);
         return clon;
     }
 
@@ -212,19 +223,25 @@ final class ALNSEstado {
     }
 
     void registrarEventosRuta(final Ruta ruta) {
+        final LocalDateTime fechaEval = instancia.getFechaEvaluacion();
         for (final ALNSUtil.IntervaloAeropuerto intervalo
                 : ALNSUtil.construirIntervalosRuta(ruta, instancia, maletasPorId)) {
-            eventosAeropuerto.computeIfAbsent(intervalo.idAeropuerto(), ignored -> new TreeMap<>())
-                    .merge(intervalo.inicio(), 1, Integer::sum);
+            if (intervalo.inicio().isAfter(fechaEval)) {
+                eventosAeropuerto.computeIfAbsent(intervalo.idAeropuerto(), ignored -> new TreeMap<>())
+                        .merge(intervalo.inicio(), 1, Integer::sum);
+            }
             eventosAeropuerto.computeIfAbsent(intervalo.idAeropuerto(), ignored -> new TreeMap<>())
                     .merge(intervalo.fin(), -1, Integer::sum);
         }
     }
 
     void liberarEventosRuta(final Ruta ruta) {
+        final LocalDateTime fechaEval = instancia.getFechaEvaluacion();
         for (final ALNSUtil.IntervaloAeropuerto intervalo
                 : ALNSUtil.construirIntervalosRuta(ruta, instancia, maletasPorId)) {
-            ajustarEvento(intervalo.idAeropuerto(), intervalo.inicio(), -1);
+            if (intervalo.inicio().isAfter(fechaEval)) {
+                ajustarEvento(intervalo.idAeropuerto(), intervalo.inicio(), -1);
+            }
             ajustarEvento(intervalo.idAeropuerto(), intervalo.fin(), 1);
         }
     }
@@ -274,5 +291,21 @@ final class ALNSEstado {
         final Ruta ruta = ALNSUtil.crearRuta(ALNSUtil.siguienteIdRuta(secuencia), maleta, List.of(), EstadoRuta.FALLIDA);
         ruta.setDuracion(0.0D);
         return ruta;
+    }
+
+    void registrarFalloMaleta(final String idMaleta, final String razon) {
+        if (idMaleta != null && razon != null) {
+            razonesFallo.put(idMaleta, razon);
+        }
+    }
+
+    Map<String, String> getRazonesFallo() {
+        return razonesFallo;
+    }
+
+    void limpiarRazonFallo(final String idMaleta) {
+        if (idMaleta != null) {
+            razonesFallo.remove(idMaleta);
+        }
     }
 }

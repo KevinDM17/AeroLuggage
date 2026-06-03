@@ -22,7 +22,7 @@ import java.util.stream.Stream;
 import pe.edu.pucp.aeroluggage.dominio.entidades.Aeropuerto;
 import pe.edu.pucp.aeroluggage.dominio.entidades.Maleta;
 import pe.edu.pucp.aeroluggage.dominio.entidades.Pedido;
-import pe.edu.pucp.aeroluggage.dominio.entidades.Ruta;
+
 import pe.edu.pucp.aeroluggage.dominio.enums.EstadoMaleta;
 import pe.edu.pucp.aeroluggage.dominio.enums.EstadoPedido;
 
@@ -110,13 +110,12 @@ public final class CargadorEnvios {
             if (destino == null) {
                 continue;
             }
-            final LocalDateTime registroLocal = LocalDateTime.of(fecha, LocalTime.of(hora, minuto));
-            final LocalDateTime registroUtc = registroLocal.minusHours(origen.getHusoGMT());
-            final double plazoDias = Ruta.calcularPlazo(origen, destino);
-            final LocalDateTime fechaHoraPlazo = registroUtc.plusMinutes((long) Math.round(plazoDias * 24 * 60));
+            final LocalDateTime registroUtc = LocalDateTime.of(fecha, LocalTime.of(hora, minuto))
+                    .minusHours(origen.getHusoGMT());
 
-            final Pedido pedido = new Pedido(idEnvio, origen, destino, registroUtc, fechaHoraPlazo,
-                    cantidad, EstadoPedido.REGISTRADO);
+            final Pedido pedido = new Pedido(idEnvio, origen, destino, registroUtc, cantidad,
+                    EstadoPedido.REGISTRADO.name());
+            pedido.registrarPedido();
             pedidos.add(pedido);
 
             for (int i = 1; i <= cantidad; i++) {
@@ -281,7 +280,10 @@ public final class CargadorEnvios {
         private void inicializarFuentes(final Path carpetaEnvios) {
             final List<Path> archivos = listarArchivosEnvio(carpetaEnvios);
             for (final Path archivo : archivos) {
-                final FuenteEnvio fuente = FuenteEnvio.abrir(archivo);
+                final String codigo = extraerCodigoOrigen(archivo);
+                final Aeropuerto aeropuerto = aeropuertos.get(codigo);
+                final int husoGMT = aeropuerto != null ? aeropuerto.getHusoGMT() : 0;
+                final FuenteEnvio fuente = FuenteEnvio.abrir(archivo, husoGMT);
                 fuentes.add(fuente);
                 if (fechaInicio != null) {
                     fuente.posicionarEnFecha(fechaInicio);
@@ -295,21 +297,24 @@ public final class CargadorEnvios {
         private final String codigoOrigen;
         private final RandomAccessFile reader;
         private final long bytesPorRegistro;
+        private final int husoGMT;
 
         private FuenteEnvio(final String codigoOrigen, final RandomAccessFile reader,
-                            final long bytesPorRegistro) {
+                            final long bytesPorRegistro, final int husoGMT) {
             this.codigoOrigen = codigoOrigen;
             this.reader = reader;
             this.bytesPorRegistro = bytesPorRegistro;
+            this.husoGMT = husoGMT;
         }
 
-        static FuenteEnvio abrir(final Path archivo) {
+        static FuenteEnvio abrir(final Path archivo, final int husoGMT) {
             try {
                 final RandomAccessFile reader = new RandomAccessFile(archivo.toFile(), "r");
                 return new FuenteEnvio(
                         extraerCodigoOrigen(archivo),
                         reader,
-                        detectarBytesPorRegistro(reader)
+                        detectarBytesPorRegistro(reader),
+                        husoGMT
                 );
             } catch (final IOException exception) {
                 throw new IllegalStateException("No se pudo abrir el archivo de envios: " + archivo, exception);
@@ -321,7 +326,9 @@ public final class CargadorEnvios {
                 return;
             }
             try {
-                final long posicion = buscarPrimeraPosicionDesdeFecha(fechaInicio);
+                final LocalDate localFechaInicio = fechaInicio.atStartOfDay()
+                        .plusHours(husoGMT).toLocalDate();
+                final long posicion = buscarPrimeraPosicionDesdeFecha(localFechaInicio);
                 reader.seek(posicion);
             } catch (final IOException exception) {
                 throw new IllegalStateException(

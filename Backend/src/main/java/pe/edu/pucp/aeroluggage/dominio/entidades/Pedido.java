@@ -127,19 +127,22 @@ public class Pedido {
         fechaHoraPlazo = calcularFechaHoraPlazo();
     }
 
+    public long getPlazoDias() {
+        final Continente continenteOrigen = obtenerContinente(aeropuertoOrigen);
+        final Continente continenteDestino = obtenerContinente(aeropuertoDestino);
+        if (continenteOrigen == null || continenteDestino == null) {
+            return PLAZO_INTERCONTINENTAL_DIAS;
+        }
+        return continenteOrigen == continenteDestino
+                ? PLAZO_MISMO_CONTINENTE_DIAS
+                : PLAZO_INTERCONTINENTAL_DIAS;
+    }
+
     public LocalDateTime calcularFechaHoraPlazo() {
         if (fechaRegistro == null) {
             return null;
         }
-        final Continente continenteOrigen = obtenerContinente(aeropuertoOrigen);
-        final Continente continenteDestino = obtenerContinente(aeropuertoDestino);
-        if (continenteOrigen == null || continenteDestino == null) {
-            return null;
-        }
-        final long plazoDias = continenteOrigen == continenteDestino
-                ? PLAZO_MISMO_CONTINENTE_DIAS
-                : PLAZO_INTERCONTINENTAL_DIAS;
-        fechaHoraPlazo = fechaRegistro.plusDays(plazoDias);
+        fechaHoraPlazo = fechaRegistro.plusDays(getPlazoDias());
         return fechaHoraPlazo;
     }
 

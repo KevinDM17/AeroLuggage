@@ -23,8 +23,11 @@ import pe.edu.pucp.aeroluggage.algoritmo.InstanciaProblema;
 import pe.edu.pucp.aeroluggage.algoritmo.Solucion;
 import pe.edu.pucp.aeroluggage.algoritmo.alns.ALNS;
 import pe.edu.pucp.aeroluggage.algoritmo.alns.ParametrosALNS;
-import pe.edu.pucp.aeroluggage.cargador.CargadorDatosPrueba;
+import pe.edu.pucp.aeroluggage.cargador.CargadorAeropuertos;
+import pe.edu.pucp.aeroluggage.cargador.CargadorEnvios;
+import pe.edu.pucp.aeroluggage.cargador.CargadorPlanesVuelo;
 import pe.edu.pucp.aeroluggage.cargador.DatosEntrada;
+import pe.edu.pucp.aeroluggage.servicios.GeneradorVuelosInstancia;
 import pe.edu.pucp.aeroluggage.dominio.entidades.Aeropuerto;
 import pe.edu.pucp.aeroluggage.dominio.entidades.Maleta;
 import pe.edu.pucp.aeroluggage.dominio.entidades.Pedido;
@@ -71,15 +74,20 @@ public final class SimulacionTemporalALNSRunner {
         final Path archivoVuelos = DOCS.resolve("planes_vuelo.txt");
         final Path carpetaEnvios = DOCS.resolve("Envios");
 
-        final ArrayList<Aeropuerto> aeropuertos = CargadorDatosPrueba.cargarAeropuertos(archivoAeropuertos);
-        final Map<String, Aeropuerto> indiceAeropuertos = CargadorDatosPrueba.indexarAeropuertos(aeropuertos);
+        final ArrayList<Aeropuerto> aeropuertos = new ArrayList<>(CargadorAeropuertos.cargar(archivoAeropuertos));
+        final Map<String, Aeropuerto> indiceAeropuertos = new HashMap<>();
+        for (final Aeropuerto aeropuerto : aeropuertos) {
+            if (aeropuerto != null && aeropuerto.getIdAeropuerto() != null) {
+                indiceAeropuertos.put(aeropuerto.getIdAeropuerto(), aeropuerto);
+            }
+        }
         final int totalDias = (int) (fechaFin.toEpochDay() - fechaInicio.toEpochDay()) + 1 + ventanaDias;
-        final ArrayList<VueloProgramado> todosVuelosProgramados = CargadorDatosPrueba.cargarVuelosProgramados(
-                archivoVuelos, indiceAeropuertos, fechaInicio, totalDias);
-        final ArrayList<VueloInstancia> todosVuelosInstancia = CargadorDatosPrueba.cargarVuelosInstancia(
-                archivoVuelos, indiceAeropuertos, fechaInicio, totalDias);
+        final ArrayList<VueloProgramado> todosVuelosProgramados = new ArrayList<>(
+                CargadorPlanesVuelo.cargar(archivoVuelos, indiceAeropuertos));
+        final ArrayList<VueloInstancia> todosVuelosInstancia = GeneradorVuelosInstancia.generar(
+                new ArrayList<>(todosVuelosProgramados), fechaInicio, totalDias);
 
-        final DatosEntrada datosEntrada = CargadorDatosPrueba.cargarEnviosEnRango(
+        final DatosEntrada datosEntrada = CargadorEnvios.cargarEnviosEnRango(
                 carpetaEnvios, indiceAeropuertos, fechaInicio, fechaFin);
         final List<Maleta> todasLasMaletas = new ArrayList<>(datosEntrada.getMaletas());
         final List<Pedido> pedidosOrdenados = new ArrayList<>(datosEntrada.getPedidos());

@@ -2,6 +2,7 @@ package pe.edu.pucp.aeroluggage.algoritmo.alns;
 
 import java.util.ArrayList;
 import java.util.List;
+import java.util.Map;
 import java.util.Random;
 
 import pe.edu.pucp.aeroluggage.algoritmo.InstanciaProblema;
@@ -16,6 +17,7 @@ public class ALNS extends Metaheuristico {
     private InstanciaProblema ultimaInstancia;
     private long tiempoEjecucionMs;
     private int iteracionesEjecutadas;
+    private Map<String, String> ultimasRazonesFallo = Map.of();
 
     public ALNS() {
         this(ParametrosALNS.porDefecto());
@@ -45,6 +47,10 @@ public class ALNS extends Metaheuristico {
         return iteracionesEjecutadas;
     }
 
+    public Map<String, String> getUltimasRazonesFallo() {
+        return ultimasRazonesFallo;
+    }
+
     @Override
     public void ejecutar(final InstanciaProblema instancia) {
         if (instancia == null) {
@@ -70,8 +76,9 @@ public class ALNS extends Metaheuristico {
                 ALNSReparador.OPERADOR_REGRET_2
         ));
 
-        final Solucion inicial = ALNSInicializador.construir(instancia, parametros);
-        ALNSEstado actual = new ALNSEstado(instancia, inicial);
+        final ALNSInicializador.ResultadoInicial inicial = ALNSInicializador.construir(instancia, parametros);
+        ALNSEstado actual = new ALNSEstado(instancia, inicial.solucion());
+        actual.getRazonesFallo().putAll(inicial.razonesFallo());
         ALNSFitness.Resultado fitnessActual = ALNSFitness.evaluar(actual, parametros);
         ALNSEstado mejorEstado = actual.clonar();
         ALNSFitness.Resultado mejorFitness = fitnessActual;
@@ -137,6 +144,7 @@ public class ALNS extends Metaheuristico {
         mejorSolucion = mejorEstado.getSolucionActual().clonarProfundo();
         solucionActual = actual.getSolucionActual().clonarProfundo();
         tiempoEjecucionMs = System.currentTimeMillis() - inicio;
+        this.ultimasRazonesFallo = mejorEstado.getRazonesFallo();
     }
 
     @Override

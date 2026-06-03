@@ -264,10 +264,7 @@ public final class GAConstructorTemporal {
             ruta.setIdRuta(String.format(Locale.US, "R%08d", secuencia));
         }
         ruta.setIdMaleta(maleta.getIdMaleta());
-        ruta.setPlazoMaximoDias(Ruta.calcularPlazo(
-                maleta.getPedido().getAeropuertoOrigen(),
-                maleta.getPedido().getAeropuertoDestino()
-        ));
+        ruta.setPlazoMaximoDias(maleta.getPedido().getPlazoDias());
         if (vuelos == null || vuelos.isEmpty()) {
             ruta.setSubrutas(new ArrayList<>());
             ruta.setEstado(EstadoRuta.FALLIDA);

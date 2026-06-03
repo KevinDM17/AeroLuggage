@@ -5,13 +5,9 @@ import java.time.LocalDateTime;
 import java.util.ArrayList;
 import java.util.List;
 
-import pe.edu.pucp.aeroluggage.dominio.enums.Continente;
 import pe.edu.pucp.aeroluggage.dominio.enums.EstadoRuta;
 
 public class Ruta {
-    private static final double PLAZO_MISMO_CONTINENTE_DIAS = 1D;
-    private static final double PLAZO_DISTINTO_CONTINENTE_DIAS = 2D;
-
     private String idRuta;
     private String idMaleta;
     private double plazoMaximoDias;
@@ -36,15 +32,6 @@ public class Ruta {
     public Ruta(final String idRuta, final String idMaleta, final double plazoMaximoDias,
                 final double duracion, final List<VueloInstancia> subrutas, final String estado) {
         this(idRuta, idMaleta, plazoMaximoDias, duracion, subrutas, convertirEstado(estado));
-    }
-
-    public static double calcularPlazo(final Aeropuerto origen, final Aeropuerto destino) {
-        if (origen == null || destino == null || origen.getCiudad() == null || destino.getCiudad() == null) {
-            return PLAZO_DISTINTO_CONTINENTE_DIAS;
-        }
-        final Continente continenteOrigen = origen.getCiudad().getContinente();
-        final Continente continenteDestino = destino.getCiudad().getContinente();
-        return continenteOrigen == continenteDestino ? PLAZO_MISMO_CONTINENTE_DIAS : PLAZO_DISTINTO_CONTINENTE_DIAS;
     }
 
     public String getIdRuta() {

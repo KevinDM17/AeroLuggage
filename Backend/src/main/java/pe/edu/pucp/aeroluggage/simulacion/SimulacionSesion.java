@@ -8,6 +8,8 @@ import java.time.LocalDateTime;
 import java.util.ArrayList;
 import java.util.List;
 import java.util.Map;
+import java.util.concurrent.ConcurrentHashMap;
+import java.util.concurrent.CopyOnWriteArrayList;
 import java.util.concurrent.ScheduledFuture;
 import java.util.concurrent.atomic.AtomicBoolean;
 import java.util.concurrent.atomic.AtomicInteger;
@@ -43,6 +45,7 @@ public class SimulacionSesion {
     private final AtomicLong stateVersion = new AtomicLong(1);
     private final AtomicBoolean activa = new AtomicBoolean(true);
     private final AtomicBoolean planificacionEnCurso = new AtomicBoolean(false);
+    private final AtomicBoolean csvEscrito = new AtomicBoolean(false);
     private final AtomicReference<String> ultimaVentanaPlanificada = new AtomicReference<>("");
     private volatile List<Aeropuerto> aeropuertos = List.of();
     private volatile List<VueloProgramado> vuelosProgramados = List.of();
@@ -53,6 +56,7 @@ public class SimulacionSesion {
     private volatile List<ResumenVentanaPlanificacion> resumenesVentana = List.of();
     private volatile Map<String, Maleta> maletasPorId = Map.of();
     private volatile ScheduledFuture<?> tareaScheduled;
+    private final ConcurrentHashMap<String, MaletaFallos> evaluacionesMaletas = new ConcurrentHashMap<>();
 
     public SimulacionSesion(
             final String sessionId,
@@ -110,6 +114,10 @@ public class SimulacionSesion {
 
     public boolean haTerminado() {
         return !currentSimTimeUtc.get().isBefore(fechaFinUtc);
+    }
+
+    public boolean marcarCsvEscrito() {
+        return csvEscrito.compareAndSet(false, true);
     }
 
     public boolean necesitaPlanificacion() {
@@ -184,6 +192,45 @@ public class SimulacionSesion {
                                               int maletasEnrutadas,
                                               int maletasSinRuta,
                                               long tiempoPlanificacionMs) {
+    }
+
+    private static class MaletaFallos {
+        private final String codigoOrigen;
+        private final String fechaRegistroUtc;
+        private final List<String> ventanas = new CopyOnWriteArrayList<>();
+
+        MaletaFallos(final String codigoOrigen, final String fechaRegistroUtc) {
+            this.codigoOrigen = codigoOrigen;
+            this.fechaRegistroUtc = fechaRegistroUtc;
+        }
+
+        void agregarVentana(final String windowId, final String motivo) {
+            ventanas.add(windowId + "," + motivo);
+        }
+
+        void toCsvLines(final String idMaleta, final List<String> lineas) {
+            lineas.add(idMaleta + "," + codigoOrigen + "," + fechaRegistroUtc);
+            for (final String ventana : ventanas) {
+                lineas.add("\t" + ventana);
+            }
+        }
+    }
+
+    public void registrarFalloEnVentana(final String idMaleta, final String codigoOrigen,
+                                        final String fechaRegistroUtc, final String windowId,
+                                        final String motivo) {
+        evaluacionesMaletas.computeIfAbsent(idMaleta,
+                k -> new MaletaFallos(codigoOrigen, fechaRegistroUtc))
+                .agregarVentana(windowId, motivo);
+    }
+
+    public List<String> getNoEnrutadasParaCsv() {
+        final List<String> lineas = new ArrayList<>();
+        lineas.add("id_maleta,aeropuerto_origen,fecha_registro_utc\tventana,motivo");
+        for (final Map.Entry<String, MaletaFallos> entry : evaluacionesMaletas.entrySet()) {
+            entry.getValue().toCsvLines(entry.getKey(), lineas);
+        }
+        return lineas;
     }
 
     private SimulacionVentana buildWindowFor(final LocalDateTime dateTime, final String status) {

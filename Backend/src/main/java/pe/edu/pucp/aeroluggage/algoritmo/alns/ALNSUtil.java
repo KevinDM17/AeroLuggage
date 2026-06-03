@@ -18,7 +18,7 @@ import pe.edu.pucp.aeroluggage.dominio.entidades.Ruta;
 import pe.edu.pucp.aeroluggage.dominio.entidades.VueloInstancia;
 import pe.edu.pucp.aeroluggage.dominio.enums.EstadoRuta;
 
-final class ALNSUtil {
+public final class ALNSUtil {
     private ALNSUtil() {
         throw new UnsupportedOperationException("This class should never be instantiated");
     }
@@ -91,6 +91,28 @@ final class ALNSUtil {
         intervalos.add(new IntervaloAeropuerto(aeropuerto.getIdAeropuerto(), inicio, fin));
     }
 
+    public static Map<String, NavigableMap<LocalDateTime, Integer>> construirEventosBase(
+            final List<Ruta> rutas,
+            final InstanciaProblema instancia,
+            final Map<String, Maleta> maletasPorId) {
+        final LocalDateTime fechaEval = instancia.getFechaEvaluacion();
+        final Map<String, NavigableMap<LocalDateTime, Integer>> eventos = new HashMap<>();
+        for (final Ruta ruta : rutas) {
+            if (ruta == null) {
+                continue;
+            }
+            for (final IntervaloAeropuerto intervalo : construirIntervalosRuta(ruta, instancia, maletasPorId)) {
+                if (intervalo.inicio().isAfter(fechaEval)) {
+                    eventos.computeIfAbsent(intervalo.idAeropuerto(), k -> new TreeMap<>())
+                            .merge(intervalo.inicio(), 1, Integer::sum);
+                }
+                eventos.computeIfAbsent(intervalo.idAeropuerto(), k -> new TreeMap<>())
+                        .merge(intervalo.fin(), -1, Integer::sum);
+            }
+        }
+        return eventos;
+    }
+
     static LocalDateTime llegadaFinal(final Ruta ruta) {
         if (ruta == null || ruta.getSubrutas() == null || ruta.getSubrutas().isEmpty()) {
             return null;
@@ -117,9 +139,7 @@ final class ALNSUtil {
         ruta.setIdMaleta(maleta == null ? null : maleta.getIdMaleta());
         ruta.setSubrutas(camino == null ? new ArrayList<>() : new ArrayList<>(camino));
         if (maleta != null && maleta.getPedido() != null) {
-            ruta.setPlazoMaximoDias(Ruta.calcularPlazo(
-                    maleta.getPedido().getAeropuertoOrigen(),
-                    maleta.getPedido().getAeropuertoDestino()));
+            ruta.setPlazoMaximoDias(maleta.getPedido().getPlazoDias());
         }
         ruta.setDuracion(duracionDias(ruta.getSubrutas()));
         ruta.setEstado(camino == null || camino.isEmpty() ? EstadoRuta.FALLIDA : estado);

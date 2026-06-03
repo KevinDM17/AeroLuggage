@@ -77,7 +77,7 @@ public final class HeuristicaSolomon {
             final Ruta ruta = new Ruta();
             ruta.setIdRuta(String.format("R%08d", secuenciaRuta++));
             ruta.setIdMaleta(maleta.getIdMaleta());
-            ruta.setPlazoMaximoDias(Ruta.calcularPlazo(pedido.getAeropuertoOrigen(), pedido.getAeropuertoDestino()));
+            ruta.setPlazoMaximoDias(pedido.getPlazoDias());
 
             if (camino == null) {
                 ruta.setSubrutas(new ArrayList<>());
@@ -144,7 +144,7 @@ public final class HeuristicaSolomon {
             final Ruta ruta = new Ruta();
             ruta.setIdRuta(String.format("R%08d", secuenciaRuta++));
             ruta.setIdMaleta(maleta.getIdMaleta());
-            ruta.setPlazoMaximoDias(Ruta.calcularPlazo(pedido.getAeropuertoOrigen(), pedido.getAeropuertoDestino()));
+            ruta.setPlazoMaximoDias(pedido.getPlazoDias());
             if (camino == null) {
                 ruta.setSubrutas(new ArrayList<>());
                 ruta.setEstado(EstadoRuta.FALLIDA);

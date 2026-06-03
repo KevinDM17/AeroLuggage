@@ -173,7 +173,7 @@ public final class Reparador {
             final Ruta ruta = new Ruta();
             ruta.setIdRuta(String.format("R%08d", secuencia++));
             ruta.setIdMaleta(maleta.getIdMaleta());
-            ruta.setPlazoMaximoDias(Ruta.calcularPlazo(pedido.getAeropuertoOrigen(), pedido.getAeropuertoDestino()));
+            ruta.setPlazoMaximoDias(pedido.getPlazoDias());
             if (grafo == null) {
                 ruta.setSubrutas(new ArrayList<>());
                 ruta.setEstado(EstadoRuta.FALLIDA);
