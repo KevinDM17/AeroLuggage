@@ -129,12 +129,15 @@ public class SimulacionInicioQueryService {
             if (candidate == null || candidate.isBlank()) {
                 continue;
             }
-            final ClassPathResource resource = new ClassPathResource(candidate);
-            if (!resource.exists()) {
-                continue;
+            final Path path = Path.of(candidate);
+            if (Files.exists(path)) {
+                return path.toAbsolutePath().normalize();
             }
             try {
-                return resource.getFile().toPath();
+                final ClassPathResource resource = new ClassPathResource(candidate);
+                if (resource.exists()) {
+                    return resource.getFile().toPath();
+                }
             } catch (final IOException exception) {
                 throw new IllegalStateException("No se pudo resolver el recurso: " + candidate, exception);
             }
