@@ -5,6 +5,7 @@ services:
       - "8082:8080"
     volumes:
       - aeroluggage-db:/app/database
+      - ./Backend/.env:/app/.env:ro
     env_file: ./Backend/.env
     environment:
       SERVER_PORT: 8080

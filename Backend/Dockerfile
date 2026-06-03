@@ -13,7 +13,6 @@ FROM eclipse-temurin:21-alpine AS runtime
 WORKDIR /app
 
 COPY --from=build /app/target/*.jar ./app.jar
-COPY .env ./.env
 
 RUN mkdir -p /app/database
 
