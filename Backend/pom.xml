@@ -72,6 +72,11 @@
             <plugin>
                 <groupId>org.springframework.boot</groupId>
                 <artifactId>spring-boot-maven-plugin</artifactId>
+                <configuration>
+                    <!-- Subimos el heap para que la simulación de 5 días no se quede sin
+                         memoria nativa en Windows con page file pequeño. -->
+                    <jvmArguments>-Xms512m -Xmx2g -XX:+UseG1GC -XX:MaxGCPauseMillis=200</jvmArguments>
+                </configuration>
             </plugin>
 
             <plugin>

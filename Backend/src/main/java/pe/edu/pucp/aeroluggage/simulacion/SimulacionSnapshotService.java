@@ -32,6 +32,13 @@ public class SimulacionSnapshotService {
 
     private static final DateTimeFormatter ISO_DATE_TIME = DateTimeFormatter.ISO_LOCAL_DATE_TIME;
 
+    // Tope de entidades enviadas en cada tick por el WebSocket. Sin tope el payload
+    // crece linealmente con el tiempo simulado y termina rompiendo el send buffer
+    // (ver WebSocketConfig). Se mandan las más recientes; la UI del panel derecho
+    // solo lista actividad reciente, no requiere el universo completo.
+    // 500 mantiene el tick bajo 1 MB incluso con rutas multi-vuelo.
+    private static final int MAX_ENTIDADES_POR_TICK = 500;
+
     private final SistemaConfiguracion sistemaConfiguracion;
 
     public SimulacionSnapshotService(final SistemaConfiguracion sistemaConfiguracion) {
@@ -114,27 +121,37 @@ public class SimulacionSnapshotService {
 
     public int contarMaletasSinRuta(final SimulacionSesion sesion) {
         final LocalDateTime simTimeUtc = sesion.getCurrentSimTimeUtc().get();
-        final Map<String, Maleta> maletasPorId = sesion.getMaletasPorId();
-        return (int) sesion.getRutas().stream()
-                .filter(ruta -> ruta == null
-                        || ruta.getSubrutas() == null
-                        || ruta.getSubrutas().isEmpty()
-                        || ruta.getEstado() == EstadoRuta.FALLIDA)
-                .filter(ruta -> {
-                    if (ruta == null || ruta.getIdMaleta() == null) {
-                        return true;
-                    }
-                    final Maleta maleta = maletasPorId.get(ruta.getIdMaleta());
-                    return maleta != null
-                            && maleta.getFechaRegistro() != null
-                            && !maleta.getFechaRegistro().isAfter(simTimeUtc);
-                })
-                .count();
+        final Map<String, Ruta> rutaPorMaleta = new HashMap<>();
+        for (final Ruta ruta : sesion.getRutas()) {
+            if (ruta != null && ruta.getIdMaleta() != null) {
+                rutaPorMaleta.putIfAbsent(ruta.getIdMaleta(), ruta);
+            }
+        }
+        int total = 0;
+        for (final Maleta maleta : sesion.getMaletas()) {
+            if (maleta == null
+                    || maleta.getFechaRegistro() == null
+                    || maleta.getFechaRegistro().isAfter(simTimeUtc)
+                    || maleta.getEstado() == EstadoMaleta.ENTREGADA) {
+                continue;
+            }
+            final Ruta ruta = rutaPorMaleta.get(maleta.getIdMaleta());
+            final boolean sinRuta = ruta == null
+                    || ruta.getSubrutas() == null
+                    || ruta.getSubrutas().isEmpty()
+                    || ruta.getEstado() == EstadoRuta.FALLIDA;
+            if (sinRuta) {
+                total++;
+            }
+        }
+        return total;
     }
 
     public int contarVuelosActivos(final SimulacionSesion sesion) {
         return (int) sesion.getVuelosInstancia().stream()
-                .filter(vuelo -> vuelo != null && vuelo.getEstado() == EstadoVuelo.EN_PROGRESO)
+                .filter(vuelo -> vuelo != null
+                        && vuelo.getEstado() == EstadoVuelo.EN_PROGRESO
+                        && (vuelo.getCapacidadMaxima() - vuelo.getCapacidadDisponible()) > 0)
                 .count();
     }
 
@@ -142,7 +159,11 @@ public class SimulacionSnapshotService {
         int capacidadTotal = 0;
         int capacidadDisponible = 0;
         for (final VueloInstancia vuelo : sesion.getVuelosInstancia()) {
-            if (vuelo == null) {
+            if (vuelo == null || vuelo.getEstado() == null) {
+                continue;
+            }
+            if (vuelo.getEstado() != EstadoVuelo.EN_PROGRESO
+                    && vuelo.getEstado() != EstadoVuelo.CONFIRMADO) {
                 continue;
             }
             capacidadTotal += Math.max(0, vuelo.getCapacidadMaxima());
@@ -192,6 +213,12 @@ public class SimulacionSnapshotService {
                     && vuelo.getFechaSalida() != null
                     && !vuelo.getFechaSalida().isAfter(limiteVentana);
             if (!enProgreso && !proximoEnVentana) {
+                continue;
+            }
+            // Solo mostramos vuelos que efectivamente cargan al menos una maleta. Los
+            // demás se omiten para no saturar el mapa con aviones vacíos.
+            final int usada = vuelo.getCapacidadMaxima() - vuelo.getCapacidadDisponible();
+            if (usada <= 0) {
                 continue;
             }
             resultado.add(mapearVueloInstancia(vuelo));
@@ -362,15 +389,24 @@ public class SimulacionSnapshotService {
                 rutaPorMaleta.putIfAbsent(ruta.getIdMaleta(), ruta);
             }
         }
-        final List<RutaSimulacionResponse> rutasMapeadas = new ArrayList<>();
-        final Map<String, MaletaSimulacionResponse> maletasMapeadas = new LinkedHashMap<>();
-        final Map<String, PedidoSimulacionResponse> pedidosMapeados = new LinkedHashMap<>();
 
-        for (final Maleta maleta : maletas) {
+        // Recorremos las maletas de fin a inicio para quedarnos con las MAX_ENTIDADES_POR_TICK
+        // más recientes (la lista viene ordenada ascendente por fechaRegistro).
+        final List<Maleta> maletasRecientes = new ArrayList<>();
+        for (int i = maletas.size() - 1; i >= 0 && maletasRecientes.size() < MAX_ENTIDADES_POR_TICK; i--) {
+            final Maleta maleta = maletas.get(i);
             if (maleta == null || maleta.getFechaRegistro() == null
                     || maleta.getFechaRegistro().isAfter(simTimeUtc)) {
                 continue;
             }
+            maletasRecientes.add(maleta);
+        }
+
+        final List<RutaSimulacionResponse> rutasMapeadas = new ArrayList<>();
+        final Map<String, MaletaSimulacionResponse> maletasMapeadas = new LinkedHashMap<>();
+        final Map<String, PedidoSimulacionResponse> pedidosMapeados = new LinkedHashMap<>();
+
+        for (final Maleta maleta : maletasRecientes) {
             maletasMapeadas.putIfAbsent(maleta.getIdMaleta(), mapearMaleta(maleta));
             if (maleta.getPedido() != null && maleta.getPedido().getIdPedido() != null) {
                 pedidosMapeados.putIfAbsent(maleta.getPedido().getIdPedido(), mapearPedido(maleta.getPedido()));

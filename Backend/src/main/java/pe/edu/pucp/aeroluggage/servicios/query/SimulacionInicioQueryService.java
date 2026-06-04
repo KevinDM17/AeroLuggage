@@ -65,7 +65,11 @@ public class SimulacionInicioQueryService {
                 .withCurrentWindow(mapearVentana(currentWindow))
                 .withNextWindow(mapearVentana(sesion.buildNextWindow()))
                 .withAeropuertos(snapshotService.mapearAeropuertos(sesion.getAeropuertos()))
-                .withVuelosInstancia(snapshotService.mapearVuelosInstancia(sesion.getVuelosInstancia()))
+                .withVuelosInstancia(snapshotService.mapearVuelosInstanciaActivos(
+                        sesion.getVuelosInstancia(),
+                        sesion.getCurrentSimTimeUtc().get(),
+                        sesion.getWindowSizeMinutes(),
+                        sesion.getFechaInicioUtc()))
                 .build();
     }
 
