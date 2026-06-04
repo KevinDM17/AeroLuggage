@@ -7,6 +7,7 @@
  */
 export const adaptFlightInstance = (f) => ({
   id:       f.codigo ?? f.idVueloInstancia,
+  idVueloInstancia: f.idVueloInstancia,
   origin:   typeof f.aeropuertoOrigen === "string" ? f.aeropuertoOrigen : f?.aeropuertoOrigen?.idAeropuerto ?? "",
   dest:     typeof f.aeropuertoDestino === "string" ? f.aeropuertoDestino : f?.aeropuertoDestino?.idAeropuerto ?? "",
   depTime:  f.fechaSalida ?? "",

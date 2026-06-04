@@ -445,13 +445,13 @@ export default function RightPanel({
   };
 
   const handleCancelFlight = async (flight) => {
-    const flightId = flight?.id;
+    const flightId = flight?.idVueloInstancia ?? flight?.id;
     if (!flightId) return;
 
     setCancelingFlightId(flightId);
     try {
       if (isSimulator) {
-        markFlightAsCanceled(flightId);
+        markFlightAsCanceled(flight.id);
         if (sessionId) {
           publish("/app/simulacion/periodo/cancelar-vuelo", {
             sessionId,
