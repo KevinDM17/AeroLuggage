@@ -273,31 +273,41 @@ export default function PeriodSimulatorPage() {
       console.warn("[TICK] estadosRutas:", e);
     }
 
+    const hasFlightUpdates = Object.keys(vueloStateMap).length > 0;
+    const hasBagUpdates = Object.keys(maletaStateMap).length > 0;
+    const hasRouteUpdates = Object.keys(rutaStateMap).length > 0;
+
     setSimulationPanelData((prev) => ({
       ...prev,
       airports: prev.airports.map((ap) => ({
         ...ap,
         used: occMap[ap.iata] ?? ap.used,
       })),
-      flights: prev.flights.map((f) => {
-        const st = vueloStateMap[f.idVueloInstancia ?? f.id];
-        if (st) {
-          return {
-            ...f,
-            status: ENUM_VUELO[st.e],
-            used: f.capacity > 0 ? f.capacity - st.cap : 0,
-          };
-        }
-        return f;
-      }),
-      bags: prev.bags.map((b) => ({
-        ...b,
-        estado: maletaStateMap[b.idMaleta] ?? b.estado,
-      })),
-      routes: prev.routes.map((r) => ({
-        ...r,
-        estado: rutaStateMap[r.idRuta] ?? r.estado,
-      })),
+      flights: hasFlightUpdates
+        ? prev.flights.map((f) => {
+            const st = vueloStateMap[f.idVueloInstancia ?? f.id];
+            if (st) {
+              return {
+                ...f,
+                status: ENUM_VUELO[st.e],
+                used: f.capacity > 0 ? f.capacity - st.cap : 0,
+              };
+            }
+            return f;
+          })
+        : prev.flights,
+      bags: hasBagUpdates
+        ? prev.bags.map((b) => ({
+            ...b,
+            estado: maletaStateMap[b.idMaleta] ?? b.estado,
+          }))
+        : prev.bags,
+      routes: hasRouteUpdates
+        ? prev.routes.map((r) => ({
+            ...r,
+            estado: rutaStateMap[r.idRuta] ?? r.estado,
+          }))
+        : prev.routes,
     }));
   }, [tick]);
 

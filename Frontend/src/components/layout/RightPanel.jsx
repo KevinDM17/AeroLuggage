@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useState } from "react";
+import { memo, useEffect, useMemo, useState } from "react";
 import { useLocation } from "react-router-dom";
 import { Ban, Filter, PanelRightClose, MapPin, Globe, Info, ChevronDown, Plane, RefreshCw } from "lucide-react";
 import { useFetch } from "../../hooks/useFetch";
@@ -68,7 +68,7 @@ const routeStatusColor = (s) => {
   }
 };
 
-function FlightItem({ flight, onCancel, canceling }) {
+const FlightItem = memo(function FlightItem({ flight, onCancel, canceling }) {
   const [expanded, setExpanded] = useState(false);
   const pct = flight.capacity > 0 ? Math.round((flight.used / flight.capacity) * 100) : 0;
   const normalizedStatus = normalizeFlightStatus(flight.status);
@@ -119,9 +119,9 @@ function FlightItem({ flight, onCancel, canceling }) {
       )}
     </div>
   );
-}
+});
 
-function OrderItem({ order }) {
+const OrderItem = memo(function OrderItem({ order }) {
   const [expanded, setExpanded] = useState(false);
   const id = order.id ?? order.idPedido ?? "--";
   const clientId = order.clientId ?? order.idCliente ?? "--";
@@ -158,9 +158,9 @@ function OrderItem({ order }) {
       )}
     </div>
   );
-}
+});
 
-function RouteItem({ route }) {
+const RouteItem = memo(function RouteItem({ route }) {
   const [expanded, setExpanded] = useState(false);
   const vuelos = route.vuelos ?? [];
   const stops = useMemo(() => {
@@ -215,9 +215,9 @@ function RouteItem({ route }) {
       )}
     </div>
   );
-}
+});
 
-function BagItem({ bag }) {
+const BagItem = memo(function BagItem({ bag }) {
   const [expanded, setExpanded] = useState(false);
   const label = bagStatusLabel(bag.estado);
   return (
@@ -240,9 +240,9 @@ function BagItem({ bag }) {
       )}
     </div>
   );
-}
+});
 
-function AirportItem({ apt }) {
+const AirportItem = memo(function AirportItem({ apt }) {
   const [expanded, setExpanded] = useState(false);
   const pct = apt.capacity > 0 ? Math.round((apt.used / apt.capacity) * 100) : 0;
   return (
@@ -267,7 +267,7 @@ function AirportItem({ apt }) {
       )}
     </div>
   );
-}
+});
 
 function ColorLegend() {
   return (
