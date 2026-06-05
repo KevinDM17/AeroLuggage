@@ -8,7 +8,6 @@ import pe.edu.pucp.aeroluggage.algoritmo.InstanciaProblema;
 import pe.edu.pucp.aeroluggage.algoritmo.Solucion;
 import pe.edu.pucp.aeroluggage.algoritmo.alns.ALNSUtil;
 import pe.edu.pucp.aeroluggage.algoritmo.alns.ALNS;
-import pe.edu.pucp.aeroluggage.algoritmo.ga.GA;
 import pe.edu.pucp.aeroluggage.dominio.entidades.Maleta;
 import pe.edu.pucp.aeroluggage.dominio.entidades.Pedido;
 import pe.edu.pucp.aeroluggage.dominio.entidades.Aeropuerto;
@@ -19,8 +18,14 @@ import pe.edu.pucp.aeroluggage.dominio.enums.EstadoPedido;
 import pe.edu.pucp.aeroluggage.dominio.enums.EstadoRuta;
 import pe.edu.pucp.aeroluggage.dominio.enums.EstadoVuelo;
 import pe.edu.pucp.aeroluggage.config.SimulacionParams;
+import pe.edu.pucp.aeroluggage.dto.simulacion.rest.AeropuertoResponse;
+import pe.edu.pucp.aeroluggage.dto.simulacion.rest.MaletaSimulacionResponse;
+import pe.edu.pucp.aeroluggage.dto.simulacion.rest.PedidoSimulacionResponse;
+import pe.edu.pucp.aeroluggage.dto.simulacion.rest.RutaSimulacionResponse;
+import pe.edu.pucp.aeroluggage.dto.simulacion.rest.RutaVueloResponse;
+import pe.edu.pucp.aeroluggage.dto.simulacion.rest.VueloInstanciaResponse;
 import pe.edu.pucp.aeroluggage.dto.simulacion.rest.SimulacionIniciarRequest;
-import pe.edu.pucp.aeroluggage.dto.simulacion.ws.PeriodoTickDTO;
+import pe.edu.pucp.aeroluggage.dto.simulacion.ws.SimulacionTickLigeroDTO;
 import pe.edu.pucp.aeroluggage.dto.simulacion.ws.SimulacionEstadoDTO;
 
 import java.io.IOException;
@@ -30,7 +35,9 @@ import java.nio.file.Path;
 import java.time.LocalDate;
 import java.time.LocalDateTime;
 import java.time.LocalTime;
+import java.time.format.DateTimeFormatter;
 import java.util.ArrayList;
+import java.util.Collection;
 import java.util.HashMap;
 import java.util.List;
 import java.util.Map;
@@ -52,6 +59,7 @@ public class SimulacionSesionManager {
 
     private static final String TOPIC_TICKS = "/topic/simulacion/";
     private static final String TOPIC_ESTADO = "/topic/simulacion/%s/estado";
+    private static final DateTimeFormatter FORMATO_FECHA_HORA = DateTimeFormatter.ISO_LOCAL_DATE_TIME;
 
     private static final String ESTADO_INICIADA = "INICIADA";
     private static final String ESTADO_PAUSADA = "PAUSADA";
@@ -61,6 +69,8 @@ public class SimulacionSesionManager {
     private static final String ESTADO_PLANIFICACION_COMPLETADA = "PLANIFICACION_COMPLETADA";
 
     private final SimulacionPeriodoService periodoService;
+    private final SimulacionBootstrapService bootstrapService;
+    private final SimulacionSnapshotService snapshotService;
     private final SimulacionParams simulacionParams;
     private final Map<String, SimulacionSesion> sesionesActivas = new ConcurrentHashMap<>();
     private final Map<String, SimulacionSesion> sesionesFinalizadas = new ConcurrentHashMap<>();
@@ -88,21 +98,34 @@ public class SimulacionSesionManager {
         );
 
         sesionesActivas.put(sessionId, sesion);
+
+        bootstrapService.ensureSnapshotLoaded(sesion);
+        snapshotService.recalcularEstadoSesion(sesion);
+
+        final String primeraVentana = sesion.getCurrentWindow().get().getWindowId();
+        final long bucketInicial = SimulacionSesion.parseBucket(primeraVentana);
+        sesion.asegurarVuelosParaBanda(bucketInicial, bucketInicial + 24L);
+
+        planificarSync(sesion, primeraVentana, broker);
+
+        final String segundaVentana = "W" + String.format("%04d", bucketInicial + 1L);
+        planificarSync(sesion, segundaVentana, broker);
+
         programarTarea(sesion, broker);
 
-        log.info("[AeroLuggage/Simulacion] - INICIAR: sessionId: {}", sessionId);
+        log.info("[AeroLuggage/Simulacion] - INICIAR: sessionId: {}, ventanaInicial: {}", sessionId, primeraVentana);
 
         return SimulacionEstadoDTO.builder()
                 .withSessionId(sessionId)
                 .withEstado(ESTADO_INICIADA)
-                .withMensaje("Simulación iniciada. Suscríbete a /topic/simulacion/" + sessionId)
+                .withMensaje("Simulaci\u00f3n iniciada. Suscr\u00edbete a /topic/simulacion/" + sessionId)
                 .build();
     }
 
     public void pausar(final String sessionId, final SimpMessagingTemplate broker) {
         final SimulacionSesion sesion = sesionesActivas.get(sessionId);
         if (sesion == null) {
-            log.warn("[AeroLuggage/Simulacion] - PAUSAR: sesión no encontrada: {}", sessionId);
+            log.warn("[AeroLuggage/Simulacion] - PAUSAR: sesi\u00f3n no encontrada: {}", sessionId);
             return;
         }
 
@@ -114,7 +137,7 @@ public class SimulacionSesionManager {
                 SimulacionEstadoDTO.builder()
                         .withSessionId(sessionId)
                         .withEstado(ESTADO_PAUSADA)
-                        .withMensaje("Simulación pausada en el tick " + sesion.getTickActual().get())
+                        .withMensaje("Simulaci\u00f3n pausada en el tick " + sesion.getTickActual().get())
                         .build()
         );
     }
@@ -122,7 +145,7 @@ public class SimulacionSesionManager {
     public void reanudar(final String sessionId, final SimpMessagingTemplate broker) {
         final SimulacionSesion sesion = sesionesActivas.get(sessionId);
         if (sesion == null) {
-            log.warn("[AeroLuggage/Simulacion] - REANUDAR: sesión no encontrada: {}", sessionId);
+            log.warn("[AeroLuggage/Simulacion] - REANUDAR: sesi\u00f3n no encontrada: {}", sessionId);
             return;
         }
 
@@ -134,7 +157,7 @@ public class SimulacionSesionManager {
                 SimulacionEstadoDTO.builder()
                         .withSessionId(sessionId)
                         .withEstado(ESTADO_REANUDADA)
-                        .withMensaje("Simulación reanudada desde el tick " + sesion.getTickActual().get())
+                        .withMensaje("Simulaci\u00f3n reanudada desde el tick " + sesion.getTickActual().get())
                         .build()
         );
     }
@@ -142,7 +165,7 @@ public class SimulacionSesionManager {
     public void detener(final String sessionId, final SimpMessagingTemplate broker) {
         final SimulacionSesion sesion = sesionesActivas.remove(sessionId);
         if (sesion == null) {
-            log.warn("[AeroLuggage/Simulacion] - DETENER: sesión no encontrada: {}", sessionId);
+            log.warn("[AeroLuggage/Simulacion] - DETENER: sesi\u00f3n no encontrada: {}", sessionId);
             return;
         }
 
@@ -155,7 +178,7 @@ public class SimulacionSesionManager {
                 SimulacionEstadoDTO.builder()
                         .withSessionId(sessionId)
                         .withEstado(ESTADO_DETENIDA)
-                        .withMensaje("Simulación detenida manualmente")
+                        .withMensaje("Simulaci\u00f3n detenida manualmente")
                         .build()
         );
     }
@@ -185,14 +208,14 @@ public class SimulacionSesionManager {
 
         sesion.getActiva().set(false);
         cancelarTarea(sesion);
-        log.info("[AeroLuggage/Simulacion] - DESCONEXION: sesión limpiada: {}", simSessionId);
+        log.info("[AeroLuggage/Simulacion] - DESCONEXION: sesi\u00f3n limpiada: {}", simSessionId);
     }
 
     private void programarTarea(final SimulacionSesion sesion, final SimpMessagingTemplate broker) {
         final long tickIntervalMs = simulacionParams.getTickIntervalMs();
         final ScheduledFuture<?> tarea = scheduler.scheduleWithFixedDelay(
                 () -> ejecutarIteracion(sesion, broker),
-                0L,
+                tickIntervalMs,
                 tickIntervalMs,
                 TimeUnit.MILLISECONDS
         );
@@ -204,7 +227,7 @@ public class SimulacionSesionManager {
             return;
         }
 
-        final PeriodoTickDTO tick = periodoService.ejecutarTick(sesion);
+        final SimulacionTickLigeroDTO tick = periodoService.ejecutarTick(sesion);
         broker.convertAndSend(TOPIC_TICKS + sesion.getSessionId(), tick);
 
         planificarAsync(sesion, broker);
@@ -221,10 +244,18 @@ public class SimulacionSesionManager {
                     SimulacionEstadoDTO.builder()
                             .withSessionId(sesion.getSessionId())
                             .withEstado(ESTADO_FINALIZADA)
-                            .withMensaje("Simulación completada: " + sesion.getTotalDias() + " días procesados")
+                            .withMensaje("Simulaci\u00f3n completada: " + sesion.getTotalDias() + " d\u00edas procesados")
                             .build()
             );
         }
+    }
+
+    private void planificarSync(final SimulacionSesion sesion,
+                                 final String windowId,
+                                 final SimpMessagingTemplate broker) {
+        sesion.getPlanificacionEnCurso().set(true);
+        sesion.marcarVentanaPlanificada(windowId);
+        ejecutarPlanificacion(sesion, windowId, broker);
     }
 
     private void planificarAsync(final SimulacionSesion sesion, final SimpMessagingTemplate broker) {
@@ -242,10 +273,11 @@ public class SimulacionSesionManager {
             return;
         }
 
-        final String windowId = ventana.getWindowId();
-        sesion.marcarVentanaPlanificada(windowId);
+        final long bucketActual = SimulacionSesion.parseBucket(ventana.getWindowId());
+        final String siguienteVentana = "W" + String.format("%04d", bucketActual + 1L);
+        sesion.marcarVentanaPlanificada(siguienteVentana);
 
-        planningPool.submit(() -> ejecutarPlanificacion(sesion, windowId, broker));
+        planningPool.submit(() -> ejecutarPlanificacion(sesion, siguienteVentana, broker));
     }
 
     private void ejecutarPlanificacion(final SimulacionSesion sesion,
@@ -290,16 +322,12 @@ public class SimulacionSesionManager {
                             + "\tventana={}\n"
                             + "\tinicioVentana={}\n"
                             + "\tfinVentana={}\n"
-                            + "\tsimTime={}\n"
                             + "\tmaletasEvaluadas={}\n"
-                            + "\tenrutadasPrevias={}\n"
-                            + "\tocupacionMaxAeropuerto={}%\n"
-                            + "\tocupacionMaxVuelo={}%",
+                            + "\tenrutadasPrevias={}\n",
                     sesion.getSessionId(),
                     windowId, inicioVentana, finVentana,
-                    sesion.getCurrentSimTimeUtc().get(),
                     instancia.getMaletas().size(),
-                    enrutadasPrevias, ocupMaxAero, ocupMaxVuelo);
+                    enrutadasPrevias);
 
             final ALNS alns = new ALNS();
             alns.ejecutar(instancia);
@@ -310,9 +338,6 @@ public class SimulacionSesionManager {
             if (solucion == null || solucion.getSolucion().isEmpty()) {
                 log.warn("[AeroLuggage/Planificador] - SIN SOLUCION: sessionId={}\n"
                                 + "\tventana={}\n"
-                                + "\tinicioVentana={}\n"
-                                + "\tfinVentana={}\n"
-                                + "\tsimTime={}\n"
                                 + "\tmaletasEvaluadas={}\n"
                                 + "\tmaletasEnrutadas=0\n"
                                 + "\tmaletasSinRuta={}\n"
@@ -321,8 +346,7 @@ public class SimulacionSesionManager {
                                 + "\tocupacionMaxAeropuerto={}%\n"
                                 + "\tocupacionMaxVuelo={}%",
                         sesion.getSessionId(),
-                        windowId, inicioVentana, finVentana,
-                        sesion.getCurrentSimTimeUtc().get(),
+                        windowId,
                         instancia.getMaletas().size(),
                         instancia.getMaletas().size(),
                         enrutadasPrevias,
@@ -344,18 +368,16 @@ public class SimulacionSesionManager {
 
             sesion.agregarRutas(solucion.getSolucion());
             if (ventana != null) {
-                final int enrutadas = solucion.getMaletasEntregadasATiempo() + solucion.getMaletasIncumplidas() > 0
-                        ? solucion.getSolucion().size()
-                        : solucion.getSolucion().size();
+                final long enrutadasValidas = solucion.getSolucion().stream()
+                        .filter(r -> r != null && r.getEstado() != EstadoRuta.FALLIDA)
+                        .count();
+                final int enrutadas = (int) enrutadasValidas;
                 final int evaluadas = instancia.getMaletas().size();
                 final int sinRuta = Math.max(0, evaluadas - enrutadas);
                 final int totalEnrutadasSim = enrutadasPrevias + enrutadas;
 
                 log.info("[AeroLuggage/Planificador] - FIN: sessionId={}\n"
                                 + "\tventana={}\n"
-                                + "\tinicioVentana={}\n"
-                                + "\tfinVentana={}\n"
-                                + "\tsimTime={}\n"
                                 + "\tmaletasEvaluadas={}\n"
                                 + "\tmaletasEnrutadas={}\n"
                                 + "\tmaletasSinRuta={}\n"
@@ -364,8 +386,7 @@ public class SimulacionSesionManager {
                                 + "\tocupacionMaxAeropuerto={}%\n"
                                 + "\tocupacionMaxVuelo={}%",
                         sesion.getSessionId(),
-                        windowId, inicioVentana, finVentana,
-                        sesion.getCurrentSimTimeUtc().get(),
+                        windowId,
                         evaluadas, enrutadas, sinRuta,
                         totalEnrutadasSim,
                         alns.getTiempoEjecucionMs(),
@@ -397,6 +418,11 @@ public class SimulacionSesionManager {
             }
 
             broker.convertAndSend(
+                    (String) (TOPIC_TICKS + sesion.getSessionId()),
+                    (Object) java.util.Map.of("type", "VENTANA_READY", "ventana", windowId)
+            );
+
+            broker.convertAndSend(
                     String.format(TOPIC_ESTADO, sesion.getSessionId()),
                     SimulacionEstadoDTO.builder()
                             .withSessionId(sesion.getSessionId())
@@ -410,7 +436,7 @@ public class SimulacionSesionManager {
                     sesion.getSessionId(), windowId, exception.getMessage());
         } finally {
             log.info("[AeroLuggage/Planificador] - "
-                    + "────────────────────────────────────────────────");
+                    + "\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500");
             sesion.getPlanificacionEnCurso().set(false);
             if (sesion.isReplanificacionPendiente()) {
                 sesion.limpiarReplanificacionPendiente();
@@ -641,11 +667,24 @@ public class SimulacionSesionManager {
     }
 
     private InstanciaProblema construirInstancia(final SimulacionSesion sesion, final String windowId) {
+        final long bucketActual = SimulacionSesion.parseBucket(windowId);
+        sesion.asegurarVuelosParaBanda(bucketActual, bucketActual + 24L);
+
+        final LocalDateTime inicioVentana = calcularInicioVentana(sesion, windowId);
+        final LocalDateTime finVentana = inicioVentana.plusMinutes(sesion.getWindowSizeMinutes());
+
         final List<Ruta> rutasComprometidas = sesion.getRutas().stream()
                 .filter(ruta -> ruta != null
                         && ruta.getEstado() != EstadoRuta.FALLIDA
                         && ruta.getEstado() != EstadoRuta.REPLANIFICADA)
-                .toList();
+                .map(ruta -> new Ruta(
+                        ruta.getIdRuta(),
+                        ruta.getIdMaleta(),
+                        ruta.getPlazoMaximoDias(),
+                        ruta.getDuracion(),
+                        ruta.getSubrutas() == null ? null : new ArrayList<>(ruta.getSubrutas()),
+                        ruta.getEstado()))
+                .collect(Collectors.toList());
 
         final Set<String> maletasConRuta = rutasComprometidas.stream()
                 .map(Ruta::getIdMaleta)
@@ -658,7 +697,7 @@ public class SimulacionSesionManager {
                 .filter(maleta -> maleta != null
                         && maleta.getIdMaleta() != null
                         && maleta.getFechaRegistro() != null
-                        && !maleta.getFechaRegistro().isAfter(simTime)
+                        && !maleta.getFechaRegistro().isAfter(finVentana)
                         && !maletasConRuta.contains(maleta.getIdMaleta()))
                 .collect(Collectors.toCollection(ArrayList::new));
 

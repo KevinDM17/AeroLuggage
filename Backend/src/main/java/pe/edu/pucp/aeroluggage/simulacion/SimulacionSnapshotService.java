@@ -17,16 +17,26 @@ import pe.edu.pucp.aeroluggage.dto.simulacion.rest.PedidoSimulacionResponse;
 import pe.edu.pucp.aeroluggage.dto.simulacion.rest.RutaSimulacionResponse;
 import pe.edu.pucp.aeroluggage.dto.simulacion.rest.RutaVueloResponse;
 import pe.edu.pucp.aeroluggage.dto.simulacion.rest.VueloInstanciaResponse;
+import pe.edu.pucp.aeroluggage.dto.simulacion.ws.EstadoMaletaDTO;
+import pe.edu.pucp.aeroluggage.dto.simulacion.ws.EstadoRutaDTO;
+import pe.edu.pucp.aeroluggage.dto.simulacion.ws.EstadoVueloDTO;
+import pe.edu.pucp.aeroluggage.dto.simulacion.ws.OcupacionAeropuertoDTO;
 
 import java.time.LocalDateTime;
 import java.time.format.DateTimeFormatter;
 import java.util.ArrayList;
+import java.util.Collection;
 import java.util.Comparator;
 import java.util.HashMap;
+import java.util.HashSet;
 import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Map;
+import java.util.Set;
 
+import lombok.extern.slf4j.Slf4j;
+
+@Slf4j
 @Service
 public class SimulacionSnapshotService {
 
@@ -218,9 +228,9 @@ public class SimulacionSnapshotService {
                 .build();
     }
 
-    private Map<String, Integer> calcularUsoPorVuelo(final List<Ruta> rutas,
-                                                     final Map<String, Maleta> maletasPorId,
-                                                     final LocalDateTime simTimeUtc) {
+    private Map<String, Integer> calcularUsoPorVuelo(final Collection<Ruta> rutas,
+                                                      final Map<String, Maleta> maletasPorId,
+                                                      final LocalDateTime simTimeUtc) {
         final Map<String, Integer> usoPorVuelo = new HashMap<>();
         for (final Ruta ruta : rutas) {
             if (ruta == null || ruta.getSubrutas() == null || ruta.getSubrutas().isEmpty()) {
@@ -353,8 +363,8 @@ public class SimulacionSnapshotService {
     ) {}
 
     public EntidadesVisibles mapearEntidadesVisibles(
-            final List<Ruta> rutas,
-            final List<Maleta> maletas,
+            final Collection<Ruta> rutas,
+            final Collection<Maleta> maletas,
             final LocalDateTime simTimeUtc) {
         final Map<String, Ruta> rutaPorMaleta = new HashMap<>();
         for (final Ruta ruta : rutas) {
@@ -365,11 +375,18 @@ public class SimulacionSnapshotService {
         final List<RutaSimulacionResponse> rutasMapeadas = new ArrayList<>();
         final Map<String, MaletaSimulacionResponse> maletasMapeadas = new LinkedHashMap<>();
         final Map<String, PedidoSimulacionResponse> pedidosMapeados = new LinkedHashMap<>();
+        int entregadasIncluidas = 0;
 
         for (final Maleta maleta : maletas) {
             if (maleta == null || maleta.getFechaRegistro() == null
                     || maleta.getFechaRegistro().isAfter(simTimeUtc)) {
                 continue;
+            }
+            if (maleta.getEstado() == EstadoMaleta.ENTREGADA) {
+                entregadasIncluidas++;
+                if (entregadasIncluidas > 500) {
+                    continue;
+                }
             }
             maletasMapeadas.putIfAbsent(maleta.getIdMaleta(), mapearMaleta(maleta));
             if (maleta.getPedido() != null && maleta.getPedido().getIdPedido() != null) {
@@ -468,4 +485,65 @@ public class SimulacionSnapshotService {
     private String formatDateTime(final LocalDateTime value) {
         return value != null ? value.format(ISO_DATE_TIME) : null;
     }
+
+    public List<EstadoMaletaDTO> mapearEstadosMaletas(final Collection<Maleta> maletas,
+                                                       final LocalDateTime simTimeUtc) {
+        final List<EstadoMaletaDTO> estados = new ArrayList<>();
+        for (final Maleta m : maletas) {
+            if (m == null || m.getFechaRegistro() == null
+                    || m.getFechaRegistro().isAfter(simTimeUtc)) continue;
+            estados.add(EstadoMaletaDTO.builder()
+                    .withId(m.getIdMaleta())
+                    .withE(m.getEstado() != null ? m.getEstado().ordinal() : 0)
+                    .build());
+        }
+        return estados;
+    }
+
+    public List<EstadoRutaDTO> mapearEstadosRutas(final Collection<Ruta> rutas,
+                                                   final LocalDateTime simTimeUtc,
+                                                   final Map<String, Maleta> maletasPorId) {
+        final List<EstadoRutaDTO> estados = new ArrayList<>();
+        for (final Ruta r : rutas) {
+            if (r == null) continue;
+            final Maleta m = maletasPorId.get(r.getIdMaleta());
+            if (m == null || m.getFechaRegistro() == null
+                    || m.getFechaRegistro().isAfter(simTimeUtc)) continue;
+            estados.add(EstadoRutaDTO.builder()
+                    .withId(r.getIdRuta())
+                    .withE(r.getEstado() != null ? r.getEstado().ordinal() : 0)
+                    .build());
+        }
+        return estados;
+    }
+
+    public List<EstadoVueloDTO> mapearEstadosVuelos(final List<VueloInstancia> vuelos) {
+        final Set<String> idsVistos = new HashSet<>();
+        final List<EstadoVueloDTO> estados = new ArrayList<>();
+        for (final VueloInstancia v : vuelos) {
+            if (v == null) continue;
+            if (!idsVistos.add(v.getIdVueloInstancia())) {
+                log.warn("[DIAG-DUPLICADO] vuelo {} aparece dos veces en vuelosInstancia", v.getIdVueloInstancia());
+            }
+            estados.add(EstadoVueloDTO.builder()
+                    .withId(v.getIdVueloInstancia())
+                    .withE(v.getEstado() != null ? v.getEstado().ordinal() : 0)
+                    .withCap(v.getCapacidadDisponible())
+                    .build());
+        }
+        return estados;
+    }
+
+    public List<OcupacionAeropuertoDTO> mapearOcupacionAeropuertos(final List<Aeropuerto> aeropuertos) {
+        final List<OcupacionAeropuertoDTO> ocupacion = new ArrayList<>();
+        for (final Aeropuerto a : aeropuertos) {
+            if (a == null) continue;
+            ocupacion.add(OcupacionAeropuertoDTO.builder()
+                    .withId(a.getIdAeropuerto())
+                    .withOcc(a.getMaletasActuales())
+                    .build());
+        }
+        return ocupacion;
+    }
+
 }

@@ -13,6 +13,7 @@ public class SimulacionParams {
     private Ventana ventana = new Ventana();
     private long tickIntervalMs = 1000L;
     private long maxDiasVuelosInstancias = 30L;
+    private long retencionVentanas = 2L;
 
     public long getDuracionDiaSimuladoMs() {
         return duracionDiaSimuladoMs;
@@ -44,6 +45,14 @@ public class SimulacionParams {
 
     public void setMaxDiasVuelosInstancias(final long maxDiasVuelosInstancias) {
         this.maxDiasVuelosInstancias = maxDiasVuelosInstancias;
+    }
+
+    public long getRetencionVentanas() {
+        return retencionVentanas;
+    }
+
+    public void setRetencionVentanas(final long retencionVentanas) {
+        this.retencionVentanas = retencionVentanas;
     }
 
     public static class Ventana {

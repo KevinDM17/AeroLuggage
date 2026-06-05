@@ -7,8 +7,11 @@ import java.time.LocalDate;
 import java.time.LocalDateTime;
 import java.time.LocalTime;
 import java.util.ArrayList;
+import java.util.Collection;
+import java.util.HashSet;
 import java.util.List;
 import java.util.Map;
+import java.util.Set;
 import java.util.concurrent.ConcurrentHashMap;
 import java.util.concurrent.CopyOnWriteArrayList;
 import java.util.concurrent.ScheduledFuture;
@@ -24,6 +27,8 @@ import pe.edu.pucp.aeroluggage.dominio.entidades.Pedido;
 import pe.edu.pucp.aeroluggage.dominio.entidades.Ruta;
 import pe.edu.pucp.aeroluggage.dominio.entidades.VueloInstancia;
 import pe.edu.pucp.aeroluggage.dominio.entidades.VueloProgramado;
+import pe.edu.pucp.aeroluggage.dominio.enums.EstadoMaleta;
+import pe.edu.pucp.aeroluggage.dominio.enums.EstadoVuelo;
 
 @Getter
 public class SimulacionSesion {
@@ -52,14 +57,18 @@ public class SimulacionSesion {
     private volatile List<VueloProgramado> vuelosProgramados = List.of();
     private volatile List<VueloInstancia> vuelosInstancia = List.of();
     private volatile List<Pedido> pedidos = List.of();
-    private volatile List<Maleta> maletas = List.of();
-    private volatile List<Ruta> rutas = List.of();
     private volatile List<ResumenVentanaPlanificacion> resumenesVentana = List.of();
-    private volatile Map<String, Maleta> maletasPorId = Map.of();
     private volatile ScheduledFuture<?> tareaScheduled;
+    private final ConcurrentHashMap<String, Maleta> maletasPorId = new ConcurrentHashMap<>();
+    private final ConcurrentHashMap<String, Ruta> rutasPorMaleta = new ConcurrentHashMap<>();
     private final ConcurrentHashMap<String, MaletaFallos> evaluacionesMaletas = new ConcurrentHashMap<>();
     private final List<SegmentoReplanificacion> segmentosReplanificacion = new CopyOnWriteArrayList<>();
     private final AtomicBoolean replanificacionPendiente = new AtomicBoolean(false);
+    private final ConcurrentHashMap<String, List<Maleta>> maletasPorVentana = new ConcurrentHashMap<>();
+    private final ConcurrentHashMap<String, List<Pedido>> pedidosPorVentana = new ConcurrentHashMap<>();
+    private final ConcurrentHashMap<String, List<VueloInstancia>> vuelosPorVentana = new ConcurrentHashMap<>();
+    private final AtomicLong ultimoIndiceVuelosEnviado = new AtomicLong(0);
+    private final Set<LocalDate> fechasVuelosGeneradas = ConcurrentHashMap.newKeySet();
 
     public SimulacionSesion(
             final String sessionId,
@@ -84,6 +93,57 @@ public class SimulacionSesion {
 
     public void setTareaScheduled(final ScheduledFuture<?> tarea) {
         this.tareaScheduled = tarea;
+    }
+
+    public Collection<Maleta> getMaletas() {
+        return maletasPorId.values();
+    }
+
+    public Collection<Ruta> getRutas() {
+        return rutasPorMaleta.values();
+    }
+
+    public synchronized void podarEntidadesAnteriores(final LocalDateTime cutoff) {
+        final Set<String> aPodar = new HashSet<>();
+        for (final Maleta maleta : maletasPorId.values()) {
+            if (maleta.getEstado() != EstadoMaleta.ENTREGADA) {
+                continue;
+            }
+            final Ruta ruta = rutasPorMaleta.get(maleta.getIdMaleta());
+            if (ruta == null || ruta.getSubrutas() == null || ruta.getSubrutas().isEmpty()) {
+                continue;
+            }
+            final LocalDateTime ultimaLlegada = ruta.getSubrutas().getLast().getFechaLlegada();
+            if (ultimaLlegada != null && ultimaLlegada.isBefore(cutoff)) {
+                aPodar.add(maleta.getIdMaleta());
+            }
+        }
+
+        if (aPodar.isEmpty()) {
+            return;
+        }
+
+        aPodar.forEach(maletasPorId::remove);
+        aPodar.forEach(rutasPorMaleta::remove);
+
+        final Set<String> vuelosEnUso = new HashSet<>();
+        for (final Ruta ruta : rutasPorMaleta.values()) {
+            if (ruta.getSubrutas() == null) {
+                continue;
+            }
+            for (final VueloInstancia vuelo : ruta.getSubrutas()) {
+                if (vuelo != null && vuelo.getIdVueloInstancia() != null) {
+                    vuelosEnUso.add(vuelo.getIdVueloInstancia());
+                }
+            }
+        }
+
+        this.vuelosInstancia = vuelosInstancia.stream()
+                .filter(v -> v.getEstado() != EstadoVuelo.FINALIZADO
+                        || vuelosEnUso.contains(v.getIdVueloInstancia()))
+                .toList();
+
+        this.stateVersion.incrementAndGet();
     }
 
     public void updateCurrentSimTimeUtc() {
@@ -132,7 +192,9 @@ public class SimulacionSesion {
         if (ventana == null) {
             return false;
         }
-        return !ventana.getWindowId().equals(ultimaVentanaPlanificada.get());
+        final long bucket = parseBucket(ventana.getWindowId());
+        final String siguienteVentana = "W" + String.format("%04d", bucket + 1L);
+        return !siguienteVentana.equals(ultimaVentanaPlanificada.get());
     }
 
     public void marcarVentanaPlanificada(final String windowId) {
@@ -173,10 +235,23 @@ public class SimulacionSesion {
         if (nuevasRutas == null || nuevasRutas.isEmpty()) {
             return;
         }
-        final List<Ruta> combinadas = new ArrayList<>(this.rutas);
-        combinadas.addAll(nuevasRutas);
-        this.rutas = List.copyOf(combinadas);
+        for (final Ruta ruta : nuevasRutas) {
+            if (ruta != null && ruta.getIdMaleta() != null) {
+                rutasPorMaleta.put(ruta.getIdMaleta(), ruta);
+            }
+        }
         this.stateVersion.incrementAndGet();
+    }
+
+    public String calcularVentana(final LocalDateTime dateTime) {
+        if (dateTime == null) return "";
+        final long minutesFromStart = Duration.between(fechaInicioUtc, dateTime).toMinutes();
+        final long bucket = Math.max(0L, minutesFromStart) / windowSpacingMinutes;
+        return "W" + String.format("%04d", bucket + 1);
+    }
+
+    public static long parseBucket(final String windowId) {
+        return Long.parseLong(windowId.substring(1));
     }
 
     public boolean hasSnapshotData() {
@@ -184,8 +259,8 @@ public class SimulacionSesion {
                 || !vuelosProgramados.isEmpty()
                 || !vuelosInstancia.isEmpty()
                 || !pedidos.isEmpty()
-                || !maletas.isEmpty()
-                || !rutas.isEmpty();
+                || !maletasPorId.isEmpty()
+                || !rutasPorMaleta.isEmpty();
     }
 
     public void setSnapshotData(final List<Aeropuerto> aeropuertos,
@@ -200,12 +275,46 @@ public class SimulacionSesion {
                 : List.copyOf(new ArrayList<>(vuelosProgramados));
         this.vuelosInstancia = vuelosInstancia == null ? List.of() : List.copyOf(new ArrayList<>(vuelosInstancia));
         this.pedidos = pedidos == null ? List.of() : List.copyOf(new ArrayList<>(pedidos));
-        this.maletas = maletas == null ? List.of() : List.copyOf(new ArrayList<>(maletas));
-        this.rutas = rutas == null ? List.of() : List.copyOf(new ArrayList<>(rutas));
         this.resumenesVentana = List.of();
-        this.maletasPorId = this.maletas.stream()
-                .filter(m -> m != null && m.getIdMaleta() != null)
-                .collect(Collectors.toUnmodifiableMap(Maleta::getIdMaleta, m -> m, (a, b) -> a));
+        this.maletasPorId.clear();
+        this.rutasPorMaleta.clear();
+        this.maletasPorVentana.clear();
+        this.pedidosPorVentana.clear();
+        this.vuelosPorVentana.clear();
+        this.ultimoIndiceVuelosEnviado.set(0);
+        this.fechasVuelosGeneradas.clear();
+        if (maletas != null) {
+            for (final Maleta m : maletas) {
+                if (m != null && m.getIdMaleta() != null) {
+                    this.maletasPorId.put(m.getIdMaleta(), m);
+                    final String v = calcularVentana(m.getFechaRegistro());
+                    this.maletasPorVentana.computeIfAbsent(v, k -> new ArrayList<>()).add(m);
+                }
+            }
+        }
+        if (pedidos != null) {
+            for (final Pedido p : pedidos) {
+                if (p != null && p.getIdPedido() != null) {
+                    final String v = calcularVentana(p.getFechaRegistro());
+                    this.pedidosPorVentana.computeIfAbsent(v, k -> new ArrayList<>()).add(p);
+                }
+            }
+        }
+        if (rutas != null) {
+            for (final Ruta r : rutas) {
+                if (r != null && r.getIdMaleta() != null) {
+                    this.rutasPorMaleta.put(r.getIdMaleta(), r);
+                }
+            }
+        }
+        if (vuelosInstancia != null) {
+            for (final VueloInstancia v : vuelosInstancia) {
+                if (v != null && v.getIdVueloInstancia() != null && v.getFechaSalida() != null) {
+                    final String w = calcularVentana(v.getFechaSalida());
+                    this.vuelosPorVentana.computeIfAbsent(w, k -> new ArrayList<>()).add(v);
+                }
+            }
+        }
     }
 
     public synchronized void registrarResumenVentana(final ResumenVentanaPlanificacion resumen) {
@@ -265,6 +374,64 @@ public class SimulacionSesion {
             entry.getValue().toCsvLines(entry.getKey(), lineas);
         }
         return lineas;
+    }
+
+    public synchronized void asegurarVuelosParaBanda(final long desdeBucket, final long hastaBucket) {
+        final Set<LocalDate> fechasPendientes = new HashSet<>();
+        for (long b = desdeBucket; b <= hastaBucket; b++) {
+            if (vuelosPorVentana.containsKey("W" + String.format("%04d", b))) {
+                continue;
+            }
+            final LocalDateTime ventanaStart = fechaInicioUtc.plusMinutes((b - 1L) * windowSpacingMinutes);
+            final LocalDate fecha = ventanaStart.toLocalDate();
+            if (!fecha.isAfter(fechaFinVuelos()) && fechasVuelosGeneradas.add(fecha)) {
+                fechasPendientes.add(fecha);
+            }
+        }
+        if (fechasPendientes.isEmpty()) {
+            return;
+        }
+
+        final List<VueloInstancia> nuevos = new ArrayList<>();
+        for (final LocalDate fechaOperacion : fechasPendientes) {
+            final long secuenciaBase = fechaOperacion.toEpochDay() * (long) vuelosProgramados.size();
+            int secuencia = (int) Math.min(secuenciaBase + 1L, Integer.MAX_VALUE);
+            for (final VueloProgramado vp : vuelosProgramados) {
+                if (vp == null) continue;
+                final int gmtOrigen = vp.getAeropuertoOrigen() != null
+                        ? vp.getAeropuertoOrigen().getHusoGMT() : 0;
+                final int gmtDestino = vp.getAeropuertoDestino() != null
+                        ? vp.getAeropuertoDestino().getHusoGMT() : 0;
+                final LocalDateTime salidaLocal = LocalDateTime.of(fechaOperacion, vp.getHoraSalida());
+                LocalDateTime llegadaLocal = LocalDateTime.of(fechaOperacion, vp.getHoraLlegada());
+                if (!llegadaLocal.isAfter(salidaLocal)) {
+                    llegadaLocal = llegadaLocal.plusDays(1);
+                }
+                final LocalDateTime salidaUtc = salidaLocal.minusHours(gmtOrigen);
+                if (salidaUtc.isBefore(fechaInicioUtc)) continue;
+                final LocalDateTime llegadaUtc = llegadaLocal.minusHours(gmtDestino);
+                final String id = String.format("VI%08d", secuencia++);
+                final VueloInstancia vi = new VueloInstancia(
+                        id, vp.getCodigo(), salidaUtc, llegadaUtc,
+                        vp.getCapacidadMaxima(), vp.getCapacidadMaxima(),
+                        vp.getAeropuertoOrigen(), vp.getAeropuertoDestino(),
+                        EstadoVuelo.PROGRAMADO
+                );
+                final String ventana = calcularVentana(salidaUtc);
+                vuelosPorVentana.computeIfAbsent(ventana, k -> new ArrayList<>()).add(vi);
+                nuevos.add(vi);
+            }
+        }
+        if (!nuevos.isEmpty()) {
+            final List<VueloInstancia> combinados = new ArrayList<>(this.vuelosInstancia);
+            combinados.addAll(nuevos);
+            this.vuelosInstancia = List.copyOf(combinados);
+        }
+    }
+
+    private LocalDate fechaFinVuelos() {
+        return fechaInicioUtc.toLocalDate()
+                .plusDays(Math.max(0L, totalDias));
     }
 
     private SimulacionVentana buildWindowFor(final LocalDateTime dateTime, final String status) {

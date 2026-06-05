@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useState } from "react";
+import { memo, useEffect, useMemo, useState } from "react";
 import { useLocation } from "react-router-dom";
 import { Ban, Filter, PanelRightClose, MapPin, Globe, Info, ChevronDown, Plane, RefreshCw } from "lucide-react";
 import { useFetch } from "../../hooks/useFetch";
@@ -12,8 +12,10 @@ import { LoadingState, EmptyState, ErrorState } from "../ui/States";
 import { useToast } from "../ui/Toast";
 
 const FLIGHT_STATUS_FILTERS = [
+  { value: "DEFAULT", label: "Activos" },
   { value: "ALL", label: "Todos" },
   { value: "PROGRAMADO", label: "Programado" },
+  { value: "CONFIRMADO", label: "Confirmado" },
   { value: "EN_PROGRESO", label: "En progreso" },
   { value: "FINALIZADO", label: "Finalizado" },
   { value: "CANCELADO", label: "Cancelado" },
@@ -66,7 +68,7 @@ const routeStatusColor = (s) => {
   }
 };
 
-function FlightItem({ flight, onCancel, canceling }) {
+const FlightItem = memo(function FlightItem({ flight, onCancel, canceling }) {
   const [expanded, setExpanded] = useState(false);
   const pct = flight.capacity > 0 ? Math.round((flight.used / flight.capacity) * 100) : 0;
   const normalizedStatus = normalizeFlightStatus(flight.status);
@@ -117,9 +119,9 @@ function FlightItem({ flight, onCancel, canceling }) {
       )}
     </div>
   );
-}
+});
 
-function OrderItem({ order }) {
+const OrderItem = memo(function OrderItem({ order }) {
   const [expanded, setExpanded] = useState(false);
   const id = order.id ?? order.idPedido ?? "--";
   const clientId = order.clientId ?? order.idCliente ?? "--";
@@ -156,9 +158,9 @@ function OrderItem({ order }) {
       )}
     </div>
   );
-}
+});
 
-function RouteItem({ route }) {
+const RouteItem = memo(function RouteItem({ route }) {
   const [expanded, setExpanded] = useState(false);
   const vuelos = route.vuelos ?? [];
   const stops = useMemo(() => {
@@ -213,9 +215,9 @@ function RouteItem({ route }) {
       )}
     </div>
   );
-}
+});
 
-function BagItem({ bag }) {
+const BagItem = memo(function BagItem({ bag }) {
   const [expanded, setExpanded] = useState(false);
   const label = bagStatusLabel(bag.estado);
   return (
@@ -238,9 +240,9 @@ function BagItem({ bag }) {
       )}
     </div>
   );
-}
+});
 
-function AirportItem({ apt }) {
+const AirportItem = memo(function AirportItem({ apt }) {
   const [expanded, setExpanded] = useState(false);
   const pct = apt.capacity > 0 ? Math.round((apt.used / apt.capacity) * 100) : 0;
   return (
@@ -265,7 +267,7 @@ function AirportItem({ apt }) {
       )}
     </div>
   );
-}
+});
 
 function ColorLegend() {
   return (
@@ -369,7 +371,7 @@ export default function RightPanel({
   const toast = useToast();
   const [activeTab, setActiveTab] = useState("flights");
   const [query, setQuery] = useState("");
-  const [flightStatusFilter, setFlightStatusFilter] = useState("ALL");
+  const [flightStatusFilter, setFlightStatusFilter] = useState("DEFAULT");
   const [cancelingFlightId, setCancelingFlightId] = useState(null);
   const publish = useStompPublish();
   const sessionId = simulationPanelData?.sessionId ?? null;
@@ -382,7 +384,7 @@ export default function RightPanel({
     if (!isSimulator || simulationLoaded) return;
     setActiveTab("flights");
     setQuery("");
-    setFlightStatusFilter("ALL");
+    setFlightStatusFilter("DEFAULT");
     setCancelingFlightId(null);
   }, [isSimulator, simulationLoaded]);
 
@@ -391,6 +393,8 @@ export default function RightPanel({
     setQuery("");
     if (tab !== "flights") {
       setFlightStatusFilter("ALL");
+    } else {
+      setFlightStatusFilter("DEFAULT");
     }
   };
 
@@ -420,12 +424,17 @@ export default function RightPanel({
     return rows.filter((r) => fields.some((f) => String(r[f] ?? "").toLowerCase().includes(q)));
   };
 
+  const FILTER_STATUSES = new Set(["CONFIRMADO", "EN_PROGRESO", "CANCELADO"]);
+
   const visibleFlights = useMemo(() => {
     const sourceFlights = Array.isArray(flights.data) ? flights.data : [];
-    const byStatus = flightStatusFilter === "ALL"
-      ? sourceFlights
+    if (flightStatusFilter === "ALL") {
+      return [];
+    }
+    const filtered = flightStatusFilter === "DEFAULT"
+      ? sourceFlights.filter((flight) => FILTER_STATUSES.has(normalizeFlightStatus(flight?.status)))
       : sourceFlights.filter((flight) => normalizeFlightStatus(flight?.status) === flightStatusFilter);
-    return sortFlightsByDepartureAsc(byStatus);
+    return sortFlightsByDepartureAsc(filtered);
   }, [flights.data, flightStatusFilter]);
 
   const markFlightAsCanceled = (flightId) => {
