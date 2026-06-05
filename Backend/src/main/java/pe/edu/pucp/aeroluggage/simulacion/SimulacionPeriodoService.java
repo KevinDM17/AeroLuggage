@@ -1,12 +1,16 @@
 package pe.edu.pucp.aeroluggage.simulacion;
 
 import lombok.RequiredArgsConstructor;
+import lombok.extern.slf4j.Slf4j;
 import org.springframework.stereotype.Service;
-import pe.edu.pucp.aeroluggage.dto.simulacion.ws.PeriodoTickDTO;
+import pe.edu.pucp.aeroluggage.config.SimulacionParams;
+import pe.edu.pucp.aeroluggage.dto.simulacion.ws.SimulacionTickLigeroDTO;
 
 import java.time.Duration;
+import java.time.LocalDateTime;
 import java.time.format.DateTimeFormatter;
 
+@Slf4j
 @Service
 @RequiredArgsConstructor
 public class SimulacionPeriodoService {
@@ -15,32 +19,43 @@ public class SimulacionPeriodoService {
     private static final DateTimeFormatter FORMATO_FECHA_HORA = DateTimeFormatter.ISO_LOCAL_DATE_TIME;
 
     private final SimulacionSnapshotService snapshotService;
+    private final SimulacionParams simulacionParams;
 
-    public PeriodoTickDTO ejecutarTick(final SimulacionSesion sesion) {
+    public SimulacionTickLigeroDTO ejecutarTick(final SimulacionSesion sesion) {
         final int tick = sesion.getTickActual().incrementAndGet();
         sesion.updateCurrentSimTimeUtc();
+        final SimulacionVentana ventanaAnterior = sesion.getCurrentWindow().get();
         final SimulacionVentana ventana = sesion.refreshCurrentWindow();
+        final boolean ventanaCambio = ventanaAnterior == null
+                || !ventanaAnterior.getWindowId().equals(ventana.getWindowId());
+        if (ventanaCambio) {
+            final LocalDateTime cutoff = ventana.getStartUtc()
+                    .minusMinutes(sesion.getWindowSpacingMinutes() * simulacionParams.getRetencionVentanas());
+            sesion.podarEntidadesAnteriores(cutoff);
+        }
         snapshotService.recalcularEstadoSesion(sesion);
+
+        final LocalDateTime simTimeUtc = sesion.getCurrentSimTimeUtc().get();
+
+        if (tick == 1 || tick % 50 == 0) {
+            log.info("[DIAG-TICK] tick={}, simTime={}, vuelosInstancia={}, maletas={}, rutas={}",
+                    tick, simTimeUtc,
+                    sesion.getVuelosInstancia().size(),
+                    sesion.getMaletas().size(),
+                    sesion.getRutas().size());
+        }
 
         final int enTransito = snapshotService.contarMaletasEnTransito(sesion);
         final int entregadas = snapshotService.contarMaletasEntregadas(sesion);
         final int sinRuta = snapshotService.contarMaletasSinRuta(sesion);
         final int vuelosActivos = snapshotService.contarVuelosActivos(sesion);
         final int capacidadLibrePct = snapshotService.calcularCapacidadLibrePct(sesion);
-        final long minutosDesdeInicio = Duration.between(sesion.getFechaInicioUtc(), sesion.getCurrentSimTimeUtc().get()).toMinutes();
-        final int diaActual = Math.max(1, (int) (minutosDesdeInicio / (24L * 60L)) + 1);
-        final SimulacionSnapshotService.EntidadesVisibles entidades =
-                snapshotService.mapearEntidadesVisibles(sesion.getRutas(), sesion.getMaletas(), sesion.getCurrentSimTimeUtc().get());
 
-        return PeriodoTickDTO.builder()
-                .withTickActual(tick)
-                .withDiaActual(Math.min(sesion.getTotalDias(), diaActual))
-                .withFechaSimulada(sesion.getCurrentSimTimeUtc().get().toLocalDate().format(FORMATO_FECHA))
-                .withCurrentSimTimeUtc(sesion.getCurrentSimTimeUtc().get().format(FORMATO_FECHA_HORA))
-                .withCurrentWindowId(ventana.getWindowId())
-                .withCurrentWindowStartUtc(ventana.getStartUtc().format(FORMATO_FECHA_HORA))
-                .withCurrentWindowEndUtc(ventana.getEndUtc().format(FORMATO_FECHA_HORA))
-                .withCurrentWindowStatus(ventana.getStatus())
+        return SimulacionTickLigeroDTO.builder()
+                .withType("TICK")
+                .withTick(tick)
+                .withSimTime(sesion.getCurrentSimTimeUtc().get().format(FORMATO_FECHA_HORA))
+                .withVentanaActual(ventana.getWindowId())
                 .withStateVersion(sesion.getStateVersion().get())
                 .withMaletasEnTransito(enTransito)
                 .withMaletasEntregadas(entregadas)
@@ -48,15 +63,10 @@ public class SimulacionPeriodoService {
                 .withMaletasNoAsignadas(sinRuta)
                 .withVuelosActivos(vuelosActivos)
                 .withCapacidadLibrePct(capacidadLibrePct)
-                .withAeropuertos(snapshotService.mapearAeropuertos(sesion.getAeropuertos()))
-                .withVuelosInstancia(snapshotService.mapearVuelosInstanciaActivos(
-                        sesion.getVuelosInstancia(),
-                        sesion.getCurrentSimTimeUtc().get(),
-                        sesion.getWindowSizeMinutes(),
-                        sesion.getFechaInicioUtc()))
-                .withPedidos(entidades.pedidos())
-                .withMaletas(entidades.maletas())
-                .withRutas(entidades.rutas())
+                .withEstadosMaletas(snapshotService.mapearEstadosMaletas(sesion.getMaletas(), simTimeUtc))
+                .withEstadosRutas(snapshotService.mapearEstadosRutas(sesion.getRutas(), simTimeUtc, sesion.getMaletasPorId()))
+                .withEstadosVuelos(snapshotService.mapearEstadosVuelos(sesion.getVuelosInstancia()))
+                .withAeropuertos(snapshotService.mapearOcupacionAeropuertos(sesion.getAeropuertos()))
                 .build();
     }
 }

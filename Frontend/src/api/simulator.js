@@ -31,6 +31,15 @@ export const iniciarSimulacionPeriodo = (payload) =>
     ? mockStartPeriodSim(payload.fechaHoraInicio ?? payload.fechaInicio)
     : apiPost("/simulacion/periodo/iniciar", payload);
 
+export const obtenerBaseSimulacion = (sessionId) =>
+  apiGet(`/simulacion/periodo/${sessionId}/base`);
+
+export const obtenerVentanaSimulacion = (sessionId, windowId) =>
+  apiGet(`/simulacion/periodo/${sessionId}/ventana/${windowId}`);
+
+export const obtenerVuelosSimulacion = (sessionId, desde, hasta) =>
+  apiGet(`/simulacion/periodo/${sessionId}/vuelos?desde=${desde}&hasta=${hasta}`);
+
 export const obtenerSnapshotSimulacionPeriodo = (sessionId) =>
   apiGet(`/simulacion/periodo/${sessionId}/snapshot`);
 

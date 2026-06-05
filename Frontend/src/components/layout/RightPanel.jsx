@@ -12,8 +12,10 @@ import { LoadingState, EmptyState, ErrorState } from "../ui/States";
 import { useToast } from "../ui/Toast";
 
 const FLIGHT_STATUS_FILTERS = [
+  { value: "DEFAULT", label: "Activos" },
   { value: "ALL", label: "Todos" },
   { value: "PROGRAMADO", label: "Programado" },
+  { value: "CONFIRMADO", label: "Confirmado" },
   { value: "EN_PROGRESO", label: "En progreso" },
   { value: "FINALIZADO", label: "Finalizado" },
   { value: "CANCELADO", label: "Cancelado" },
@@ -369,7 +371,7 @@ export default function RightPanel({
   const toast = useToast();
   const [activeTab, setActiveTab] = useState("flights");
   const [query, setQuery] = useState("");
-  const [flightStatusFilter, setFlightStatusFilter] = useState("ALL");
+  const [flightStatusFilter, setFlightStatusFilter] = useState("DEFAULT");
   const [cancelingFlightId, setCancelingFlightId] = useState(null);
   const publish = useStompPublish();
   const sessionId = simulationPanelData?.sessionId ?? null;
@@ -382,7 +384,7 @@ export default function RightPanel({
     if (!isSimulator || simulationLoaded) return;
     setActiveTab("flights");
     setQuery("");
-    setFlightStatusFilter("ALL");
+    setFlightStatusFilter("DEFAULT");
     setCancelingFlightId(null);
   }, [isSimulator, simulationLoaded]);
 
@@ -391,6 +393,8 @@ export default function RightPanel({
     setQuery("");
     if (tab !== "flights") {
       setFlightStatusFilter("ALL");
+    } else {
+      setFlightStatusFilter("DEFAULT");
     }
   };
 
@@ -420,12 +424,17 @@ export default function RightPanel({
     return rows.filter((r) => fields.some((f) => String(r[f] ?? "").toLowerCase().includes(q)));
   };
 
+  const FILTER_STATUSES = new Set(["CONFIRMADO", "EN_PROGRESO", "CANCELADO"]);
+
   const visibleFlights = useMemo(() => {
     const sourceFlights = Array.isArray(flights.data) ? flights.data : [];
-    const byStatus = flightStatusFilter === "ALL"
-      ? sourceFlights
+    if (flightStatusFilter === "ALL") {
+      return [];
+    }
+    const filtered = flightStatusFilter === "DEFAULT"
+      ? sourceFlights.filter((flight) => FILTER_STATUSES.has(normalizeFlightStatus(flight?.status)))
       : sourceFlights.filter((flight) => normalizeFlightStatus(flight?.status) === flightStatusFilter);
-    return sortFlightsByDepartureAsc(byStatus);
+    return sortFlightsByDepartureAsc(filtered);
   }, [flights.data, flightStatusFilter]);
 
   const markFlightAsCanceled = (flightId) => {

@@ -8,6 +8,9 @@ import { useStompPublish, useStompSubscribe } from "../hooks/useStomp";
 import { useToast } from "../components/ui/Toast";
 import {
   iniciarSimulacionPeriodo,
+  obtenerBaseSimulacion,
+  obtenerVentanaSimulacion,
+  obtenerVuelosSimulacion,
   stopPeriodSim,
   getPeriodSimState,
 } from "../api/simulator";
@@ -18,6 +21,12 @@ import {
   formatElapsedHMS,
   formatUtcDateTimeDisplay,
 } from "../utils/formatting";
+
+const ENUM_VUELO = ["PROGRAMADO", "CONFIRMADO", "EN_PROGRESO", "FINALIZADO", "CANCELADO"];
+const ENUM_MALETA = ["EN_ALMACEN", "EN_TRANSITO", "ENTREGADA"];
+const ENUM_RUTA = ["PLANIFICADA", "ACTIVA", "COMPLETADA", "FALLIDA", "REPLANIFICADA"];
+
+
 
 const PERIOD_DAYS = 5;
 const CLOCK_REFRESH_MS = 33;
@@ -82,10 +91,13 @@ export default function PeriodSimulatorPage() {
   const [showRouteLines, setShowRouteLines] = useState(true);
   const [currentSimTimeUtc, setCurrentSimTimeUtc] = useState(null);
   const [simulatedDayDurationMs, setSimulatedDayDurationMs] = useState(null);
-  const ignoreTicksRef = useRef(true);
+  const [windowSizeMinutes, setWindowSizeMinutes] = useState(120);
+  const [windowSpacingMinutes, setWindowSpacingMinutes] = useState(120);
   const startSimMsRef = useRef(null);
+  const ventanasCargadasRef = useRef(new Set());
 
   const clearSimulationData = () => {
+    ventanasCargadasRef.current.clear();
     setMapAirports([]);
     setMapFlights([]);
     resetSimulationPanelData();
@@ -101,7 +113,7 @@ export default function PeriodSimulatorPage() {
 
   useEffect(() => {
     resetSimulationPanelData();
-  }, []); // eslint-disable-line react-hooks/exhaustive-deps
+  }, []);
 
   const tickTopic =
     !USE_MOCK && sessionId ? `/topic/simulacion/${sessionId}` : null;
@@ -145,21 +157,18 @@ export default function PeriodSimulatorPage() {
     const local = ESTADO_BACK_A_LOCAL[estadoMessage.estado] ?? simStatus;
     if (local !== simStatus) setSimStatus(local);
     if (estadoMessage.estado === "FINALIZADA") {
-      ignoreTicksRef.current = true;
       toast.push({
         type: "success",
         title: "Simulación completada",
         message: estadoMessage.mensaje,
       });
     }
-    if (estadoMessage.estado === "DETENIDA") {
-      ignoreTicksRef.current = true;
+    if (estadoMessage.estado === "DETENIDA" && simStatus !== "idle") {
       setSessionId(null);
       setCurrentSimTimeUtc(null);
-
       clearSimulationData();
     }
-  }, [mockState, estadoMessage]); // eslint-disable-line react-hooks/exhaustive-deps
+  }, [mockState, estadoMessage]);
 
   const progress = useMemo(() => {
     if (USE_MOCK) return mockState?.progress ?? lastMockState?.progress ?? 0;
@@ -171,47 +180,126 @@ export default function PeriodSimulatorPage() {
   }, [executionElapsedMs, mockState, lastMockState, simulatedDayDurationMs]);
 
   useEffect(() => {
-    if (ignoreTicksRef.current || simStatus === "idle" || isStarting) return;
-    if (!tick?.currentSimTimeUtc) return;
+    if (simStatus === "idle") return;
+    if (!tick?.type) return;
+
+    if (tick.type === "VENTANA_READY") {
+      const windowId = tick.ventana;
+      if (ventanasCargadasRef.current.has(windowId)) return;
+      ventanasCargadasRef.current.add(windowId);
+      obtenerVentanaSimulacion(sessionId, tick.ventana).then((ventana) => {
+        setSimulationPanelData((prev) => ({
+          ...prev,
+          orders: [...prev.orders, ...(ventana.pedidos ?? [])],
+          bags: [...prev.bags, ...(ventana.maletas ?? [])],
+          routes: [...prev.routes, ...(ventana.rutas ?? [])],
+        }));
+      });
+      return;
+    }
+
+    if (tick.type !== "TICK") return;
 
     if (startSimMsRef.current == null) {
-      const ms = Date.parse(`${tick.currentSimTimeUtc}Z`);
+      const ms = Date.parse(`${tick.simTime}Z`);
       if (Number.isFinite(ms)) startSimMsRef.current = ms;
     }
 
-    setCurrentSimTimeUtc(tick.currentSimTimeUtc);
-    if (Array.isArray(tick.vuelosInstancia)) {
-      const adaptedFlights = applyCancelledFlights(
-        tick.vuelosInstancia.map(adaptFlightInstance),
-      );
-      const adaptedAirports = Array.isArray(tick.aeropuertos)
-        ? tick.aeropuertos.map(adaptAirport)
-        : null;
-      setMapFlights(adaptedFlights);
-      if (adaptedAirports) {
-        setMapAirports(adaptedAirports);
-      }
-      setSimulationPanelData((prev) => ({
-        ...prev,
-        ...(adaptedAirports && { airports: adaptedAirports }),
-        flights: adaptedFlights,
-        orders: Array.isArray(tick.pedidos) ? tick.pedidos : prev.orders,
-        bags: Array.isArray(tick.maletas) ? tick.maletas : prev.bags,
-        routes: Array.isArray(tick.rutas) ? tick.rutas : prev.routes,
-        sessionId: sessionId,
-        loaded: true,
-      }));
-    } else {
-      setSimulationPanelData((prev) => ({
-        ...prev,
-        orders: Array.isArray(tick.pedidos) ? tick.pedidos : prev.orders,
-        bags: Array.isArray(tick.maletas) ? tick.maletas : prev.bags,
-        routes: Array.isArray(tick.rutas) ? tick.rutas : prev.routes,
-        sessionId: sessionId,
-        loaded: true,
-      }));
+    setCurrentSimTimeUtc(tick.simTime);
+
+    console.log("[DIAG-TICK]", {
+      tick: tick.tick,
+      vuelos: tick.estadosVuelos?.length ?? 0,
+      maletas: tick.estadosMaletas?.length ?? 0,
+      rutas: tick.estadosRutas?.length ?? 0,
+      aeropuertos: tick.aeropuertos?.length ?? 0,
+    });
+
+    const occMap = {};
+    if (Array.isArray(tick.aeropuertos)) {
+      for (const a of tick.aeropuertos) occMap[a.id] = a.occ;
     }
-  }, [tick, executionElapsedMs, simStatus, cancelledFlightIds]); // eslint-disable-line react-hooks/exhaustive-deps
+
+    setMapAirports((prev) =>
+      prev.map((ap) => ({ ...ap, used: occMap[ap.iata] ?? ap.used })),
+    );
+
+    let vueloStateMap = {};
+    let maletaStateMap = {};
+    let rutaStateMap = {};
+
+    try {
+      if (Array.isArray(tick.estadosVuelos)) {
+        vueloStateMap = Object.fromEntries(
+          tick.estadosVuelos.map((v) => [v.id, v]),
+        );
+        setMapFlights((prev) => {
+          const updated = prev.map((f) => {
+            const st = vueloStateMap[f.idVueloInstancia ?? f.id];
+            if (st) {
+              return {
+                ...f,
+                status: ENUM_VUELO[st.e],
+                used: f.capacity > 0 ? f.capacity - st.cap : 0,
+                ticksAusente: 0,
+              };
+            }
+            return { ...f, ticksAusente: (f.ticksAusente ?? 0) + 1 };
+          });
+          return updated.filter((f) => (f.ticksAusente ?? 0) < 2);
+        });
+      }
+    } catch (e) {
+      console.warn("[TICK] estadosVuelos:", e);
+    }
+
+    try {
+      if (Array.isArray(tick.estadosMaletas)) {
+        maletaStateMap = Object.fromEntries(
+          tick.estadosMaletas.map((m) => [m.id, ENUM_MALETA[m.e]]),
+        );
+      }
+    } catch (e) {
+      console.warn("[TICK] estadosMaletas:", e);
+    }
+
+    try {
+      if (Array.isArray(tick.estadosRutas)) {
+        rutaStateMap = Object.fromEntries(
+          tick.estadosRutas.map((r) => [r.id, ENUM_RUTA[r.e]]),
+        );
+      }
+    } catch (e) {
+      console.warn("[TICK] estadosRutas:", e);
+    }
+
+    setSimulationPanelData((prev) => ({
+      ...prev,
+      airports: prev.airports.map((ap) => ({
+        ...ap,
+        used: occMap[ap.iata] ?? ap.used,
+      })),
+      flights: prev.flights.map((f) => {
+        const st = vueloStateMap[f.idVueloInstancia ?? f.id];
+        if (st) {
+          return {
+            ...f,
+            status: ENUM_VUELO[st.e],
+            used: f.capacity > 0 ? f.capacity - st.cap : 0,
+          };
+        }
+        return f;
+      }),
+      bags: prev.bags.map((b) => ({
+        ...b,
+        estado: maletaStateMap[b.idMaleta] ?? b.estado,
+      })),
+      routes: prev.routes.map((r) => ({
+        ...r,
+        estado: rutaStateMap[r.idRuta] ?? r.estado,
+      })),
+    }));
+  }, [tick]);
 
   const simulatedNowMs = useMemo(() => {
     const startMs = startSimMsRef.current;
@@ -255,7 +343,7 @@ export default function PeriodSimulatorPage() {
           }
         : undefined;
     }
-    if (!tick) return undefined;
+    if (!tick || tick.type !== "TICK") return undefined;
     return {
       bagsInTransit: tick.maletasEnTransito ?? 0,
       bagsDelivered:
@@ -268,7 +356,6 @@ export default function PeriodSimulatorPage() {
 
   const handleStart = async () => {
     const startDateTime = `${startDate}T${startTime || "00:00"}:00`;
-    ignoreTicksRef.current = true;
     setSimStatus("starting");
     setSessionId(null);
     setCurrentSimTimeUtc(null);
@@ -287,46 +374,54 @@ export default function PeriodSimulatorPage() {
         fechaHoraInicio: startDateTime,
         totalDias: PERIOD_DAYS,
       });
-      const adaptedAirports = Array.isArray(result.aeropuertos)
-        ? result.aeropuertos.map(adaptAirport)
-        : [];
-      const adaptedFlights = Array.isArray(result.vuelosInstancia)
-        ? result.vuelosInstancia.map(adaptFlightInstance)
-        : [];
+      const newSessionId = result.sessionId;
+      setSessionId(newSessionId);
       setCancelledFlightIds(new Set());
-      ignoreTicksRef.current = false;
-      setSessionId(result.sessionId ?? null);
       setLastMockState(null);
-      setCurrentSimTimeUtc(result.currentSimTimeUtc ?? startDateTime);
-      setSimulatedDayDurationMs(result.duracionDiaSimuladoMs);
+      setRunId((current) => current + 1);
+
+      const base = await obtenerBaseSimulacion(newSessionId);
+      const adaptedAirports = Array.isArray(base.aeropuertos)
+        ? base.aeropuertos.map(adaptAirport)
+        : [];
       setMapAirports(adaptedAirports);
-      setMapFlights(adaptedFlights);
+      setSimulatedDayDurationMs(base.duracionDiaSimuladoMs);
+      setWindowSizeMinutes(base.windowSizeMinutes);
+      setWindowSpacingMinutes(base.windowSpacingMinutes);
+
+      const primeraVentana = base.primeraVentana ?? "W0001";
+      const bucketActual = parseInt(primeraVentana.substring(1), 10);
+      const segundaVentana = "W" + String(bucketActual + 1).padStart(4, "0");
+      const ultimaVentana = "W" + String(bucketActual + 24).padStart(4, "0");
+      const [ventana1, ventana2, vuelosData] = await Promise.all([
+        obtenerVentanaSimulacion(newSessionId, primeraVentana),
+        obtenerVentanaSimulacion(newSessionId, segundaVentana),
+        obtenerVuelosSimulacion(newSessionId, primeraVentana, ultimaVentana),
+      ]);
+      ventanasCargadasRef.current.add(primeraVentana);
+      ventanasCargadasRef.current.add(segundaVentana);
+      const adaptedFlights = (vuelosData ?? []).map(adaptFlightInstance);
+      setMapFlights(adaptedFlights.map((f) => ({ ...f, ticksAusente: 0 })));
       setSimulationPanelData({
         airports: adaptedAirports,
         flights: adaptedFlights,
-        orders: [],
-        bags: [],
-        routes: [],
-        sessionId: sessionId,
+        orders: [...(ventana1.pedidos ?? []), ...(ventana2.pedidos ?? [])],
+        bags: [...(ventana1.maletas ?? []), ...(ventana2.maletas ?? [])],
+        routes: [...(ventana1.rutas ?? []), ...(ventana2.rutas ?? [])],
+        sessionId: newSessionId,
         loaded: true,
       });
-      setRunId((current) => current + 1);
-      setSimStatus(
-        USE_MOCK
-          ? (result.status ?? "running")
-          : (ESTADO_BACK_A_LOCAL[result.estado] ?? "running"),
-      );
+      setSimStatus("running");
+
       toast.push({
         type: "info",
         title: "Simulación iniciada",
         message: `Inicio: ${startDate} ${startTime || "00:00"} · ${PERIOD_DAYS} días`,
       });
     } catch (err) {
-      ignoreTicksRef.current = true;
       setSimStatus("idle");
       setSessionId(null);
       setCurrentSimTimeUtc(null);
-
       clearSimulationData();
       toast.push({
         type: "error",
@@ -350,7 +445,6 @@ export default function PeriodSimulatorPage() {
   };
 
   const handleStop = async () => {
-    ignoreTicksRef.current = true;
     setSimStatus("idle");
     setSessionId(null);
     setCurrentSimTimeUtc(null);

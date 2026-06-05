@@ -10,6 +10,7 @@ simulacion:
     espaciado-minutos: 120
   tick-interval-ms: 1000
   max-dias-vuelos-instancias: 30
+  retencion-ventanas: 2
 
 algoritmos:
   alns:
