@@ -27,35 +27,35 @@ export default function SimulatorPage() {
   };
 
   /* Auto-iniciar sesión "día a día" en el back al montar */
-  useEffect(() => {
-    let cancelled = false;
-    clearSimulationData();
-    (async () => {
-      try {
-        const today = new Date().toISOString().slice(0, 10);
-        const result = await iniciarSimulacionPeriodo({
-          fechaInicio: today,
-          totalDias: TOTAL_DIAS_VIVO,
-          intervaloTickMs: TICK_MS,
-        });
-        if (cancelled) return;
-        const sid = result?.sessionId ?? null;
-        sessionIdRef.current = sid;
-        setSessionId(sid);
-      } catch (e) {
-        console.warn("[DiaADia] No se pudo iniciar monitoreo en vivo:", e.message);
-      }
-    })();
-
-    return () => {
-      cancelled = true;
-      const sid = sessionIdRef.current;
-      if (sid && !USE_MOCK) {
-        publish("/app/simulacion/periodo/detener", { sessionId: sid }).catch(() => {});
-      }
-    };
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, []);
+  // useEffect(() => {
+  //   let cancelled = false;
+  //   clearSimulationData();
+  //   (async () => {
+  //     try {
+  //       const today = new Date().toISOString().slice(0, 10);
+  //       const result = await iniciarSimulacionPeriodo({
+  //         fechaInicio: today,
+  //         totalDias: TOTAL_DIAS_VIVO,
+  //         intervaloTickMs: TICK_MS,
+  //       });
+  //       if (cancelled) return;
+  //       const sid = result?.sessionId ?? null;
+  //       sessionIdRef.current = sid;
+  //       setSessionId(sid);
+  //     } catch (e) {
+  //       console.warn("[DiaADia] No se pudo iniciar monitoreo en vivo:", e.message);
+  //     }
+  //   })();
+  //
+  //   return () => {
+  //     cancelled = true;
+  //     const sid = sessionIdRef.current;
+  //     if (sid && !USE_MOCK) {
+  //       publish("/app/simulacion/periodo/detener", { sessionId: sid }).catch(() => {});
+  //     }
+  //   };
+  //   // eslint-disable-next-line react-hooks/exhaustive-deps
+  // }, []);
 
   /* Modo real: ticks por WS */
   const tickTopic = !USE_MOCK && sessionId ? `/topic/simulacion/${sessionId}` : null;
