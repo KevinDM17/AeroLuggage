@@ -44,6 +44,7 @@ public class Solucion {
 
         for (final Ruta ruta : solucion) {
             if (ruta == null) {
+                incumplidas++;
                 continue;
             }
             final boolean cumplePlazo = ruta.getDuracion() <= ruta.getPlazoMaximoDias();

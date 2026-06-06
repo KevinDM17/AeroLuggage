@@ -318,17 +318,6 @@ public class SimulacionSesionManager {
                 return;
             }
 
-            log.info("[AeroLuggage/Planificador] - INICIO: sessionId={}\n"
-                            + "\tventana={}\n"
-                            + "\tinicioVentana={}\n"
-                            + "\tfinVentana={}\n"
-                            + "\tmaletasEvaluadas={}\n"
-                            + "\tenrutadasPrevias={}\n",
-                    sesion.getSessionId(),
-                    windowId, inicioVentana, finVentana,
-                    instancia.getMaletas().size(),
-                    enrutadasPrevias);
-
             final ALNS alns = new ALNS();
             alns.ejecutar(instancia);
             final Solucion solucion = alns.getMejorSolucion();
@@ -366,7 +355,9 @@ public class SimulacionSesionManager {
                 return;
             }
 
-            sesion.agregarRutas(solucion.getSolucion());
+            sesion.agregarRutas(solucion.getSolucion().stream()
+                    .filter(r -> r != null && r.getEstado() != EstadoRuta.FALLIDA)
+                    .collect(Collectors.toList()));
             if (ventana != null) {
                 final long enrutadasValidas = solucion.getSolucion().stream()
                         .filter(r -> r != null && r.getEstado() != EstadoRuta.FALLIDA)
@@ -376,7 +367,7 @@ public class SimulacionSesionManager {
                 final int sinRuta = Math.max(0, evaluadas - enrutadas);
                 final int totalEnrutadasSim = enrutadasPrevias + enrutadas;
 
-                log.info("[AeroLuggage/Planificador] - FIN: sessionId={}\n"
+                log.info("[AeroLuggage/Planificador] - PLANIFICACIÓN: sessionId={}\n"
                                 + "\tventana={}\n"
                                 + "\tmaletasEvaluadas={}\n"
                                 + "\tmaletasEnrutadas={}\n"
@@ -391,7 +382,6 @@ public class SimulacionSesionManager {
                         totalEnrutadasSim,
                         alns.getTiempoEjecucionMs(),
                         ocupMaxAero, ocupMaxVuelo);
-
                 sesion.registrarResumenVentana(new SimulacionSesion.ResumenVentanaPlanificacion(
                         windowId,
                         ventana.getStartUtc(),
@@ -417,9 +407,26 @@ public class SimulacionSesionManager {
                 }
             }
 
+            final long bucketPlan = SimulacionSesion.parseBucket(windowId);
+            final long horizontePlan = bucketPlan + 24L;
+            final long enviadoPlan = sesion.getUltimoIndiceVuelosEnviado().get();
+            String vuelosDesde = null;
+            String vuelosHasta = null;
+            if (horizontePlan > enviadoPlan) {
+                vuelosDesde = "W" + String.format("%04d", Math.max(enviadoPlan + 1L, 1L));
+                vuelosHasta = "W" + String.format("%04d", horizontePlan);
+                sesion.getUltimoIndiceVuelosEnviado().set(horizontePlan);
+            }
+            java.util.Map<String, Object> readyMsg = new java.util.HashMap<>();
+            readyMsg.put("type", "VENTANA_READY");
+            readyMsg.put("ventana", windowId);
+            if (vuelosDesde != null) {
+                readyMsg.put("vuelosDesde", vuelosDesde);
+                readyMsg.put("vuelosHasta", vuelosHasta);
+            }
             broker.convertAndSend(
                     (String) (TOPIC_TICKS + sesion.getSessionId()),
-                    (Object) java.util.Map.of("type", "VENTANA_READY", "ventana", windowId)
+                    (Object) readyMsg
             );
 
             broker.convertAndSend(
@@ -435,8 +442,6 @@ public class SimulacionSesionManager {
             log.error("[AeroLuggage/Planificador] - ERROR: sessionId={}, ventana={}, error={}",
                     sesion.getSessionId(), windowId, exception.getMessage());
         } finally {
-            log.info("[AeroLuggage/Planificador] - "
-                    + "\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500");
             sesion.getPlanificacionEnCurso().set(false);
             if (sesion.isReplanificacionPendiente()) {
                 sesion.limpiarReplanificacionPendiente();

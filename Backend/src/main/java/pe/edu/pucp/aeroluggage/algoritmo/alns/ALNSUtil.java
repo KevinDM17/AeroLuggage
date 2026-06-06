@@ -134,15 +134,18 @@ public final class ALNSUtil {
 
     static Ruta crearRuta(final String idRuta, final Maleta maleta, final List<VueloInstancia> camino,
                           final EstadoRuta estado) {
+        if (camino == null || camino.isEmpty()) {
+            return null;
+        }
         final Ruta ruta = new Ruta();
         ruta.setIdRuta(idRuta);
         ruta.setIdMaleta(maleta == null ? null : maleta.getIdMaleta());
-        ruta.setSubrutas(camino == null ? new ArrayList<>() : new ArrayList<>(camino));
+        ruta.setSubrutas(new ArrayList<>(camino));
         if (maleta != null && maleta.getPedido() != null) {
             ruta.setPlazoMaximoDias(maleta.getPedido().getPlazoDias());
         }
         ruta.setDuracion(duracionDias(ruta.getSubrutas()));
-        ruta.setEstado(camino == null || camino.isEmpty() ? EstadoRuta.FALLIDA : estado);
+        ruta.setEstado(estado);
         return ruta;
     }
 

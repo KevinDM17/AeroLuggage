@@ -15,12 +15,12 @@ simulacion:
 algoritmos:
   alns:
     max-iteraciones: 150
-    max-iteraciones-sin-mejora: 40
-    tiempo-maximo-ms: 30000
+    max-iteraciones-sin-mejora: 150
+    tiempo-maximo-ms: 60000
     q-min: 1
     q-max: 6
     q-critical: 4
-    max-reintentos-ruteo: 40
+    max-reintentos-ruteo: 60
     umbral-critico-aeropuerto: 0.25
     temperatura-inicial: 5.0
     factor-enfriamiento: 0.98

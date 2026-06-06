@@ -94,6 +94,7 @@ export default function PeriodSimulatorPage() {
   const [windowSizeMinutes, setWindowSizeMinutes] = useState(120);
   const [windowSpacingMinutes, setWindowSpacingMinutes] = useState(120);
   const startSimMsRef = useRef(null);
+  const lastTickTimingRef = useRef(null);
   const ventanasCargadasRef = useRef(new Set());
 
   const clearSimulationData = () => {
@@ -187,14 +188,29 @@ export default function PeriodSimulatorPage() {
       const windowId = tick.ventana;
       if (ventanasCargadasRef.current.has(windowId)) return;
       ventanasCargadasRef.current.add(windowId);
-      obtenerVentanaSimulacion(sessionId, tick.ventana).then((ventana) => {
+      (async () => {
+        const [ventanaData, vuelosData] = await Promise.all([
+          obtenerVentanaSimulacion(sessionId, windowId),
+          tick.vuelosDesde
+            ? obtenerVuelosSimulacion(sessionId, tick.vuelosDesde, tick.vuelosHasta)
+            : Promise.resolve([]),
+        ]);
+        const adaptedFlights = (vuelosData ?? []).map(adaptFlightInstance);
+        setMapFlights((prev) => {
+          const merged = new Map(prev.map((f) => [f.idVueloInstancia ?? f.id, f]));
+          for (const f of adaptedFlights) {
+            merged.set(f.idVueloInstancia ?? f.id, { ...f, ticksAusente: 0 });
+          }
+          return [...merged.values()];
+        });
         setSimulationPanelData((prev) => ({
           ...prev,
-          orders: [...prev.orders, ...(ventana.pedidos ?? [])],
-          bags: [...prev.bags, ...(ventana.maletas ?? [])],
-          routes: [...prev.routes, ...(ventana.rutas ?? [])],
+          flights: [...prev.flights, ...adaptedFlights],
+          orders: [...prev.orders, ...(ventanaData.pedidos ?? [])],
+          bags: [...prev.bags, ...(ventanaData.maletas ?? [])],
+          routes: [...prev.routes, ...(ventanaData.rutas ?? [])],
         }));
-      });
+      })();
       return;
     }
 
@@ -207,13 +223,7 @@ export default function PeriodSimulatorPage() {
 
     setCurrentSimTimeUtc(tick.simTime);
 
-    console.log("[DIAG-TICK]", {
-      tick: tick.tick,
-      vuelos: tick.estadosVuelos?.length ?? 0,
-      maletas: tick.estadosMaletas?.length ?? 0,
-      rutas: tick.estadosRutas?.length ?? 0,
-      aeropuertos: tick.aeropuertos?.length ?? 0,
-    });
+    const perfT0 = performance.now();
 
     const occMap = {};
     if (Array.isArray(tick.aeropuertos)) {
@@ -273,42 +283,65 @@ export default function PeriodSimulatorPage() {
       console.warn("[TICK] estadosRutas:", e);
     }
 
+    const maletaIdsInTick = new Set((tick.estadosMaletas ?? []).map((m) => m.id));
+    const rutaIdsInTick = new Set((tick.estadosRutas ?? []).map((r) => r.id));
     const hasFlightUpdates = Object.keys(vueloStateMap).length > 0;
     const hasBagUpdates = Object.keys(maletaStateMap).length > 0;
     const hasRouteUpdates = Object.keys(rutaStateMap).length > 0;
 
-    setSimulationPanelData((prev) => ({
-      ...prev,
-      airports: prev.airports.map((ap) => ({
-        ...ap,
-        used: occMap[ap.iata] ?? ap.used,
-      })),
-      flights: hasFlightUpdates
-        ? prev.flights.map((f) => {
+    setSimulationPanelData((prev) => {
+      const vueloIdsInTick = new Set((tick.estadosVuelos ?? []).map((v) => v.id));
+      const bagsFiltradas = prev.bags
+        .map((b) => ({
+          ...b,
+          ticksAusente: b.fechaRegistro && b.fechaRegistro > tick.simTime
+            ? (b.ticksAusente ?? 0)
+            : maletaIdsInTick.has(b.idMaleta) ? 0 : (b.ticksAusente ?? 0) + 1,
+          estado: maletaStateMap[b.idMaleta] ?? b.estado,
+        }))
+        .filter((b) => (b.ticksAusente ?? 0) < 2);
+      const pedidosActivos = new Set(bagsFiltradas.map((b) => b.idPedido));
+      return {
+        ...prev,
+        simTime: tick.simTime,
+        airports: prev.airports.map((ap) => ({ ...ap, used: occMap[ap.iata] ?? ap.used })),
+        flights: prev.flights
+          .map((f) => {
             const st = vueloStateMap[f.idVueloInstancia ?? f.id];
-            if (st) {
-              return {
-                ...f,
-                status: ENUM_VUELO[st.e],
-                used: f.capacity > 0 ? f.capacity - st.cap : 0,
-              };
-            }
-            return f;
+            return {
+              ...f,
+              ticksAusente: vueloIdsInTick.has(f.idVueloInstancia ?? f.id) ? 0 : (f.ticksAusente ?? 0) + 1,
+              ...(st ? { status: ENUM_VUELO[st.e], used: f.capacity > 0 ? f.capacity - st.cap : 0 } : {}),
+            };
           })
-        : prev.flights,
-      bags: hasBagUpdates
-        ? prev.bags.map((b) => ({
-            ...b,
-            estado: maletaStateMap[b.idMaleta] ?? b.estado,
-          }))
-        : prev.bags,
-      routes: hasRouteUpdates
-        ? prev.routes.map((r) => ({
+          .filter((f) => (f.ticksAusente ?? 0) < 2),
+        bags: bagsFiltradas,
+        routes: prev.routes
+          .map((r) => ({
             ...r,
+            ticksAusente: rutaIdsInTick.has(r.idRuta) ? 0 : (r.ticksAusente ?? 0) + 1,
             estado: rutaStateMap[r.idRuta] ?? r.estado,
           }))
-        : prev.routes,
-    }));
+          .filter((r) => (r.ticksAusente ?? 0) < 2),
+        orders: prev.orders.filter((o) => pedidosActivos.has(o.id ?? o.idPedido)),
+      };
+    });
+
+    const perfT1 = performance.now();
+    const perfElapsed = perfT1 - perfT0;
+    const now = Date.now();
+    const gap = lastTickTimingRef.current ? now - lastTickTimingRef.current.timestamp : 0;
+    if (tick.tick === 1 || tick.tick % 5 === 0 || perfElapsed > 500) {
+      console.log("[TICK-PERF] tick=%d, processMs=%d, gapMs=%d, estadosVuelos=%d, estadosMaletas=%d, estadosRutas=%d, aeropuertos=%d",
+          tick.tick, Math.round(perfElapsed), gap,
+          tick.estadosVuelos?.length ?? 0,
+          tick.estadosMaletas?.length ?? 0,
+          tick.estadosRutas?.length ?? 0,
+          tick.aeropuertos?.length ?? 0);
+    }
+    lastTickTimingRef.current = { tick: tick.tick, timestamp: now };
+
+    return;
   }, [tick]);
 
   const simulatedNowMs = useMemo(() => {

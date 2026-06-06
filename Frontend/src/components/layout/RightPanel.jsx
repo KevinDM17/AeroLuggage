@@ -1,4 +1,5 @@
 import { memo, useEffect, useMemo, useState } from "react";
+import { Virtuoso } from "react-virtuoso";
 import { useLocation } from "react-router-dom";
 import { Ban, Filter, PanelRightClose, MapPin, Globe, Info, ChevronDown, Plane, RefreshCw } from "lucide-react";
 import { useFetch } from "../../hooks/useFetch";
@@ -75,7 +76,7 @@ const FlightItem = memo(function FlightItem({ flight, onCancel, canceling }) {
   const canCancel = normalizedStatus === "PROGRAMADO";
 
   return (
-    <div className="flex flex-col border-b border-slate-800/50 pb-4 mb-4 last:border-0 last:pb-0 cursor-pointer" onClick={() => setExpanded(!expanded)}>
+    <div className="flex flex-col border-b border-slate-800/50 h-full cursor-pointer" onClick={() => setExpanded(!expanded)}>
       <div className="flex justify-between items-start mb-2">
         <div>
           <h4 className="font-bold text-lg text-slate-200">{flight.id}</h4>
@@ -143,7 +144,7 @@ const OrderItem = memo(function OrderItem({ order }) {
   const time = order.time ?? fallbackTime.slice(0, 5);
 
   return (
-    <div className="flex flex-col border-b border-slate-800/50 pb-4 mb-4 last:border-0 last:pb-0 cursor-pointer" onClick={() => setExpanded(!expanded)}>
+    <div className="flex flex-col border-b border-slate-800/50 h-full cursor-pointer" onClick={() => setExpanded(!expanded)}>
       <div className="flex justify-between items-center mb-2">
         <h4 className="font-bold text-lg text-slate-200">{id}</h4>
         <span className="text-xs text-slate-400">{bags} maleta{bags !== 1 ? "s" : ""}</span>
@@ -178,7 +179,7 @@ const RouteItem = memo(function RouteItem({ route }) {
   }, [vuelos]);
 
   return (
-    <div className="flex flex-col border-b border-slate-800/50 pb-4 mb-4 last:border-0 last:pb-0 cursor-pointer" onClick={() => setExpanded(!expanded)}>
+    <div className="flex flex-col border-b border-slate-800/50 h-full cursor-pointer" onClick={() => setExpanded(!expanded)}>
       <div className="flex justify-between items-center mb-2">
         <div>
           <h4 className="font-bold text-lg text-slate-200">{route.idRuta}</h4>
@@ -221,7 +222,7 @@ const BagItem = memo(function BagItem({ bag }) {
   const [expanded, setExpanded] = useState(false);
   const label = bagStatusLabel(bag.estado);
   return (
-    <div className="flex flex-col border-b border-slate-800/50 pb-4 mb-4 last:border-0 last:pb-0 cursor-pointer" onClick={() => setExpanded(!expanded)}>
+    <div className="flex flex-col border-b border-slate-800/50 h-full cursor-pointer" onClick={() => setExpanded(!expanded)}>
       <div className="flex justify-between items-start mb-2">
         <h4 className="font-bold text-sm text-slate-200 break-all pr-2">{bag.idMaleta}</h4>
         <span className={`text-[10px] font-bold px-2 py-1 rounded tracking-wider whitespace-nowrap ${bagStatusColor(bag.estado)}`}>
@@ -246,7 +247,7 @@ const AirportItem = memo(function AirportItem({ apt }) {
   const [expanded, setExpanded] = useState(false);
   const pct = apt.capacity > 0 ? Math.round((apt.used / apt.capacity) * 100) : 0;
   return (
-    <div className="flex flex-col border-b border-slate-800/50 pb-4 mb-4 last:border-0 last:pb-0 cursor-pointer" onClick={() => setExpanded(!expanded)}>
+    <div className="flex flex-col border-b border-slate-800/50 h-full cursor-pointer" onClick={() => setExpanded(!expanded)}>
       <div className="flex justify-between items-center">
         <h4 className="font-bold text-lg text-slate-200">{apt.iata}</h4>
         <span className="text-xs text-slate-400">{pct}% Ocupado</span>
@@ -424,7 +425,7 @@ export default function RightPanel({
     return rows.filter((r) => fields.some((f) => String(r[f] ?? "").toLowerCase().includes(q)));
   };
 
-  const FILTER_STATUSES = new Set(["CONFIRMADO", "EN_PROGRESO", "CANCELADO"]);
+  const FILTER_STATUSES = new Set(["PROGRAMADO", "CONFIRMADO", "EN_PROGRESO", "CANCELADO"]);
 
   const visibleFlights = useMemo(() => {
     const sourceFlights = Array.isArray(flights.data) ? flights.data : [];
@@ -487,10 +488,47 @@ export default function RightPanel({
     }
   };
 
-  const ordersFiltered = useMemo(() => filterByText(orders.data ?? [], ["id", "idPedido", "clientId", "idCliente", "origin", "dest", "status", "estado"]), [orders.data, query]);
+  const simTime = simulationPanelData?.simTime;
+
+  const maletasVisibles = useMemo(() => {
+    const source = maletas.data ?? [];
+    if (!simTime) return source;
+    return source.filter(b => !b.fechaRegistro || b.fechaRegistro <= simTime);
+  }, [maletas.data, simTime]);
+
+  const idMaletasVisibles = useMemo(() => {
+    const source = maletas.data ?? [];
+    const visibles = simTime
+      ? source.filter(b => !b.fechaRegistro || b.fechaRegistro <= simTime)
+      : source;
+    return new Set(visibles.map(b => b.idMaleta));
+  }, [maletas.data, simTime]);
+
+  const pedidosActivos = useMemo(() => {
+    const source = maletas.data ?? [];
+    const visibles = simTime
+      ? source.filter(b => !b.fechaRegistro || b.fechaRegistro <= simTime)
+      : source;
+    return new Set(visibles.map(b => b.idPedido));
+  }, [maletas.data, simTime]);
+
+  const ordersFiltered = useMemo(() => {
+    const source = orders.data ?? [];
+    const filtrados = simTime ? source.filter(o => pedidosActivos.has(o.id ?? o.idPedido)) : source;
+    return filterByText(filtrados, ["id", "idPedido", "clientId", "idCliente", "origin", "dest", "status", "estado"]);
+  }, [orders.data, pedidosActivos, query, simTime]);
+
   const airportsFiltered = useMemo(() => filterByText(airports.data ?? [], ["iata", "city", "continent"]), [airports.data, query]);
-  const maletasFiltered = useMemo(() => filterByText(maletas.data ?? [], ["idMaleta", "idPedido", "estado", "ubicacionActual"]), [maletas.data, query]);
-  const rutasFiltered = useMemo(() => filterByText(rutas.data ?? [], ["idRuta", "idMaleta", "estado"]), [rutas.data, query]);
+
+  const maletasFiltered = useMemo(() => {
+    return filterByText(maletasVisibles, ["idMaleta", "idPedido", "estado", "ubicacionActual"]);
+  }, [maletasVisibles, query]);
+
+  const rutasFiltered = useMemo(() => {
+    const source = rutas.data ?? [];
+    const filtrados = simTime ? source.filter(r => idMaletasVisibles.has(r.idMaleta)) : source;
+    return filterByText(filtrados, ["idRuta", "idMaleta", "estado"]);
+  }, [rutas.data, idMaletasVisibles, query, simTime]);
 
   const tabContent = {
     flights: (
@@ -622,5 +660,12 @@ function TabBody({ loading, error, refetch, rows, empty, renderItem }) {
   if (loading) return <LoadingState />;
   if (error) return <ErrorState error={error} onRetry={refetch} />;
   if (!rows || rows.length === 0) return <EmptyState title="Sin resultados" message={empty} />;
-  return rows.map(renderItem);
+
+  return (
+    <Virtuoso
+      style={{ height: "100%" }}
+      totalCount={rows.length}
+      itemContent={(index) => renderItem(rows[index], index)}
+    />
+  );
 }

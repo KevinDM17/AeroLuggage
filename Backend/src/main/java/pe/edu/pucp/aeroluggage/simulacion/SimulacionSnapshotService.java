@@ -55,7 +55,7 @@ public class SimulacionSnapshotService {
         final Map<String, Ruta> rutaPorMaleta = new HashMap<>();
         for (final Ruta ruta : sesion.getRutas()) {
             if (ruta != null && ruta.getIdMaleta() != null) {
-                rutaPorMaleta.putIfAbsent(ruta.getIdMaleta(), ruta);
+                rutaPorMaleta.put(ruta.getIdMaleta(), ruta);
             }
         }
         final Map<String, Integer> usoPorVuelo = calcularUsoPorVuelo(sesion.getRutas(), maletasPorId, simTimeUtc);
@@ -522,9 +522,7 @@ public class SimulacionSnapshotService {
         final List<EstadoVueloDTO> estados = new ArrayList<>();
         for (final VueloInstancia v : vuelos) {
             if (v == null) continue;
-            if (!idsVistos.add(v.getIdVueloInstancia())) {
-                log.warn("[DIAG-DUPLICADO] vuelo {} aparece dos veces en vuelosInstancia", v.getIdVueloInstancia());
-            }
+            idsVistos.add(v.getIdVueloInstancia());
             estados.add(EstadoVueloDTO.builder()
                     .withId(v.getIdVueloInstancia())
                     .withE(v.getEstado() != null ? v.getEstado().ordinal() : 0)

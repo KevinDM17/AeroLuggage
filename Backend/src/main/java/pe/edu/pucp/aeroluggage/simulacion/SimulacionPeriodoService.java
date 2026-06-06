@@ -37,21 +37,14 @@ public class SimulacionPeriodoService {
 
         final LocalDateTime simTimeUtc = sesion.getCurrentSimTimeUtc().get();
 
-        if (tick == 1 || tick % 50 == 0) {
-            log.info("[DIAG-TICK] tick={}, simTime={}, vuelosInstancia={}, maletas={}, rutas={}",
-                    tick, simTimeUtc,
-                    sesion.getVuelosInstancia().size(),
-                    sesion.getMaletas().size(),
-                    sesion.getRutas().size());
-        }
-
         final int enTransito = snapshotService.contarMaletasEnTransito(sesion);
         final int entregadas = snapshotService.contarMaletasEntregadas(sesion);
         final int sinRuta = snapshotService.contarMaletasSinRuta(sesion);
         final int vuelosActivos = snapshotService.contarVuelosActivos(sesion);
         final int capacidadLibrePct = snapshotService.calcularCapacidadLibrePct(sesion);
 
-        return SimulacionTickLigeroDTO.builder()
+        final long t0 = System.nanoTime();
+        final SimulacionTickLigeroDTO dto = SimulacionTickLigeroDTO.builder()
                 .withType("TICK")
                 .withTick(tick)
                 .withSimTime(sesion.getCurrentSimTimeUtc().get().format(FORMATO_FECHA_HORA))
@@ -68,5 +61,35 @@ public class SimulacionPeriodoService {
                 .withEstadosVuelos(snapshotService.mapearEstadosVuelos(sesion.getVuelosInstancia()))
                 .withAeropuertos(snapshotService.mapearOcupacionAeropuertos(sesion.getAeropuertos()))
                 .build();
+        final long buildMs = (System.nanoTime() - t0) / 1_000_000L;
+
+        if (tick == 1 || tick % 5 == 0) {
+            int almacen = 0, transito = 0, entregada = 0;
+            for (final pe.edu.pucp.aeroluggage.dto.simulacion.ws.EstadoMaletaDTO em : dto.getEstadosMaletas()) {
+                switch (em.getE()) {
+                    case 0 -> almacen++;
+                    case 1 -> transito++;
+                    case 2 -> entregada++;
+                }
+            }
+            int planificadas = 0, activas = 0, completadas = 0, fallidas = 0;
+            for (final pe.edu.pucp.aeroluggage.dto.simulacion.ws.EstadoRutaDTO er : dto.getEstadosRutas()) {
+                switch (er.getE()) {
+                    case 0 -> planificadas++;
+                    case 1 -> activas++;
+                    case 2 -> completadas++;
+                    case 3 -> fallidas++;
+                }
+            }
+            log.info("[TICK] tick={} | simTime={} | vuelos={} | maletas={} [ALMACEN={} TRANSITO={} ENTREGADA={}] | rutas={} [PLANIFICADAS={} ACTIVAS={} COMPLETADAS={} FALLIDAS={}] | aeropuertos={} | build={}ms",
+                    tick, simTimeUtc,
+                    dto.getEstadosVuelos().size(),
+                    dto.getEstadosMaletas().size(), almacen, transito, entregada,
+                    dto.getEstadosRutas().size(), planificadas, activas, completadas, fallidas,
+                    dto.getAeropuertos().size(),
+                    buildMs);
+        }
+
+        return dto;
     }
 }

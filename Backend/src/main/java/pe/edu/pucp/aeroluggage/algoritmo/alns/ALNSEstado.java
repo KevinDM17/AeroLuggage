@@ -7,6 +7,7 @@ import java.util.HashSet;
 import java.util.List;
 import java.util.Map;
 import java.util.NavigableMap;
+import java.util.Objects;
 import java.util.Set;
 import java.util.TreeMap;
 
@@ -24,9 +25,9 @@ final class ALNSEstado {
     private final Map<String, Integer> ocupacionBaseAeropuerto;
     private final Set<String> idsMaletasComprometidas;
     private final List<Maleta> universoMaletas;
+    private final Map<String, Integer> indicePorMaleta;
 
     private Solucion solucionActual;
-    private final Map<String, Ruta> rutaPorMaleta;
     private final Map<String, Integer> usoPorVuelo;
     private final Map<String, NavigableMap<LocalDateTime, Integer>> eventosAeropuerto;
     private final Map<String, String> razonesFallo = new HashMap<>();
@@ -38,45 +39,56 @@ final class ALNSEstado {
         this.ocupacionBaseAeropuerto = instancia.getOcupacionBaseAeropuerto();
         this.idsMaletasComprometidas = new HashSet<>();
         this.universoMaletas = new ArrayList<>(instancia.getMaletas());
-        this.rutaPorMaleta = new HashMap<>();
+        this.indicePorMaleta = new HashMap<>();
+        for (int i = 0; i < universoMaletas.size(); i++) {
+            final Maleta m = universoMaletas.get(i);
+            if (m != null && m.getIdMaleta() != null) {
+                indicePorMaleta.put(m.getIdMaleta(), i);
+            }
+        }
         this.usoPorVuelo = new HashMap<>();
         this.eventosAeropuerto = ALNSUtil.clonarEventos(instancia.getEventosBaseAeropuerto());
 
-        if (instancia.getEventosBaseAeropuerto().isEmpty()) {
-            for (final Ruta ruta : instancia.getRutasComprometidas()) {
-                if (ruta == null || ruta.getIdMaleta() == null) {
-                    continue;
-                }
-                rutasComprometidasPorMaleta.put(ruta.getIdMaleta(), ruta);
-                idsMaletasComprometidas.add(ruta.getIdMaleta());
-                registrarEventosRuta(ruta);
+        for (final Ruta ruta : instancia.getRutasComprometidas()) {
+            if (ruta == null || ruta.getIdMaleta() == null) {
+                continue;
             }
-        } else {
-            for (final Ruta ruta : instancia.getRutasComprometidas()) {
-                if (ruta == null || ruta.getIdMaleta() == null) {
-                    continue;
-                }
-                rutasComprometidasPorMaleta.put(ruta.getIdMaleta(), ruta);
-                idsMaletasComprometidas.add(ruta.getIdMaleta());
+            rutasComprometidasPorMaleta.put(ruta.getIdMaleta(), ruta);
+            idsMaletasComprometidas.add(ruta.getIdMaleta());
+            if (instancia.getEventosBaseAeropuerto().isEmpty()) {
+                registrarEventosRuta(ruta);
             }
         }
 
         this.solucionActual = solucionInicial == null ? new Solucion() : solucionInicial.clonarProfundo();
-        if (this.solucionActual.getSolucion() == null) {
-            this.solucionActual.setSolucion(new ArrayList<>());
-        }
-        final List<Ruta> rutasFiltradas = new ArrayList<>();
-        for (final Ruta ruta : this.solucionActual.getSolucion()) {
-            if (ruta == null || ruta.getIdMaleta() == null || idsMaletasComprometidas.contains(ruta.getIdMaleta())) {
-                continue;
+        final List<Ruta> sol = this.solucionActual.getSolucion();
+        if (sol == null || sol.size() != universoMaletas.size()) {
+            final ArrayList<Ruta> fijo = new ArrayList<>(universoMaletas.size());
+            for (int i = 0; i < universoMaletas.size(); i++) {
+                fijo.add(null);
             }
-            if (rutaPorMaleta.putIfAbsent(ruta.getIdMaleta(), ruta) == null) {
-                rutasFiltradas.add(ruta);
-                registrarUsoRuta(ruta);
-                registrarEventosRuta(ruta);
+            if (sol != null) {
+                for (final Ruta r : sol) {
+                    if (r != null && r.getIdMaleta() != null && !idsMaletasComprometidas.contains(r.getIdMaleta())
+                            && r.getEstado() != EstadoRuta.FALLIDA) {
+                        final Integer idx = indicePorMaleta.get(r.getIdMaleta());
+                        if (idx != null) {
+                            fijo.set(idx, r);
+                            registrarUsoRuta(r);
+                            registrarEventosRuta(r);
+                        }
+                    }
+                }
+            }
+            this.solucionActual.setSolucion(fijo);
+        } else {
+            for (final Ruta r : sol) {
+                if (r != null && !idsMaletasComprometidas.contains(r.getIdMaleta())) {
+                    registrarUsoRuta(r);
+                    registrarEventosRuta(r);
+                }
             }
         }
-        this.solucionActual.setSolucion(new ArrayList<>(rutasFiltradas));
     }
 
     ALNSEstado clonar() {
@@ -95,10 +107,6 @@ final class ALNSEstado {
 
     void setSolucionActual(final Solucion solucionActual) {
         this.solucionActual = solucionActual;
-    }
-
-    Map<String, Ruta> getRutaPorMaleta() {
-        return rutaPorMaleta;
     }
 
     Map<String, Integer> getUsoPorVuelo() {
@@ -137,8 +145,13 @@ final class ALNSEstado {
 
     List<Maleta> getMaletasSinRuta() {
         final List<Maleta> faltantes = new ArrayList<>();
+        final List<Ruta> solucion = solucionActual.getSolucion();
         for (final Maleta maleta : getMaletasNoComprometidas()) {
-            if (!rutaPorMaleta.containsKey(maleta.getIdMaleta())) {
+            if (maleta == null || maleta.getIdMaleta() == null) {
+                continue;
+            }
+            final Integer idx = indicePorMaleta.get(maleta.getIdMaleta());
+            if (idx == null || solucion == null || idx >= solucion.size() || solucion.get(idx) == null) {
                 faltantes.add(maleta);
             }
         }
@@ -149,9 +162,12 @@ final class ALNSEstado {
         if (idMaleta == null) {
             return null;
         }
-        final Ruta ruta = rutaPorMaleta.get(idMaleta);
-        if (ruta != null) {
-            return ruta;
+        final Integer idx = indicePorMaleta.get(idMaleta);
+        if (idx != null) {
+            final List<Ruta> solucion = solucionActual.getSolucion();
+            if (solucion != null && idx < solucion.size() && solucion.get(idx) != null) {
+                return solucion.get(idx);
+            }
         }
         return rutasComprometidasPorMaleta.get(idMaleta);
     }
@@ -160,9 +176,10 @@ final class ALNSEstado {
         if (nuevaRuta == null || nuevaRuta.getIdMaleta() == null || esComprometida(nuevaRuta.getIdMaleta())) {
             return;
         }
-        final Ruta anterior = rutaPorMaleta.get(nuevaRuta.getIdMaleta());
-        if (anterior != null) {
-            removerRuta(anterior.getIdMaleta());
+        final Ruta anterior = obtenerRuta(nuevaRuta.getIdMaleta());
+        if (anterior != null && !esComprometida(anterior.getIdMaleta())) {
+            liberarUsoRuta(anterior);
+            liberarEventosRuta(anterior);
         }
         agregarRuta(nuevaRuta);
     }
@@ -171,27 +188,50 @@ final class ALNSEstado {
         if (ruta == null || ruta.getIdMaleta() == null || esComprometida(ruta.getIdMaleta())) {
             return;
         }
-        rutaPorMaleta.put(ruta.getIdMaleta(), ruta);
+        final Integer idx = indicePorMaleta.get(ruta.getIdMaleta());
+        if (idx == null) {
+            return;
+        }
+        final List<Ruta> solucion = solucionActual.getSolucion();
+        if (solucion != null && idx < solucion.size()) {
+            solucion.set(idx, ruta);
+        }
         registrarUsoRuta(ruta);
         registrarEventosRuta(ruta);
-        reconstruirSolucion();
     }
 
     Ruta removerRuta(final String idMaleta) {
         if (idMaleta == null || esComprometida(idMaleta)) {
             return null;
         }
-        final Ruta eliminada = rutaPorMaleta.remove(idMaleta);
+        final Integer idx = indicePorMaleta.get(idMaleta);
+        if (idx == null) {
+            return null;
+        }
+        final List<Ruta> solucion = solucionActual.getSolucion();
+        if (solucion == null || idx >= solucion.size()) {
+            return null;
+        }
+        final Ruta eliminada = solucion.set(idx, null);
         if (eliminada != null) {
             liberarUsoRuta(eliminada);
             liberarEventosRuta(eliminada);
-            reconstruirSolucion();
         }
         return eliminada;
     }
 
     List<Ruta> rutasNoComprometidas() {
-        return new ArrayList<>(rutaPorMaleta.values());
+        final List<Ruta> resultado = new ArrayList<>();
+        final List<Ruta> solucion = solucionActual.getSolucion();
+        if (solucion == null) {
+            return resultado;
+        }
+        for (final Ruta r : solucion) {
+            if (r != null && r.getIdMaleta() != null && !idsMaletasComprometidas.contains(r.getIdMaleta())) {
+                resultado.add(r);
+            }
+        }
+        return resultado;
     }
 
     void registrarUsoRuta(final Ruta ruta) {
@@ -266,29 +306,32 @@ final class ALNSEstado {
     }
 
     void reconstruirSolucion() {
-        final ArrayList<Ruta> rutas = new ArrayList<>(rutaPorMaleta.values());
-        rutas.sort((primero, segundo) -> {
-            if (primero == null || primero.getIdRuta() == null) {
-                return -1;
-            }
-            if (segundo == null || segundo.getIdRuta() == null) {
-                return 1;
-            }
-            return primero.getIdRuta().compareTo(segundo.getIdRuta());
-        });
-        solucionActual.setSolucion(rutas);
+        // La soluci\u00f3n ya tiene tama\u00f1o fijo; solo reordenar no aplica.
+        // Los mapas derivados (usoPorVuelo, eventosAeropuerto) ya se actualizan
+        // en agregarRuta/removerRuta.
     }
 
     int siguienteSecuenciaRuta() {
-        return rutaPorMaleta.size() + 1;
+        final List<Ruta> solucion = solucionActual.getSolucion();
+        if (solucion == null) {
+            return 1;
+        }
+        return (int) solucion.stream().filter(Objects::nonNull).count() + 1;
     }
 
     boolean estaVacia() {
-        return rutaPorMaleta.isEmpty();
+        final List<Ruta> solucion = solucionActual.getSolucion();
+        if (solucion == null) {
+            return true;
+        }
+        return solucion.stream().noneMatch(Objects::nonNull);
     }
 
     Ruta crearRutaFallida(final Maleta maleta, final int secuencia) {
         final Ruta ruta = ALNSUtil.crearRuta(ALNSUtil.siguienteIdRuta(secuencia), maleta, List.of(), EstadoRuta.FALLIDA);
+        if (ruta == null) {
+            return null;
+        }
         ruta.setDuracion(0.0D);
         return ruta;
     }

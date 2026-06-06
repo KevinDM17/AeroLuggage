@@ -168,7 +168,7 @@ public class SimulacionPeriodoRestController {
     private SimulacionVentanaDTO construirRespuestaVentana(
             final SimulacionSesion sesion, final String windowId) {
         final List<MaletaSimulacionResponse> maletasDTO = new ArrayList<>();
-        final List<PedidoSimulacionResponse> pedidosDTO = new ArrayList<>();
+        final java.util.LinkedHashMap<String, PedidoSimulacionResponse> pedidosMap = new java.util.LinkedHashMap<>();
         final List<RutaSimulacionResponse> rutasDTO = new ArrayList<>();
 
         final var maletas = sesion.getMaletasPorVentana().get(windowId);
@@ -182,12 +182,12 @@ public class SimulacionPeriodoRestController {
                                 ? m.getFechaRegistro().format(FORMATO_FECHA_HORA) : null)
                         .withEstado(m.getEstado() != null ? m.getEstado().name() : null)
                         .build());
-                if (m.getPedido() != null) {
+                if (m.getPedido() != null && !pedidosMap.containsKey(m.getPedido().getIdPedido())) {
                     final var p = m.getPedido();
                     final String fecha = p.getFechaRegistro() != null ? p.getFechaRegistro().toString() : "";
                     final String date = fecha.length() >= 10 ? fecha.substring(0, 10) : "";
                     final String time = fecha.length() >= 16 ? fecha.substring(11, 16) : "";
-                    pedidosDTO.add(PedidoSimulacionResponse.builder()
+                    pedidosMap.put(p.getIdPedido(), PedidoSimulacionResponse.builder()
                             .withId(p.getIdPedido())
                             .withClientId("")
                             .withOrigin(p.getAeropuertoOrigen() != null
@@ -201,6 +201,7 @@ public class SimulacionPeriodoRestController {
                 }
             }
         }
+        final List<PedidoSimulacionResponse> pedidosDTO = new ArrayList<>(pedidosMap.values());
 
         final java.util.Set<String> idMaletasVentana = maletas != null
                 ? maletas.stream()
