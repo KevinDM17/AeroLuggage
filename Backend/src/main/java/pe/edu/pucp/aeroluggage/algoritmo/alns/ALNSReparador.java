@@ -6,6 +6,7 @@ import java.util.Comparator;
 import java.util.HashSet;
 import java.util.List;
 import java.util.Map;
+import java.util.NavigableMap;
 import java.util.Random;
 import java.util.Set;
 
@@ -305,19 +306,36 @@ final class ALNSReparador {
         return true;
     }
 
-    private static int calcularPico(final Map<LocalDateTime, Integer> eventos,
+    private static int calcularPico(final NavigableMap<LocalDateTime, Integer> eventos,
                                     final ALNSUtil.IntervaloAeropuerto candidato,
                                     final int base) {
-        final java.util.NavigableMap<LocalDateTime, Integer> temporales = new java.util.TreeMap<>();
-        if (eventos != null) {
-            temporales.putAll(eventos);
+        if (eventos == null || eventos.isEmpty()) {
+            return Math.max(base, base + 1);
         }
-        temporales.merge(candidato.inicio(), 1, Integer::sum);
-        temporales.merge(candidato.fin(), -1, Integer::sum);
         int actual = base;
         int maximo = base;
-        for (final Map.Entry<LocalDateTime, Integer> evento : temporales.entrySet()) {
-            actual += evento.getValue();
+
+        for (final Map.Entry<LocalDateTime, Integer> entry : eventos.headMap(candidato.inicio(), false).entrySet()) {
+            actual += entry.getValue();
+            maximo = Math.max(maximo, actual);
+        }
+
+        final Integer deltaInicio = eventos.get(candidato.inicio());
+        actual += 1 + (deltaInicio != null ? deltaInicio : 0);
+        maximo = Math.max(maximo, actual);
+
+        for (final Map.Entry<LocalDateTime, Integer> entry
+                : eventos.subMap(candidato.inicio(), false, candidato.fin(), false).entrySet()) {
+            actual += entry.getValue();
+            maximo = Math.max(maximo, actual);
+        }
+
+        final Integer deltaFin = eventos.get(candidato.fin());
+        actual += -1 + (deltaFin != null ? deltaFin : 0);
+        maximo = Math.max(maximo, actual);
+
+        for (final Map.Entry<LocalDateTime, Integer> entry : eventos.tailMap(candidato.fin(), false).entrySet()) {
+            actual += entry.getValue();
             maximo = Math.max(maximo, actual);
         }
         return maximo;

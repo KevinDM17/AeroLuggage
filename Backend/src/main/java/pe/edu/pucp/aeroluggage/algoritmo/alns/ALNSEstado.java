@@ -13,6 +13,7 @@ import java.util.TreeMap;
 
 import pe.edu.pucp.aeroluggage.algoritmo.InstanciaProblema;
 import pe.edu.pucp.aeroluggage.algoritmo.Solucion;
+import pe.edu.pucp.aeroluggage.dominio.entidades.Aeropuerto;
 import pe.edu.pucp.aeroluggage.dominio.entidades.Maleta;
 import pe.edu.pucp.aeroluggage.dominio.entidades.Ruta;
 import pe.edu.pucp.aeroluggage.dominio.entidades.VueloInstancia;
@@ -31,6 +32,8 @@ final class ALNSEstado {
     private final Map<String, Integer> usoPorVuelo;
     private final Map<String, NavigableMap<LocalDateTime, Integer>> eventosAeropuerto;
     private final Map<String, String> razonesFallo;
+    private final List<VueloInstancia> vuelosInstancia;
+    private final List<Aeropuerto> aeropuertos;
 
     ALNSEstado(final InstanciaProblema instancia, final Solucion solucionInicial) {
         this.instancia = instancia;
@@ -40,6 +43,8 @@ final class ALNSEstado {
         this.ocupacionBaseAeropuerto = instancia.getOcupacionBaseAeropuerto();
         this.idsMaletasComprometidas = new HashSet<>();
         this.universoMaletas = new ArrayList<>(instancia.getMaletas());
+        this.vuelosInstancia = new ArrayList<>(instancia.getVuelosInstancia());
+        this.aeropuertos = new ArrayList<>(instancia.getAeropuertos());
         this.indicePorMaleta = new HashMap<>();
         for (int i = 0; i < universoMaletas.size(); i++) {
             final Maleta m = universoMaletas.get(i);
@@ -103,6 +108,8 @@ final class ALNSEstado {
         this.solucionActual = original.solucionActual.clonarProfundo();
         this.usoPorVuelo = new HashMap<>(original.usoPorVuelo);
         this.eventosAeropuerto = ALNSUtil.clonarEventos(original.eventosAeropuerto);
+        this.vuelosInstancia = original.vuelosInstancia;
+        this.aeropuertos = original.aeropuertos;
     }
 
     ALNSEstado clonar() {
@@ -139,6 +146,14 @@ final class ALNSEstado {
 
     List<Maleta> getUniversoMaletas() {
         return universoMaletas;
+    }
+
+    List<VueloInstancia> getVuelosInstancia() {
+        return vuelosInstancia;
+    }
+
+    List<Aeropuerto> getAeropuertos() {
+        return aeropuertos;
     }
 
     boolean esComprometida(final String idMaleta) {

@@ -70,7 +70,6 @@ const pickFlightsToAnimate = (flights, airportsByIata, limit) => {
     if (normalizeStatus(f.status) === "CANCELADO") continue;
     if (!airportsByIata.has(f.origin) || !airportsByIata.has(f.dest)) continue;
     out.push(f);
-    if (out.length >= limit) break;
   }
   return out;
 };

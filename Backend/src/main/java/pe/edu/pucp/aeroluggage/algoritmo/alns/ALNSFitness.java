@@ -67,7 +67,7 @@ final class ALNSFitness {
         double overflowVuelos = 0.0D;
         double ocupacionPromedioVuelos = 0.0D;
         int vuelosContados = 0;
-        for (final VueloInstancia vuelo : instancia.getVueloInstancias()) {
+        for (final VueloInstancia vuelo : estado.getVuelosInstancia()) {
             if (vuelo == null || vuelo.getIdVueloInstancia() == null || vuelo.getCapacidadDisponible() < 0) {
                 continue;
             }
@@ -99,7 +99,7 @@ final class ALNSFitness {
         double overflowAeropuertos = 0.0D;
         double ocupacionPromedioAeropuertos = 0.0D;
         int aeropuertosContados = 0;
-        for (final Aeropuerto aeropuerto : instancia.getAeropuertos()) {
+        for (final Aeropuerto aeropuerto : estado.getAeropuertos()) {
             if (aeropuerto == null || aeropuerto.getIdAeropuerto() == null || aeropuerto.getCapacidadAlmacen() <= 0) {
                 continue;
             }
@@ -165,9 +165,25 @@ final class ALNSFitness {
     }
 
     static double costoIncremental(final ALNSEstado estado, final Ruta candidata, final ParametrosALNS parametros) {
-        final ALNSEstado copia = estado.clonar();
-        copia.reemplazarRuta(candidata);
-        return evaluar(copia, parametros).fitness();
+        final String idMaleta = candidata == null ? null : candidata.getIdMaleta();
+        if (idMaleta == null) {
+            return evaluar(estado, parametros).fitness();
+        }
+        final Ruta anterior = estado.obtenerRuta(idMaleta);
+        final boolean tieneRuta = anterior != null && !estado.esComprometida(idMaleta);
+
+        if (tieneRuta) {
+            estado.removerRuta(idMaleta);
+        }
+        estado.agregarRuta(candidata);
+        try {
+            return evaluar(estado, parametros).fitness();
+        } finally {
+            estado.removerRuta(idMaleta);
+            if (tieneRuta) {
+                estado.agregarRuta(anterior);
+            }
+        }
     }
 
     private static MetricasAeropuerto evaluarAeropuerto(final Aeropuerto aeropuerto,

@@ -2,9 +2,9 @@ package pe.edu.pucp.aeroluggage.algoritmo.common;
 
 import java.time.LocalDateTime;
 import java.util.ArrayList;
-import java.util.Collections;
 import java.util.Comparator;
 import java.util.HashMap;
+import java.util.LinkedList;
 import java.util.List;
 import java.util.Map;
 import java.util.PriorityQueue;
@@ -41,11 +41,15 @@ public final class DijkstraRuteador {
         }
 
         final Map<String, LocalDateTime> mejorLlegada = new HashMap<>();
+        final Map<String, String> predecesorIcao = new HashMap<>();
+        final Map<String, VueloInstancia> vueloUsado = new HashMap<>();
+
         mejorLlegada.put(icaoOrigen, tListo);
+        predecesorIcao.put(icaoOrigen, null);
 
         final PriorityQueue<EstadoBusqueda> frontera = new PriorityQueue<>(
                 Comparator.comparing(e -> e.tiempoActual));
-        frontera.add(new EstadoBusqueda(icaoOrigen, tListo, List.of()));
+        frontera.add(new EstadoBusqueda(icaoOrigen, tListo));
 
         while (!frontera.isEmpty()) {
             final EstadoBusqueda actual = frontera.poll();
@@ -54,7 +58,7 @@ public final class DijkstraRuteador {
                 continue;
             }
             if (actual.icao.equals(icaoDestino)) {
-                return actual.camino;
+                return reconstruirCamino(icaoDestino, icaoOrigen, predecesorIcao, vueloUsado);
             }
             final LocalDateTime tDesde = actual.tiempoActual.plusMinutes(minutosConexion);
             final List<VueloInstancia> vuelos = grafo.vuelosDesde(actual.icao, tDesde);
@@ -69,10 +73,9 @@ public final class DijkstraRuteador {
                     continue;
                 }
                 mejorLlegada.put(icaoSiguiente, llegada);
-                final List<VueloInstancia> nuevoCamino = new ArrayList<>(actual.camino.size() + 1);
-                nuevoCamino.addAll(actual.camino);
-                nuevoCamino.add(vuelo);
-                frontera.add(new EstadoBusqueda(icaoSiguiente, llegada, Collections.unmodifiableList(nuevoCamino)));
+                predecesorIcao.put(icaoSiguiente, actual.icao);
+                vueloUsado.put(icaoSiguiente, vuelo);
+                frontera.add(new EstadoBusqueda(icaoSiguiente, llegada));
             }
         }
         return null;
@@ -82,6 +85,24 @@ public final class DijkstraRuteador {
                                               final LocalDateTime tListo, final LocalDateTime tLimite,
                                               final GrafoTiempoExpandido grafo) {
         return rutear(origen, destino, tListo, tLimite, grafo, 0L, Set.of());
+    }
+
+    private static List<VueloInstancia> reconstruirCamino(
+            final String icaoDestino,
+            final String icaoOrigen,
+            final Map<String, String> predecesorIcao,
+            final Map<String, VueloInstancia> vueloUsado) {
+        final LinkedList<VueloInstancia> camino = new LinkedList<>();
+        String actual = icaoDestino;
+        while (actual != null && !actual.equals(icaoOrigen)) {
+            final VueloInstancia vuelo = vueloUsado.get(actual);
+            if (vuelo == null) {
+                return null;
+            }
+            camino.addFirst(vuelo);
+            actual = predecesorIcao.get(actual);
+        }
+        return new ArrayList<>(camino);
     }
 
     private static boolean esUtilizable(final VueloInstancia vuelo, final Set<String> bloqueados,
@@ -104,13 +125,10 @@ public final class DijkstraRuteador {
     private static final class EstadoBusqueda {
         private final String icao;
         private final LocalDateTime tiempoActual;
-        private final List<VueloInstancia> camino;
 
-        private EstadoBusqueda(final String icao, final LocalDateTime tiempoActual,
-                               final List<VueloInstancia> camino) {
+        private EstadoBusqueda(final String icao, final LocalDateTime tiempoActual) {
             this.icao = icao;
             this.tiempoActual = tiempoActual;
-            this.camino = camino;
         }
     }
 }
