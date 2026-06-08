@@ -221,10 +221,13 @@ export default function PeriodSimulatorPage() {
           const routesIds = new Set(prev.routes.map((r) => r.idRuta));
           const newRoutes = (ventanaData.rutas ?? []).filter((r) => !routesIds.has(r.idRuta));
 
+          const ordersIds = new Set(prev.orders.map((o) => o.id ?? o.idPedido));
+          const newOrders = (ventanaData.pedidos ?? []).filter((o) => !ordersIds.has(o.id ?? o.idPedido));
+
           return {
             ...prev,
             flights: [...prev.flights, ...newFlights],
-            orders: [...prev.orders, ...(ventanaData.pedidos ?? [])],
+            orders: [...prev.orders, ...newOrders],
             bags: [...prev.bags, ...newBags],
             routes: [...prev.routes, ...newRoutes],
           };
