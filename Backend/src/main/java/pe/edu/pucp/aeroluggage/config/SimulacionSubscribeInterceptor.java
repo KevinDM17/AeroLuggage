@@ -1,0 +1,45 @@
+package pe.edu.pucp.aeroluggage.config;
+
+import org.springframework.messaging.Message;
+import org.springframework.messaging.MessageChannel;
+import org.springframework.messaging.simp.stomp.StompCommand;
+import org.springframework.messaging.simp.stomp.StompHeaderAccessor;
+import org.springframework.messaging.support.ChannelInterceptor;
+import org.springframework.stereotype.Component;
+import pe.edu.pucp.aeroluggage.simulacion.SimulacionSesionManager;
+
+import java.util.regex.Matcher;
+import java.util.regex.Pattern;
+
+@Component
+public class SimulacionSubscribeInterceptor implements ChannelInterceptor {
+
+    private static final Pattern TOPIC_SIMULACION = Pattern.compile(
+            "^/topic/simulacion/([^/]+)(?:/.*)?$");
+
+    private final SimulacionSesionManager sesionManager;
+
+    public SimulacionSubscribeInterceptor(final SimulacionSesionManager sesionManager) {
+        this.sesionManager = sesionManager;
+    }
+
+    @Override
+    public Message<?> preSend(final Message<?> message, final MessageChannel channel) {
+        final StompHeaderAccessor accessor = StompHeaderAccessor.wrap(message);
+        if (accessor.getCommand() != StompCommand.SUBSCRIBE) {
+            return message;
+        }
+        final String destination = accessor.getDestination();
+        if (destination == null) {
+            return message;
+        }
+        final Matcher matcher = TOPIC_SIMULACION.matcher(destination);
+        if (!matcher.matches()) {
+            return message;
+        }
+        final String sessionId = matcher.group(1);
+        final String wsSessionId = accessor.getSessionId();
+        sesionManager.registrarWsSession(wsSessionId, sessionId);
+        return message;
+    }
+}
