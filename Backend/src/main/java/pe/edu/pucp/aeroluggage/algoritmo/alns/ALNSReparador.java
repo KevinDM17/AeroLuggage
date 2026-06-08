@@ -61,7 +61,7 @@ final class ALNSReparador {
                 maleta -> ALNSUtil.tiempoRestanteMinutos(maleta, estado.getInstancia().getFechaEvaluacion())));
         int secuencia = estado.siguienteSecuenciaRuta();
         for (final Maleta maleta : pendientes) {
-            final Ruta ruta = encontrarMejorInsercion(estado, maleta, parametros, ALNSUtil.siguienteIdRuta(secuencia));
+            final Ruta ruta = encontrarInsercionValida(estado, maleta, parametros, ALNSUtil.siguienteIdRuta(secuencia));
             if (ruta != null) {
                 estado.registrarFalloMaleta(maleta.getIdMaleta(), null);
                 estado.reemplazarRuta(ruta);
@@ -203,6 +203,86 @@ final class ALNSReparador {
             estado.registrarFalloMaleta(idMaleta, razonFinal);
         }
         return mejor;
+    }
+
+    static Ruta encontrarInsercionValida(final ALNSEstado estado,
+                                         final Maleta maleta,
+                                         final ParametrosALNS parametros,
+                                         final String idRuta) {
+        final InstanciaProblema instancia = estado.getInstancia();
+        final Pedido pedido = maleta == null ? null : maleta.getPedido();
+        final String idMaleta = maleta == null ? null : maleta.getIdMaleta();
+        if (pedido == null || pedido.getAeropuertoOrigen() == null || pedido.getAeropuertoDestino() == null) {
+            estado.registrarFalloMaleta(idMaleta, "pedido_invalido");
+            return null;
+        }
+        final GrafoTiempoExpandido grafo = instancia.getGrafo();
+        if (grafo == null) {
+            estado.registrarFalloMaleta(idMaleta, "grafo_no_disponible");
+            return null;
+        }
+        final LocalDateTime listo = ALNSUtil.max(instancia.getFechaEvaluacion(), pedido.getFechaRegistro());
+        final LocalDateTime tLimite = pedido.getFechaHoraPlazo();
+        if (tLimite != null && !listo.isBefore(tLimite)) {
+            estado.registrarFalloMaleta(idMaleta, "maleta_vencida");
+            return null;
+        }
+        final Set<String> bloqueados = new HashSet<>();
+        final String icaoOrigen = pedido.getAeropuertoOrigen().getIdAeropuerto();
+        final String icaoDestino = pedido.getAeropuertoDestino().getIdAeropuerto();
+        if (icaoOrigen != null && icaoOrigen.equals(icaoDestino)) {
+            estado.registrarFalloMaleta(idMaleta, "origen_igual_destino");
+            return null;
+        }
+        PERF_LLAMADAS++;
+        String ultimaRazon = null;
+        String ultimoVuelo = null;
+        for (int intento = 0; intento <= Math.max(1, parametros.getMaxReintentosRuteo()); intento++) {
+            final long tDijk = System.nanoTime();
+            final List<VueloInstancia> camino = DijkstraRuteador.rutear(
+                    pedido.getAeropuertoOrigen(),
+                    pedido.getAeropuertoDestino(),
+                    listo,
+                    tLimite,
+                    grafo,
+                    parametros.getMinutosConexion(),
+                    bloqueados
+            );
+            PERF_ACC[0] += System.nanoTime() - tDijk;
+            if (camino == null) {
+                break;
+            }
+            final Ruta candidata = ALNSUtil.crearRuta(idRuta, maleta, camino, EstadoRuta.PLANIFICADA);
+            final String conflictoVuelo = primerVueloSaturado(camino, estado.getUsoPorVuelo());
+            if (conflictoVuelo != null) {
+                ultimaRazon = "vuelo_saturado";
+                ultimoVuelo = conflictoVuelo;
+                bloqueados.add(conflictoVuelo);
+                continue;
+            }
+            final long tVal = System.nanoTime();
+            final boolean aeropuertoValido = validarAeropuertos(candidata, estado);
+            PERF_ACC[2] += System.nanoTime() - tVal;
+            if (!aeropuertoValido) {
+                ultimaRazon = "aeropuerto_saturado";
+                final VueloInstancia vueloConflicto = camino.isEmpty()
+                        ? null
+                        : camino.get(Math.min(camino.size() - 1, intento % camino.size()));
+                if (vueloConflicto != null && vueloConflicto.getIdVueloInstancia() != null) {
+                    ultimoVuelo = vueloConflicto.getIdVueloInstancia();
+                    bloqueados.add(ultimoVuelo);
+                }
+                continue;
+            }
+            return candidata;
+        }
+        if (idMaleta != null) {
+            final String razonFinal = ultimoVuelo != null
+                    ? ultimaRazon + ":" + ultimoVuelo
+                    : ultimaRazon;
+            estado.registrarFalloMaleta(idMaleta, razonFinal);
+        }
+        return null;
     }
 
     static boolean validarAeropuertos(final Ruta ruta, final ALNSEstado estado) {

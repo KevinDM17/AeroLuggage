@@ -30,10 +30,11 @@ final class ALNSEstado {
     private Solucion solucionActual;
     private final Map<String, Integer> usoPorVuelo;
     private final Map<String, NavigableMap<LocalDateTime, Integer>> eventosAeropuerto;
-    private final Map<String, String> razonesFallo = new HashMap<>();
+    private final Map<String, String> razonesFallo;
 
     ALNSEstado(final InstanciaProblema instancia, final Solucion solucionInicial) {
         this.instancia = instancia;
+        this.razonesFallo = new HashMap<>();
         this.maletasPorId = ALNSUtil.indexarMaletas(instancia.getMaletas());
         this.rutasComprometidasPorMaleta = new HashMap<>();
         this.ocupacionBaseAeropuerto = instancia.getOcupacionBaseAeropuerto();
@@ -90,10 +91,22 @@ final class ALNSEstado {
         }
     }
 
+    private ALNSEstado(final ALNSEstado original) {
+        this.instancia = original.instancia;
+        this.razonesFallo = new HashMap<>(original.razonesFallo);
+        this.maletasPorId = original.maletasPorId;
+        this.rutasComprometidasPorMaleta = original.rutasComprometidasPorMaleta;
+        this.ocupacionBaseAeropuerto = original.ocupacionBaseAeropuerto;
+        this.idsMaletasComprometidas = original.idsMaletasComprometidas;
+        this.universoMaletas = original.universoMaletas;
+        this.indicePorMaleta = original.indicePorMaleta;
+        this.solucionActual = original.solucionActual.clonarProfundo();
+        this.usoPorVuelo = new HashMap<>(original.usoPorVuelo);
+        this.eventosAeropuerto = ALNSUtil.clonarEventos(original.eventosAeropuerto);
+    }
+
     ALNSEstado clonar() {
-        final ALNSEstado clon = new ALNSEstado(this.instancia, this.solucionActual);
-        clon.razonesFallo.putAll(this.razonesFallo);
-        return clon;
+        return new ALNSEstado(this);
     }
 
     InstanciaProblema getInstancia() {

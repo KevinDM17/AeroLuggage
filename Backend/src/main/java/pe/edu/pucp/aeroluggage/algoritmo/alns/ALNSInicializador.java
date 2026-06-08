@@ -25,7 +25,7 @@ final class ALNSInicializador {
         int secuencia = 1;
         for (final Maleta maleta : maletas) {
             final String idRuta = ALNSUtil.siguienteIdRuta(secuencia++);
-            final var ruta = ALNSReparador.encontrarMejorInsercion(estado, maleta, parametros, idRuta);
+            final var ruta = ALNSReparador.encontrarInsercionValida(estado, maleta, parametros, idRuta);
             if (ruta != null) {
                 estado.reemplazarRuta(ruta);
             }
