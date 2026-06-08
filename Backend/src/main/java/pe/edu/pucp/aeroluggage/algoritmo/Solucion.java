@@ -74,10 +74,6 @@ public class Solucion {
         factible = incumplidas == 0;
     }
 
-    public boolean esFactible() {
-        return factible;
-    }
-
     public boolean isFactible() {
         return factible;
     }

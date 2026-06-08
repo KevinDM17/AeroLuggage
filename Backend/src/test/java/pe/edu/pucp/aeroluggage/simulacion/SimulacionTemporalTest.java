@@ -30,9 +30,6 @@ import pe.edu.pucp.aeroluggage.algoritmo.Metaheuristico;
 import pe.edu.pucp.aeroluggage.algoritmo.Solucion;
 import pe.edu.pucp.aeroluggage.algoritmo.aco.ACO;
 import pe.edu.pucp.aeroluggage.algoritmo.aco.ACOConfiguracion;
-import pe.edu.pucp.aeroluggage.algoritmo.common.CalculadorFitnessExperimental;
-import pe.edu.pucp.aeroluggage.algoritmo.common.ConfigFitnessExperimental;
-import pe.edu.pucp.aeroluggage.algoritmo.common.ResultadoFitnessExperimental;
 import pe.edu.pucp.aeroluggage.algoritmo.ga.FuncionCosto;
 import pe.edu.pucp.aeroluggage.algoritmo.ga.GA;
 import pe.edu.pucp.aeroluggage.algoritmo.ga.ParametrosGA;
@@ -193,7 +190,6 @@ class SimulacionTemporalTest {
         final long inicioEjecucionMs = System.currentTimeMillis();
         int totalEnrutadas = 0;
         final ResultadoSimulacion resultado = new ResultadoSimulacion();
-        ResultadoFitnessExperimental fitnessExperimental = new ResultadoFitnessExperimental(0D, 0, 0, 0, 0, 0D, 0D, 0D);
 
         System.out.printf("%n=== SIMULACION TEMPORAL [%s] %s → %s ===%n", nombre, fechaInicio, fechaFin);
 
@@ -277,9 +273,6 @@ class SimulacionTemporalTest {
                     new ArrayList<>(pendientes), progVentana, vuelosVentana, aeropuertos);
             algoritmo.ejecutar(instancia);
             final Solucion sol = obtenerSolucion(algoritmo);
-            fitnessExperimental = fitnessExperimental.sumar(
-                    CalculadorFitnessExperimental.calcular(sol, instancia,
-                            ConfigFitnessExperimental.desdeProperties(params)));
             FuncionCosto.calcularCostoSolucion(sol, instancia, construirParametrosGA());
 
             // 6. Reducir capacidades y remover maletas enrutadas
@@ -353,7 +346,6 @@ class SimulacionTemporalTest {
         resultado.totalMaletasPendientes = pendientes.size();
         resultado.historial = historial;
         resultado.tiempoEjecucionMs = System.currentTimeMillis() - inicioEjecucionMs;
-        resultado.fitnessExperimental = fitnessExperimental;
         reportarResumen(nombre, resultado);
         return resultado;
     }
@@ -499,7 +491,6 @@ class SimulacionTemporalTest {
                 resultado.tiempoEjecucionMs,
                 resultado.tiempoEjecucionMs / 1000D
         );
-        reportarFitnessExperimental(resultado.fitnessExperimental);
         System.out.println();
     }
 
@@ -554,20 +545,6 @@ class SimulacionTemporalTest {
             System.out.println();
         }
         System.out.println();
-    }
-
-    private static void reportarFitnessExperimental(final ResultadoFitnessExperimental fitnessExperimental) {
-        if (fitnessExperimental == null) {
-            return;
-        }
-        System.out.printf("Fitness experimental: %.3f%n", fitnessExperimental.getFitnessExperimental());
-        System.out.printf("No enrutadas acumuladas: %d%n", fitnessExperimental.getNoEnrutadas());
-        System.out.printf("Destino mal acumuladas: %d%n", fitnessExperimental.getDestinoMal());
-        System.out.printf("Overflow vuelos: %d%n", fitnessExperimental.getOverflowVuelos());
-        System.out.printf("Overflow almacen: %d%n", fitnessExperimental.getOverflowAlmacen());
-        System.out.printf("Duracion norm acumulada: %.4f%n", fitnessExperimental.getDuracionNorm());
-        System.out.printf("Escalas norm acumulada: %.4f%n", fitnessExperimental.getEscalasNorm());
-        System.out.printf("Espera norm acumulada: %.4f%n", fitnessExperimental.getEsperaNorm());
     }
 
     // ---- parameter helpers (identical to AlgoritmosDesdeArchivoTest) ----
@@ -647,7 +624,6 @@ class SimulacionTemporalTest {
         int totalMaletasEnrutadas = 0;
         int totalMaletasPendientes = 0;
         long tiempoEjecucionMs = 0L;
-        ResultadoFitnessExperimental fitnessExperimental = null;
         List<PasoSimulacion> historial = new ArrayList<>();
     }
 }

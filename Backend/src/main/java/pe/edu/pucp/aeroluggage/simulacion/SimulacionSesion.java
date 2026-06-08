@@ -55,7 +55,9 @@ public class SimulacionSesion {
     private final AtomicLong planningGeneration = new AtomicLong(1);
     private final AtomicLong stateVersion = new AtomicLong(1);
     private final AtomicBoolean activa = new AtomicBoolean(true);
-    private final AtomicBoolean planificacionEnCurso = new AtomicBoolean(false);
+    private final AtomicBoolean planValido = new AtomicBoolean(false);
+    private final AtomicBoolean planificando = new AtomicBoolean(false);
+    private final AtomicBoolean replanPendiente = new AtomicBoolean(false);
     private final AtomicBoolean csvEscrito = new AtomicBoolean(false);
     private final AtomicReference<String> ultimaVentanaPlanificada = new AtomicReference<>("");
     private volatile List<Aeropuerto> aeropuertos = List.of();
@@ -68,7 +70,7 @@ public class SimulacionSesion {
     private final ConcurrentHashMap<String, Ruta> rutasPorMaleta = new ConcurrentHashMap<>();
     private final ConcurrentHashMap<String, MaletaFallos> evaluacionesMaletas = new ConcurrentHashMap<>();
     private final List<SegmentoReplanificacion> segmentosReplanificacion = new CopyOnWriteArrayList<>();
-    private final AtomicBoolean replanificacionPendiente = new AtomicBoolean(false);
+
     private final ConcurrentHashMap<String, List<Maleta>> maletasPorVentana = new ConcurrentHashMap<>();
     private final ConcurrentHashMap<String, List<Pedido>> pedidosPorVentana = new ConcurrentHashMap<>();
     private final ConcurrentHashMap<String, List<VueloInstancia>> vuelosPorVentana = new ConcurrentHashMap<>();
@@ -753,7 +755,10 @@ public class SimulacionSesion {
     }
 
     public boolean necesitaPlanificacion() {
-        if (planificacionEnCurso.get()) {
+        if (planificando.get()) {
+            return false;
+        }
+        if (replanPendiente.get()) {
             return false;
         }
         final SimulacionVentana ventana = currentWindow.get();
@@ -787,16 +792,40 @@ public class SimulacionSesion {
         return copia;
     }
 
-    public boolean marcarReplanificacionPendiente() {
-        return replanificacionPendiente.compareAndSet(false, true);
+    public boolean marcarPlanInvalido() {
+        return planValido.compareAndSet(true, false);
     }
 
-    public boolean isReplanificacionPendiente() {
-        return replanificacionPendiente.get();
+    public boolean estaPlanValido() {
+        return planValido.get();
     }
 
-    public void limpiarReplanificacionPendiente() {
-        replanificacionPendiente.set(false);
+    public void marcarPlanValido() {
+        planValido.set(true);
+    }
+
+    public boolean iniciarPlanificacion() {
+        return planificando.compareAndSet(false, true);
+    }
+
+    public void finalizarPlanificacion() {
+        planificando.set(false);
+    }
+
+    public boolean estaPlanificando() {
+        return planificando.get();
+    }
+
+    public boolean solicitarReplan() {
+        return replanPendiente.compareAndSet(false, true);
+    }
+
+    public boolean hayReplanPendiente() {
+        return replanPendiente.get();
+    }
+
+    public void limpiarReplanPendiente() {
+        replanPendiente.set(false);
     }
 
     public Map<String, VueloInstancia> getVueloIndex() {

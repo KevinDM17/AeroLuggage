@@ -8,6 +8,7 @@ import java.util.ArrayList;
 import org.junit.jupiter.api.Test;
 
 import pe.edu.pucp.aeroluggage.dominio.enums.Continente;
+import pe.edu.pucp.aeroluggage.dominio.enums.EstadoRuta;
 import pe.edu.pucp.aeroluggage.dominio.enums.EstadoVuelo;
 
 class RutaTest {
@@ -40,7 +41,7 @@ class RutaTest {
                 destino,
                 EstadoVuelo.PROGRAMADO
         ));
-        final Ruta ruta = new Ruta("R-1", "M-1", 2, 0, subrutas, "PENDIENTE");
+        final Ruta ruta = new Ruta("R-1", "M-1", 2, 0, subrutas, EstadoRuta.PLANIFICADA);
 
         final double duracion = ruta.calcularPlazo();
 
@@ -62,7 +63,7 @@ class RutaTest {
                 crearAeropuerto("SCL", Continente.AMERICA_DEL_SUR),
                 EstadoVuelo.PROGRAMADO
         ));
-        final Ruta ruta = new Ruta("R-2", "M-2", 1, 0, subrutas, "PENDIENTE");
+        final Ruta ruta = new Ruta("R-2", "M-2", 1, 0, subrutas, EstadoRuta.REPLANIFICADA);
 
         ruta.replanificar();
 
@@ -72,7 +73,7 @@ class RutaTest {
 
     @Test
     void replanificar_ok_sin_subrutas() {
-        final Ruta ruta = new Ruta("R-3", "M-3", 1, 5, null, "PENDIENTE");
+        final Ruta ruta = new Ruta("R-3", "M-3", 1, 5, null, EstadoRuta.PLANIFICADA);
 
         ruta.replanificar();
 

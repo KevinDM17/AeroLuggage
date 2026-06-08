@@ -1,5 +1,7 @@
 package pe.edu.pucp.aeroluggage.controller.ws;
 
+import java.util.List;
+
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.messaging.handler.annotation.MessageMapping;
@@ -20,8 +22,6 @@ public class SimulacionPeriodoWsController {
     @MessageMapping("/simulacion/periodo/pausar")
     public void pausar(final SimulacionComandoDTO comando, final SimpMessageHeaderAccessor accessor) {
         final String wsSessionId = accessor.getSessionId();
-        log.info("[AeroLuggage/Simulacion] - WS/pausar: sessionId: {}, wsSession: {}",
-                comando.getSessionId(), wsSessionId);
         sesionManager.registrarWsSession(wsSessionId, comando.getSessionId());
         sesionManager.pausar(comando.getSessionId(), broker);
     }
@@ -29,8 +29,6 @@ public class SimulacionPeriodoWsController {
     @MessageMapping("/simulacion/periodo/reanudar")
     public void reanudar(final SimulacionComandoDTO comando, final SimpMessageHeaderAccessor accessor) {
         final String wsSessionId = accessor.getSessionId();
-        log.info("[AeroLuggage/Simulacion] - WS/reanudar: sessionId: {}, wsSession: {}",
-                comando.getSessionId(), wsSessionId);
         sesionManager.registrarWsSession(wsSessionId, comando.getSessionId());
         sesionManager.reanudar(comando.getSessionId(), broker);
     }
@@ -47,9 +45,10 @@ public class SimulacionPeriodoWsController {
     @MessageMapping("/simulacion/periodo/cancelar-vuelo")
     public void cancelarVuelo(final SimulacionComandoDTO comando, final SimpMessageHeaderAccessor accessor) {
         final String wsSessionId = accessor.getSessionId();
-        log.info("[AeroLuggage/Simulacion] - WS/cancelar-vuelo: sessionId: {}, vuelo: {}, wsSession: {}",
-                comando.getSessionId(), comando.getIdVueloInstancia(), wsSessionId);
+        final List<String> idsMaletas = comando.getIdsMaletas();
+        log.info("[AeroLuggage/Simulacion] - WS/cancelar-vuelo: sessionId: {}, vuelo: {}, maletas: {}, wsSession: {}",
+                comando.getSessionId(), comando.getIdVueloInstancia(), idsMaletas, wsSessionId);
         sesionManager.registrarWsSession(wsSessionId, comando.getSessionId());
-        sesionManager.cancelarVuelo(comando.getSessionId(), comando.getIdVueloInstancia(), broker);
+        sesionManager.cancelarVuelo(comando.getSessionId(), comando.getIdVueloInstancia(), idsMaletas, broker);
     }
 }

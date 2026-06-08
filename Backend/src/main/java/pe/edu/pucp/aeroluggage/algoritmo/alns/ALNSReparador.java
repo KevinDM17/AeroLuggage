@@ -24,18 +24,8 @@ final class ALNSReparador {
     static final String OPERADOR_GREEDY = "GREEDY_REPAIR";
     static final String OPERADOR_REGRET_2 = "REGRET_2_REPAIR";
 
-    private static final long[] PERF_ACC = new long[4];
-    private static int PERF_LLAMADAS;
-
     private ALNSReparador() {
         throw new UnsupportedOperationException("This class should never be instantiated");
-    }
-
-    static long[] getAndResetPerf() {
-        final long[] copia = new long[]{PERF_ACC[0], PERF_ACC[1], PERF_ACC[2], PERF_ACC[3], PERF_LLAMADAS};
-        PERF_ACC[0] = 0L; PERF_ACC[1] = 0L; PERF_ACC[2] = 0L; PERF_ACC[3] = 0L;
-        PERF_LLAMADAS = 0;
-        return copia;
     }
 
     static void reparar(final ALNSEstado estado,
@@ -46,8 +36,6 @@ final class ALNSReparador {
         if (pendientes == null || pendientes.isEmpty()) {
             return;
         }
-        PERF_ACC[0] = 0L; PERF_ACC[1] = 0L; PERF_ACC[2] = 0L; PERF_ACC[3] = 0L;
-        PERF_LLAMADAS = 0;
         if (OPERADOR_REGRET_2.equals(operador)) {
             repararRegret2(estado, pendientes, parametros, random);
             return;
@@ -139,14 +127,12 @@ final class ALNSReparador {
             estado.registrarFalloMaleta(idMaleta, "origen_igual_destino");
             return null;
         }
-        PERF_LLAMADAS++;
         Ruta mejor = null;
         double mejorCosto = Double.POSITIVE_INFINITY;
         boolean dijkstraExitoso = false;
         String ultimaRazon = null;
         String ultimoVuelo = null;
         for (int intento = 0; intento <= Math.max(1, parametros.getMaxReintentosRuteo()); intento++) {
-            final long tDijk = System.nanoTime();
             final List<VueloInstancia> camino = DijkstraRuteador.rutear(
                     pedido.getAeropuertoOrigen(),
                     pedido.getAeropuertoDestino(),
@@ -156,7 +142,6 @@ final class ALNSReparador {
                     parametros.getMinutosConexion(),
                     bloqueados
             );
-            PERF_ACC[0] += System.nanoTime() - tDijk;
             if (camino == null) {
                 if (!dijkstraExitoso) {
                     ultimaRazon = "sin_ruta_en_grafo";
@@ -172,9 +157,7 @@ final class ALNSReparador {
                 bloqueados.add(conflictoVuelo);
                 continue;
             }
-            final long tVal = System.nanoTime();
             final boolean aeropuertoValido = validarAeropuertos(candidata, estado);
-            PERF_ACC[2] += System.nanoTime() - tVal;
             if (!aeropuertoValido) {
                 ultimaRazon = "aeropuerto_saturado";
                 final VueloInstancia vueloConflicto = camino.isEmpty()
@@ -186,9 +169,7 @@ final class ALNSReparador {
                 }
                 continue;
             }
-            final long tCost = System.nanoTime();
             final double costo = ALNSFitness.costoIncremental(estado, candidata, parametros);
-            PERF_ACC[1] += System.nanoTime() - tCost;
             if (costo < mejorCosto) {
                 mejorCosto = costo;
                 mejor = candidata;
@@ -235,11 +216,9 @@ final class ALNSReparador {
             estado.registrarFalloMaleta(idMaleta, "origen_igual_destino");
             return null;
         }
-        PERF_LLAMADAS++;
         String ultimaRazon = null;
         String ultimoVuelo = null;
         for (int intento = 0; intento <= Math.max(1, parametros.getMaxReintentosRuteo()); intento++) {
-            final long tDijk = System.nanoTime();
             final List<VueloInstancia> camino = DijkstraRuteador.rutear(
                     pedido.getAeropuertoOrigen(),
                     pedido.getAeropuertoDestino(),
@@ -249,7 +228,6 @@ final class ALNSReparador {
                     parametros.getMinutosConexion(),
                     bloqueados
             );
-            PERF_ACC[0] += System.nanoTime() - tDijk;
             if (camino == null) {
                 break;
             }
@@ -261,9 +239,7 @@ final class ALNSReparador {
                 bloqueados.add(conflictoVuelo);
                 continue;
             }
-            final long tVal = System.nanoTime();
             final boolean aeropuertoValido = validarAeropuertos(candidata, estado);
-            PERF_ACC[2] += System.nanoTime() - tVal;
             if (!aeropuertoValido) {
                 ultimaRazon = "aeropuerto_saturado";
                 final VueloInstancia vueloConflicto = camino.isEmpty()

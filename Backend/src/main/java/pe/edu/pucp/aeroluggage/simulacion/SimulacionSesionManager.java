@@ -8,6 +8,7 @@ import pe.edu.pucp.aeroluggage.algoritmo.InstanciaProblema;
 import pe.edu.pucp.aeroluggage.algoritmo.Solucion;
 import pe.edu.pucp.aeroluggage.algoritmo.alns.ALNSUtil;
 import pe.edu.pucp.aeroluggage.algoritmo.alns.ALNS;
+import pe.edu.pucp.aeroluggage.config.ALNSConfig;
 import pe.edu.pucp.aeroluggage.dominio.entidades.Maleta;
 import pe.edu.pucp.aeroluggage.dominio.entidades.Pedido;
 import pe.edu.pucp.aeroluggage.dominio.entidades.Aeropuerto;
@@ -39,6 +40,7 @@ import java.time.format.DateTimeFormatter;
 import java.util.ArrayList;
 import java.util.Collection;
 import java.util.HashMap;
+import java.util.HashSet;
 import java.util.List;
 import java.util.Map;
 import java.util.Objects;
@@ -73,6 +75,7 @@ public class SimulacionSesionManager {
     private final SimulacionSnapshotService snapshotService;
     private final SimulacionParams simulacionParams;
     private final pe.edu.pucp.aeroluggage.config.SistemaConfiguracion sistemaConfiguracion;
+    private final ALNSConfig alnsConfig;
     private final Map<String, SimulacionSesion> sesionesActivas = new ConcurrentHashMap<>();
     private final Map<String, SimulacionSesion> sesionesFinalizadas = new ConcurrentHashMap<>();
     private final Map<String, String> wsSessionIdASimSessionId = new ConcurrentHashMap<>();
@@ -129,12 +132,10 @@ public class SimulacionSesionManager {
     public void pausar(final String sessionId, final SimpMessagingTemplate broker) {
         final SimulacionSesion sesion = sesionesActivas.get(sessionId);
         if (sesion == null) {
-            log.warn("[AeroLuggage/Simulacion] - PAUSAR: sesi\u00f3n no encontrada: {}", sessionId);
             return;
         }
 
         cancelarTarea(sesion);
-        log.info("[AeroLuggage/Simulacion] - PAUSAR: sessionId: {}", sessionId);
 
         broker.convertAndSend(
                 String.format(TOPIC_ESTADO, sessionId),
@@ -149,12 +150,10 @@ public class SimulacionSesionManager {
     public void reanudar(final String sessionId, final SimpMessagingTemplate broker) {
         final SimulacionSesion sesion = sesionesActivas.get(sessionId);
         if (sesion == null) {
-            log.warn("[AeroLuggage/Simulacion] - REANUDAR: sesi\u00f3n no encontrada: {}", sessionId);
             return;
         }
 
         programarTarea(sesion, broker);
-        log.info("[AeroLuggage/Simulacion] - REANUDAR: sessionId: {}", sessionId);
 
         broker.convertAndSend(
                 String.format(TOPIC_ESTADO, sessionId),
@@ -257,7 +256,7 @@ public class SimulacionSesionManager {
     private void planificarSync(final SimulacionSesion sesion,
                                  final String windowId,
                                  final SimpMessagingTemplate broker) {
-        sesion.getPlanificacionEnCurso().set(true);
+        sesion.iniciarPlanificacion();
         sesion.marcarVentanaPlanificada(windowId);
         ejecutarPlanificacion(sesion, windowId, broker);
     }
@@ -270,10 +269,13 @@ public class SimulacionSesionManager {
         if (ventana == null) {
             return;
         }
+        if (sesion.hayReplanPendiente()) {
+            return;
+        }
         if (!sesion.necesitaPlanificacion()) {
             return;
         }
-        if (!sesion.getPlanificacionEnCurso().compareAndSet(false, true)) {
+        if (!sesion.iniciarPlanificacion()) {
             return;
         }
 
@@ -324,7 +326,7 @@ public class SimulacionSesionManager {
                 return;
             }
 
-            alns = new ALNS();
+            alns = new ALNS(alnsConfig.toParametrosALNS());
             final InstanciaProblema copia = instancia.deepCopy();
             alns.ejecutar(copia);
             tiempoPlanMs = System.currentTimeMillis() - inicioPlan;
@@ -463,12 +465,11 @@ public class SimulacionSesionManager {
             if (alns != null) {
                 alns.limpiarInstancia();
             }
-            sesion.getPlanificacionEnCurso().set(false);
-            if (sesion.isReplanificacionPendiente()) {
-                sesion.limpiarReplanificacionPendiente();
-                if (!sesion.obtenerSegmentosReplanificacion().isEmpty()) {
-                    ejecutarPlanificacion(sesion, "REPLAN-" + windowId, broker);
-                }
+            sesion.finalizarPlanificacion();
+            sesion.marcarPlanValido();
+            if (sesion.hayReplanPendiente()) {
+                sesion.limpiarReplanPendiente();
+                dispararReplan(sesion, broker);
             }
             if (sesion.haTerminado() && sesion.marcarCsvEscrito()) {
                 escribirCsvFallos(sesion);
@@ -529,76 +530,115 @@ public class SimulacionSesionManager {
     }
 
     public void cancelarVuelo(final String sessionId, final String idVuelo,
-                              final SimpMessagingTemplate broker) {
+                               final List<String> idsMaletasFrontend,
+                               final SimpMessagingTemplate broker) {
         final SimulacionSesion sesion = sesionesActivas.get(sessionId);
         if (sesion == null) {
             return;
         }
-        final VueloInstancia vuelo = buscarVuelo(sesion, idVuelo);
-        if (vuelo == null) {
-            return;
-        }
-        if (vuelo.getEstado() == EstadoVuelo.EN_PROGRESO
-                || vuelo.getEstado() == EstadoVuelo.FINALIZADO
-                || vuelo.getEstado() == EstadoVuelo.CONFIRMADO
-                || vuelo.getEstado() == EstadoVuelo.CANCELADO) {
-            log.warn("[Cancelacion] Vuelo {} no cancelable: estado={}", idVuelo, vuelo.getEstado());
-            return;
-        }
-        vuelo.cancelar();
-
-        int totalRutasConVuelo = 0;
-        for (final Ruta r : sesion.getRutas()) {
-            if (r != null && r.getEstado() != EstadoRuta.COMPLETADA && contieneVuelo(r, idVuelo)) {
-                totalRutasConVuelo++;
+        if (idVuelo != null) {
+            final VueloInstancia vuelo = buscarVuelo(sesion, idVuelo);
+            if (vuelo == null) {
+                return;
             }
+            if (vuelo.getEstado() == EstadoVuelo.EN_PROGRESO
+                    || vuelo.getEstado() == EstadoVuelo.FINALIZADO
+                    || vuelo.getEstado() == EstadoVuelo.CONFIRMADO
+                    || vuelo.getEstado() == EstadoVuelo.CANCELADO) {
+                log.warn("[Cancelacion] Vuelo {} no cancelable: estado={}", idVuelo, vuelo.getEstado());
+                return;
+            }
+            vuelo.cancelar();
         }
-        log.info("[Cancelacion] - CANCELANDO: sessionId={}, vuelo={}, estado={}, salida={}, llegada={}, "
-                + "simTime={}, rutasAfectadas={}",
-                sessionId, idVuelo, vuelo.getEstado(), vuelo.getFechaSalida(), vuelo.getFechaLlegada(),
-                sesion.getCurrentSimTimeUtc().get(), totalRutasConVuelo);
 
         final LocalDateTime simTime = sesion.getCurrentSimTimeUtc().get();
         int totalRutas = 0;
         int totalManietas = 0;
-        for (final Ruta ruta : sesion.getRutas()) {
-            if (ruta == null || ruta.getEstado() == EstadoRuta.COMPLETADA) {
-                continue;
+
+        final Set<String> maletasYaProcesadas = new HashSet<>();
+
+        if (idVuelo != null) {
+            for (final Ruta ruta : sesion.getRutas()) {
+                if (ruta == null || ruta.getEstado() == EstadoRuta.COMPLETADA) {
+                    continue;
+                }
+                if (!contieneVuelo(ruta, idVuelo)) {
+                    continue;
+                }
+                totalRutas++;
+                final Maleta maleta = sesion.getMaletasPorId().get(ruta.getIdMaleta());
+                if (maleta == null) {
+                    continue;
+                }
+                final String origenActual = determinarUbicacionActual(ruta, idVuelo, simTime,
+                        maleta.getPedido().getAeropuertoOrigen().getIdAeropuerto());
+                if (origenActual == null) {
+                    continue;
+                }
+                maletasYaProcesadas.add(maleta.getIdMaleta());
+                totalManietas++;
+                final Pedido pedido = maleta.getPedido();
+                sesion.agregarSegmentoReplanificacion(new SimulacionSesion.SegmentoReplanificacion(
+                        maleta.getIdMaleta(),
+                        origenActual,
+                        pedido.getAeropuertoDestino().getIdAeropuerto(),
+                        simTime,
+                        pedido.getFechaHoraPlazo()
+                ));
+                sesion.onRutaCancelada(ruta);
             }
-            if (!contieneVuelo(ruta, idVuelo)) {
-                continue;
-            }
-            totalRutas++;
-            final Maleta maleta = sesion.getMaletasPorId().get(ruta.getIdMaleta());
-            if (maleta == null) {
-                continue;
-            }
-            final String origenActual = determinarUbicacionActual(ruta, idVuelo, simTime,
-                    maleta.getPedido().getAeropuertoOrigen().getIdAeropuerto());
-            if (origenActual == null) {
-                continue;
-            }
-            totalManietas++;
-            final Pedido pedido = maleta.getPedido();
-            sesion.agregarSegmentoReplanificacion(new SimulacionSesion.SegmentoReplanificacion(
-                    maleta.getIdMaleta(),
-                    origenActual,
-                    pedido.getAeropuertoDestino().getIdAeropuerto(),
-                    simTime,
-                    pedido.getFechaHoraPlazo()
-            ));
-            sesion.onRutaCancelada(ruta);
-            log.info("[Cancelacion] - MALETA: id={}, origenActual={}, destino={}, tDisponible={}, tLimite={}",
-                    maleta.getIdMaleta(), origenActual, pedido.getAeropuertoDestino().getIdAeropuerto(),
-                    simTime, pedido.getFechaHoraPlazo());
         }
-        final boolean planEnCurso = sesion.getPlanificacionEnCurso().get();
-        final boolean replanInmediata = sesion.marcarReplanificacionPendiente();
+
+        if (idsMaletasFrontend != null && !idsMaletasFrontend.isEmpty()) {
+            for (final String idMaleta : idsMaletasFrontend) {
+                if (idMaleta == null || maletasYaProcesadas.contains(idMaleta)) {
+                    continue;
+                }
+                final Ruta ruta = sesion.getRutasPorMaleta().get(idMaleta);
+                if (ruta == null || ruta.getEstado() == EstadoRuta.COMPLETADA) {
+                    continue;
+                }
+                final Maleta maleta = sesion.getMaletasPorId().get(idMaleta);
+                if (maleta == null || maleta.getPedido() == null) {
+                    continue;
+                }
+                final String origenActual = determinarUbicacionActual(
+                        ruta, null, simTime,
+                        maleta.getPedido().getAeropuertoOrigen().getIdAeropuerto());
+                if (origenActual == null) {
+                    continue;
+                }
+                maletasYaProcesadas.add(idMaleta);
+                totalManietas++;
+                final Pedido pedido = maleta.getPedido();
+                sesion.agregarSegmentoReplanificacion(new SimulacionSesion.SegmentoReplanificacion(
+                        idMaleta,
+                        origenActual,
+                        pedido.getAeropuertoDestino().getIdAeropuerto(),
+                        simTime,
+                        pedido.getFechaHoraPlazo()
+                ));
+                sesion.onRutaCancelada(ruta);
+            }
+        }
+
+        if (maletasYaProcesadas.isEmpty()) {
+            log.info("[Cancelacion] - SIN MALETAS AFECTADAS: sessionId={}, vuelo={}, maletasFrontend={}",
+                    sessionId, idVuelo, idsMaletasFrontend);
+            return;
+        }
+
+        sesion.marcarPlanInvalido();
+        final boolean replanYaSolicitado = sesion.hayReplanPendiente();
+        final boolean planEnCurso = sesion.estaPlanificando();
+        if (!replanYaSolicitado) {
+            sesion.solicitarReplan();
+        }
         log.info("[Cancelacion] - RESULTADO: sessionId={}, vuelo={}, rutasAfectadas={}, "
-                + "maletasReplanificadas={}, replanificacionInmediata={}, planificacionEnCurso={}",
-                sessionId, idVuelo, totalRutas, totalManietas, replanInmediata && !planEnCurso, planEnCurso);
-        if (replanInmediata) {
-            triggerReplanificacion(sesion, broker);
+                + "maletasReplanificadas={}, planEnCurso={}, replanSolicitado={}",
+                sessionId, idVuelo, totalRutas, totalManietas, planEnCurso, !replanYaSolicitado);
+        if (!planEnCurso) {
+            dispararReplan(sesion, broker);
         }
     }
 
@@ -622,32 +662,55 @@ public class SimulacionSesionManager {
         if (subrutas == null) {
             return null;
         }
-        for (int i = 0; i < subrutas.size(); i++) {
-            if (!idVueloCancelado.equals(subrutas.get(i).getIdVueloInstancia())) {
-                continue;
-            }
-            if (i == 0) {
+        if (idVueloCancelado != null) {
+            for (int i = 0; i < subrutas.size(); i++) {
+                if (!idVueloCancelado.equals(subrutas.get(i).getIdVueloInstancia())) {
+                    continue;
+                }
+                if (i == 0) {
+                    return origenIcao;
+                }
+                for (int j = i - 1; j >= 0; j--) {
+                    final VueloInstancia anterior = subrutas.get(j);
+                    if (anterior.getFechaLlegada() != null
+                            && !anterior.getFechaLlegada().isAfter(simTime)) {
+                        return anterior.getAeropuertoDestino().getIdAeropuerto();
+                    }
+                }
                 return origenIcao;
             }
-            for (int j = i - 1; j >= 0; j--) {
-                final VueloInstancia anterior = subrutas.get(j);
-                if (anterior.getFechaLlegada() != null
-                        && !anterior.getFechaLlegada().isAfter(simTime)) {
-                    return anterior.getAeropuertoDestino().getIdAeropuerto();
-                }
-            }
-            return origenIcao;
+            return null;
         }
-        return null;
+        String ultimaUbicacion = origenIcao;
+        for (final VueloInstancia v : subrutas) {
+            if (v == null) {
+                continue;
+            }
+            if (v.getFechaLlegada() != null && !v.getFechaLlegada().isAfter(simTime)) {
+                ultimaUbicacion = v.getAeropuertoDestino().getIdAeropuerto();
+            }
+        }
+        return ultimaUbicacion;
     }
 
-    private void triggerReplanificacion(final SimulacionSesion sesion,
-                                        final SimpMessagingTemplate broker) {
-        if (sesion.getPlanificacionEnCurso().get()) {
+    private void dispararReplan(final SimulacionSesion sesion,
+                                final SimpMessagingTemplate broker) {
+        if (!sesion.iniciarPlanificacion()) {
             return;
         }
-        sesion.limpiarReplanificacionPendiente();
-        planificarAsync(sesion, broker);
+        final SimulacionVentana ventana = sesion.getCurrentWindow().get();
+        final String windowId = ventana != null ? ventana.getWindowId() : "W0001";
+        planningPool.submit(() -> {
+            try {
+                ejecutarPlanificacion(sesion, windowId, broker);
+            } finally {
+                sesion.finalizarPlanificacion();
+                if (sesion.hayReplanPendiente()) {
+                    sesion.limpiarReplanPendiente();
+                    dispararReplan(sesion, broker);
+                }
+            }
+        });
     }
 
     private static LocalDateTime calcularInicioVentana(final SimulacionSesion sesion, final String windowId) {

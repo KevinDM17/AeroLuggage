@@ -31,11 +31,6 @@ public class Ruta {
         this.estado = estado;
     }
 
-    public Ruta(final String idRuta, final String idMaleta, final double plazoMaximoDias,
-                final double duracion, final List<VueloInstancia> subrutas, final String estado) {
-        this(idRuta, idMaleta, plazoMaximoDias, duracion, subrutas, convertirEstado(estado));
-    }
-
     public Ruta(final Ruta other) {
         this.idRuta = other.idRuta;
         this.idMaleta = other.idMaleta;

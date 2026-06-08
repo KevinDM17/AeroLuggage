@@ -78,10 +78,6 @@ public class InstanciaProblema {
         this.grafo = GrafoTiempoExpandido.construir(vuelosInstancia);
     }
 
-    public Map<String, VueloInstancia> getVueloIndex() {
-        return getVuelosPorId();
-    }
-
     public Map<String, Aeropuerto> indexarAeropuertosPorIcao() {
         if (indiceAeropuertos == null) {
             final Map<String, Aeropuerto> indice = new HashMap<>();
@@ -148,10 +144,6 @@ public class InstanciaProblema {
         this.pedidos = pedidos == null ? new ArrayList<>() : new ArrayList<>(pedidos);
     }
 
-    public List<Pedido> pedidos() {
-        return getPedidos();
-    }
-
     public ArrayList<VueloProgramado> getVuelosProgramados() {
         return new ArrayList<>(vuelosProgramados);
     }
@@ -160,30 +152,21 @@ public class InstanciaProblema {
         this.vuelosProgramados = vuelosProgramados == null ? new ArrayList<>() : new ArrayList<>(vuelosProgramados);
     }
 
-    public ArrayList<VueloProgramado> getVuelos() {
-        return getVuelosProgramados();
-    }
-
-    public void setVuelos(final ArrayList<VueloProgramado> vuelos) {
-        setVuelosProgramados(vuelos);
-        setVuelosInstancia(crearInstanciasCompatibles(vuelos));
+    public ArrayList<VueloInstancia> getVueloInstancias() {
+        return getVuelosInstancia();
     }
 
     public ArrayList<VueloInstancia> getVuelosInstancia() {
         return new ArrayList<>(vuelosInstancia);
     }
 
+    public void setVueloInstancias(final ArrayList<VueloInstancia> vueloInstancias) {
+        setVuelosInstancia(vueloInstancias);
+    }
+
     public void setVuelosInstancia(final ArrayList<VueloInstancia> vuelosInstancia) {
         this.vuelosInstancia = vuelosInstancia == null ? new ArrayList<>() : new ArrayList<>(vuelosInstancia);
         this.indiceVuelos = null;
-    }
-
-    public ArrayList<VueloInstancia> getVueloInstancias() {
-        return getVuelosInstancia();
-    }
-
-    public void setVueloInstancias(final ArrayList<VueloInstancia> vueloInstancias) {
-        setVuelosInstancia(vueloInstancias);
     }
 
     public ArrayList<Aeropuerto> getAeropuertos() {

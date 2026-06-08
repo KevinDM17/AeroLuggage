@@ -5,13 +5,11 @@ import java.util.List;
 import java.util.Map;
 import java.util.Random;
 
-import lombok.extern.slf4j.Slf4j;
 import pe.edu.pucp.aeroluggage.algoritmo.InstanciaProblema;
 import pe.edu.pucp.aeroluggage.algoritmo.Metaheuristico;
 import pe.edu.pucp.aeroluggage.algoritmo.Solucion;
 import pe.edu.pucp.aeroluggage.dominio.entidades.Maleta;
 
-@Slf4j
 public class ALNS extends Metaheuristico {
     private final ParametrosALNS parametros;
     private Solucion mejorSolucion;
@@ -82,20 +80,12 @@ public class ALNS extends Metaheuristico {
                 ALNSReparador.OPERADOR_REGRET_2
         ));
 
-        final long tInit0 = System.nanoTime();
         final ALNSInicializador.ResultadoInicial inicial = ALNSInicializador.construir(instancia, parametros);
-        final long tInit1 = System.nanoTime();
         ALNSEstado actual = new ALNSEstado(instancia, inicial.solucion());
         actual.getRazonesFallo().putAll(inicial.razonesFallo());
         ALNSFitness.Resultado fitnessActual = ALNSFitness.evaluar(actual, parametros);
         ALNSEstado mejorEstado = actual.clonar();
         ALNSFitness.Resultado mejorFitness = fitnessActual;
-        final long tInitEnd = System.nanoTime();
-        log.debug("[ALNS-INIT] construir={}ms setup+eval+clone={}ms total={}ms nMaletas={}",
-                (tInit1 - tInit0) / 1_000_000L,
-                (tInitEnd - tInit1) / 1_000_000L,
-                (tInitEnd - tInit0) / 1_000_000L,
-                instancia.getMaletas().size());
         double temperatura = Math.max(0.0001D, parametros.getTemperaturaInicial());
         int sinMejora = 0;
         iteracionesEjecutadas = 0;
@@ -108,15 +98,11 @@ public class ALNS extends Metaheuristico {
                 break;
             }
 
-            final long tIter = System.nanoTime();
-
             final int q = elegirQ(random);
             final String operadorDestruccion = destructores.seleccionar(random);
             final String operadorReparacion = reparadores.seleccionar(random);
 
-            final long tClone = System.nanoTime();
             final ALNSEstado candidato = actual.clonar();
-            final long tCloneEnd = System.nanoTime();
 
             final List<Maleta> removidas = new ArrayList<>(ALNSDestruidor.destruir(
                     candidato, operadorDestruccion, q, parametros, random));
@@ -125,28 +111,10 @@ public class ALNS extends Metaheuristico {
                     removidas.add(maleta);
                 }
             }
-            final long tDestroyEnd = System.nanoTime();
 
             ALNSReparador.reparar(candidato, removidas, operadorReparacion, parametros, random);
-            final long tRepairEnd = System.nanoTime();
-            final long[] perfRepair = ALNSReparador.getAndResetPerf();
 
             final ALNSFitness.Resultado fitnessCandidato = ALNSFitness.evaluar(candidato, parametros);
-            final long tEvalEnd = System.nanoTime();
-
-            if (iteracion % 5 == 0 || iteracion == 1) {
-                final long cloneMs = (tCloneEnd - tClone) / 1_000_000L;
-                final long destroyMs = (tDestroyEnd - tCloneEnd) / 1_000_000L;
-                final long repairMs = (tRepairEnd - tDestroyEnd) / 1_000_000L;
-                final long evalMs = (tEvalEnd - tRepairEnd) / 1_000_000L;
-                final long totalMs = (tEvalEnd - tIter) / 1_000_000L;
-                final long dijkMs = perfRepair[0] / 1_000_000L;
-                final long costMs = perfRepair[1] / 1_000_000L;
-                final long valMs = perfRepair[2] / 1_000_000L;
-                final int llamadas = (int) perfRepair[4];
-                log.debug("[ALNS-PERF] iter={} clone={}ms destroy={}ms repair={}ms(dijk={}ms cost={}ms val={}ms n={}) eval={}ms total={}ms q={}",
-                        iteracion, cloneMs, destroyMs, repairMs, dijkMs, costMs, valMs, llamadas, evalMs, totalMs, q);
-            }
 
             final boolean esNuevaMejorGlobal = fitnessCandidato.fitness() < mejorFitness.fitness();
             final boolean mejoraActual = fitnessCandidato.fitness() < fitnessActual.fitness();

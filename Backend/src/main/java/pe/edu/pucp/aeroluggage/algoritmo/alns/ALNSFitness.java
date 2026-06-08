@@ -7,7 +7,6 @@ import java.util.List;
 import java.util.Map;
 import java.util.NavigableMap;
 
-import lombok.extern.slf4j.Slf4j;
 import pe.edu.pucp.aeroluggage.algoritmo.InstanciaProblema;
 import pe.edu.pucp.aeroluggage.algoritmo.Solucion;
 import pe.edu.pucp.aeroluggage.dominio.entidades.Aeropuerto;
@@ -15,8 +14,6 @@ import pe.edu.pucp.aeroluggage.dominio.entidades.Maleta;
 import pe.edu.pucp.aeroluggage.dominio.entidades.Ruta;
 import pe.edu.pucp.aeroluggage.dominio.entidades.VueloInstancia;
 import pe.edu.pucp.aeroluggage.dominio.enums.EstadoRuta;
-
-@Slf4j
 
 final class ALNSFitness {
     private ALNSFitness() {
@@ -26,7 +23,6 @@ final class ALNSFitness {
     static Resultado evaluar(final ALNSEstado estado, final ParametrosALNS parametros) {
         final InstanciaProblema instancia = estado.getInstancia();
 
-        final long t0 = System.nanoTime();
         final List<Maleta> maletas = estado.getMaletasNoComprometidas();
         final int totalMaletas = Math.max(1, maletas.size());
         final Map<String, Maleta> maletasPorId = estado.getMaletasPorId();
@@ -59,8 +55,6 @@ final class ALNSFitness {
                 holgurasContadas++;
             }
         }
-        final long tMaletas = System.nanoTime();
-
         final LocalDateTime fechaEval = instancia.getFechaEvaluacion();
         final LocalDateTime corteVuelos = fechaEval != null ? fechaEval.plusDays(2) : null;
 
@@ -94,8 +88,6 @@ final class ALNSFitness {
             vuelosContados++;
         }
         ocupacionPromedioVuelos = vuelosContados > 0 ? ocupacionPromedioVuelos / vuelosContados : 0.0D;
-        final long tVuelos = System.nanoTime();
-
         double overflowAeropuertos = 0.0D;
         double ocupacionPromedioAeropuertos = 0.0D;
         int aeropuertosContados = 0;
@@ -115,16 +107,6 @@ final class ALNSFitness {
         ocupacionPromedioAeropuertos = aeropuertosContados > 0
                 ? ocupacionPromedioAeropuertos / aeropuertosContados
                 : 0.0D;
-        final long tAeropuertos = System.nanoTime();
-
-        if (log.isTraceEnabled()) {
-            log.trace("[ALNS-EVAL] maletas={}ms vuelos={}ms aeropuertos={}ms total={}ms",
-                    (tMaletas - t0) / 1_000_000L,
-                    (tVuelos - tMaletas) / 1_000_000L,
-                    (tAeropuertos - tVuelos) / 1_000_000L,
-                    (tAeropuertos - t0) / 1_000_000L);
-        }
-
         final double proporcionNoEnrutadas = noEnrutadas / (double) totalMaletas;
         final double proporcionFueraDePlazo = fueraDePlazo / (double) totalMaletas;
         final double proporcionOverflowVuelos = overflowVuelos / totalMaletas;

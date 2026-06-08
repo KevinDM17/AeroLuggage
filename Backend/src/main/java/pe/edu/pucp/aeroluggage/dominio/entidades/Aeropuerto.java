@@ -84,11 +84,4 @@ public class Aeropuerto {
         this.husoGMT = husoGMT;
     }
 
-    public int getHusoHorario() {
-        return husoGMT;
-    }
-
-    public void setHusoHorario(final int husoHorario) {
-        this.husoGMT = husoHorario;
-    }
 }
