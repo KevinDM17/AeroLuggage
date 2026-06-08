@@ -661,6 +661,36 @@ public class SimulacionSesion {
         this.tareaScheduled = tarea;
     }
 
+    public void limpiarDatos() {
+        this.aeropuertos = List.of();
+        this.vuelosProgramados = List.of();
+        this.vuelosInstancia = List.of();
+        this.pedidos = List.of();
+        this.resumenesVentana = List.of();
+        this.maletasPorId.clear();
+        this.rutasPorMaleta.clear();
+        this.evaluacionesMaletas.clear();
+        this.segmentosReplanificacion.clear();
+        this.maletasPorVentana.clear();
+        this.pedidosPorVentana.clear();
+        this.vuelosPorVentana.clear();
+        this.fechasVuelosGeneradas.clear();
+        this.eventosSimulacion = null;
+        this.ultimoTiempoSim = null;
+        this.tareaScheduled = null;
+        this.tickActual.set(0);
+        this.currentSimTimeUtc.set(fechaInicioUtc);
+        this.currentWindow.set(null);
+        this.ultimoIndiceVuelosEnviado.set(0);
+        this.planningGeneration.set(1);
+        this.stateVersion.set(1);
+        this.csvEscrito.set(false);
+        this.planValido.set(false);
+        this.planificando.set(false);
+        this.replanPendiente.set(false);
+        this.ultimaVentanaPlanificada.set("");
+    }
+
     public Collection<Maleta> getMaletas() {
         return maletasPorId.values();
     }

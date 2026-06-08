@@ -167,13 +167,15 @@ public class SimulacionSesionManager {
 
     public void detener(final String sessionId, final SimpMessagingTemplate broker) {
         final SimulacionSesion sesion = sesionesActivas.remove(sessionId);
+        sesionesFinalizadas.remove(sessionId);
         if (sesion == null) {
             log.warn("[AeroLuggage/Simulacion] - DETENER: sesi\u00f3n no encontrada: {}", sessionId);
             return;
         }
 
         sesion.getActiva().set(false);
-        cancelarTarea(sesion);
+        limpiarSesion(sesion);
+        wsSessionIdASimSessionId.values().remove(sessionId);
         log.info("[AeroLuggage/Simulacion] - DETENER: sessionId: {}", sessionId);
 
         broker.convertAndSend(
@@ -205,12 +207,13 @@ public class SimulacionSesionManager {
         }
 
         final SimulacionSesion sesion = sesionesActivas.remove(simSessionId);
+        sesionesFinalizadas.remove(simSessionId);
         if (sesion == null) {
             return;
         }
 
         sesion.getActiva().set(false);
-        cancelarTarea(sesion);
+        limpiarSesion(sesion);
         log.info("[AeroLuggage/Simulacion] - DESCONEXION: sesi\u00f3n limpiada: {}", simSessionId);
     }
 
@@ -289,6 +292,9 @@ public class SimulacionSesionManager {
     private void ejecutarPlanificacion(final SimulacionSesion sesion,
                                        final String windowId,
                                        final SimpMessagingTemplate broker) {
+        if (!sesion.getActiva().get()) {
+            return;
+        }
         ALNS alns = null;
         long tiempoPlanMs = 0L;
         try {
@@ -906,6 +912,14 @@ public class SimulacionSesionManager {
             }
         }
         return ocupacion;
+    }
+
+    private void limpiarSesion(final SimulacionSesion sesion) {
+        cancelarTarea(sesion);
+        sesion.finalizarPlanificacion();
+        sesion.marcarPlanValido();
+        sesion.limpiarReplanPendiente();
+        sesion.limpiarDatos();
     }
 
     private void cancelarTarea(final SimulacionSesion sesion) {

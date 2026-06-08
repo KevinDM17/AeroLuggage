@@ -111,8 +111,17 @@ export default function PeriodSimulatorPage() {
         : flight,
     );
 
+  const sessionIdRef = useRef(null);
+  sessionIdRef.current = sessionId;
+
   useEffect(() => {
     resetSimulationPanelData();
+    return () => {
+      const sid = sessionIdRef.current;
+      if (sid) {
+        publish("/app/simulacion/periodo/detener", { sessionId: sid });
+      }
+    };
   }, []);
 
   const tickTopic =
@@ -489,6 +498,7 @@ export default function PeriodSimulatorPage() {
     setSimStatus("idle");
     setSessionId(null);
     setCurrentSimTimeUtc(null);
+    setCancelledFlightIds(new Set());
     clearSimulationData();
     try {
       if (USE_MOCK) {
