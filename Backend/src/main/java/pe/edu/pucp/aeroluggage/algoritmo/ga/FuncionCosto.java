@@ -43,7 +43,7 @@ public final class FuncionCosto {
             final List<VueloInstancia> subrutas = ruta.getSubrutas();
 
             if (subrutas == null || subrutas.isEmpty()
-                    || ruta.getEstado() == EstadoRuta.FALLIDA
+                    || ruta.getEstado() == EstadoRuta.REPLANIFICADA
                     || esRutaParcial(ruta, maleta)) {
                 maletasNoEnrutadas++;
                 continue;

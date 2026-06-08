@@ -43,7 +43,7 @@ export default function SimulatorPage() {
   //       sessionIdRef.current = sid;
   //       setSessionId(sid);
   //     } catch (e) {
-  //       console.warn("[DiaADia] No se pudo iniciar monitoreo en vivo:", e.message);
+    //       // ignore
   //     }
   //   })();
   //

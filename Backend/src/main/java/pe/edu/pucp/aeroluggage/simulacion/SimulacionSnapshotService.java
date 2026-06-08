@@ -49,56 +49,23 @@ public class SimulacionSnapshotService {
     }
 
     public void recalcularEstadoSesion(final SimulacionSesion sesion) {
-        final LocalDateTime simTimeUtc = sesion.getCurrentSimTimeUtc().get();
-        final LocalDateTime fechaInicioUtc = sesion.getFechaInicioUtc();
-        final Map<String, Maleta> maletasPorId = sesion.getMaletasPorId();
-        final Map<String, Ruta> rutaPorMaleta = new HashMap<>();
-        for (final Ruta ruta : sesion.getRutas()) {
-            if (ruta != null && ruta.getIdMaleta() != null) {
-                rutaPorMaleta.put(ruta.getIdMaleta(), ruta);
-            }
-        }
-        final Map<String, Integer> usoPorVuelo = calcularUsoPorVuelo(sesion.getRutas(), maletasPorId, simTimeUtc);
+        final LocalDateTime simTimeAnterior = sesion.getUltimoTiempoSim();
+        final LocalDateTime simTimeActual = sesion.getCurrentSimTimeUtc().get();
+
+        sesion.procesarEventos(simTimeAnterior, simTimeActual,
+                sistemaConfiguracion.getUmbralConfirmacionMinutos());
+
         final Map<String, List<Maleta>> maletasPorPedido = new HashMap<>();
-        final Map<String, Integer> maletasPorAeropuerto = new HashMap<>();
-
-        actualizarEstadoVuelos(sesion.getVuelosInstancia(), usoPorVuelo, simTimeUtc);
-
-        for (final Ruta ruta : sesion.getRutas()) {
-            actualizarEstadoRuta(ruta, simTimeUtc);
+        for (final Maleta m : sesion.getMaletas()) {
+            if (m == null || m.getPedido() == null || m.getPedido().getIdPedido() == null) continue;
+            maletasPorPedido
+                    .computeIfAbsent(m.getPedido().getIdPedido(), k -> new ArrayList<>())
+                    .add(m);
         }
-
-        for (final Maleta maleta : sesion.getMaletas()) {
-            if (maleta == null) {
-                continue;
-            }
-            if (maleta.getFechaRegistro() == null || maleta.getFechaRegistro().isAfter(simTimeUtc)) {
-                maleta.setEstado(EstadoMaleta.EN_ALMACEN);
-                maleta.setFechaLlegada(null);
-                continue;
-            }
-            final Ruta ruta = rutaPorMaleta.get(maleta.getIdMaleta());
-            final String ubicacionActual = actualizarEstadoMaleta(maleta, ruta, simTimeUtc);
-            if (ubicacionActual != null && !maleta.getFechaRegistro().isBefore(fechaInicioUtc)) {
-                maletasPorAeropuerto.merge(ubicacionActual, 1, Integer::sum);
-            }
-            if (maleta.getPedido() != null && maleta.getPedido().getIdPedido() != null) {
-                maletasPorPedido.computeIfAbsent(maleta.getPedido().getIdPedido(), ignored -> new ArrayList<>()).add(maleta);
-            }
-        }
-
         for (final Pedido pedido : sesion.getPedidos()) {
-            if (pedido == null || pedido.getIdPedido() == null) {
-                continue;
-            }
-            actualizarEstadoPedido(pedido, maletasPorPedido.getOrDefault(pedido.getIdPedido(), List.of()));
-        }
-
-        for (final Aeropuerto aeropuerto : sesion.getAeropuertos()) {
-            if (aeropuerto == null || aeropuerto.getIdAeropuerto() == null) {
-                continue;
-            }
-            aeropuerto.setMaletasActuales(maletasPorAeropuerto.getOrDefault(aeropuerto.getIdAeropuerto(), 0));
+            if (pedido == null || pedido.getIdPedido() == null) continue;
+            actualizarEstadoPedido(pedido,
+                    maletasPorPedido.getOrDefault(pedido.getIdPedido(), List.of()));
         }
     }
 
@@ -124,22 +91,19 @@ public class SimulacionSnapshotService {
 
     public int contarMaletasSinRuta(final SimulacionSesion sesion) {
         final LocalDateTime simTimeUtc = sesion.getCurrentSimTimeUtc().get();
-        final Map<String, Maleta> maletasPorId = sesion.getMaletasPorId();
-        return (int) sesion.getRutas().stream()
-                .filter(ruta -> ruta == null
-                        || ruta.getSubrutas() == null
-                        || ruta.getSubrutas().isEmpty()
-                        || ruta.getEstado() == EstadoRuta.FALLIDA)
-                .filter(ruta -> {
-                    if (ruta == null || ruta.getIdMaleta() == null) {
-                        return true;
-                    }
-                    final Maleta maleta = maletasPorId.get(ruta.getIdMaleta());
-                    return maleta != null
-                            && maleta.getFechaRegistro() != null
-                            && !maleta.getFechaRegistro().isAfter(simTimeUtc);
-                })
-                .count();
+        int sinRuta = 0;
+        for (final Maleta m : sesion.getMaletas()) {
+            if (m == null || m.getFechaRegistro() == null
+                    || m.getFechaRegistro().isAfter(simTimeUtc)) continue;
+            final Ruta r = sesion.getRutaPorMaleta(m.getIdMaleta());
+            if (r == null
+                    || r.getEstado() == EstadoRuta.REPLANIFICADA
+                    || r.getSubrutas() == null
+                    || r.getSubrutas().isEmpty()) {
+                sinRuta++;
+            }
+        }
+        return sinRuta;
     }
 
     public int contarVuelosActivos(final SimulacionSesion sesion) {
@@ -226,117 +190,6 @@ public class SimulacionSnapshotService {
                 .withCapacidadUsada(Math.max(0, capacidadMaxima - capacidadDisponible))
                 .withEstado(vueloInstancia.getEstado() != null ? vueloInstancia.getEstado().name() : null)
                 .build();
-    }
-
-    private Map<String, Integer> calcularUsoPorVuelo(final Collection<Ruta> rutas,
-                                                      final Map<String, Maleta> maletasPorId,
-                                                      final LocalDateTime simTimeUtc) {
-        final Map<String, Integer> usoPorVuelo = new HashMap<>();
-        for (final Ruta ruta : rutas) {
-            if (ruta == null || ruta.getSubrutas() == null || ruta.getSubrutas().isEmpty()) {
-                continue;
-            }
-            if (ruta.getEstado() == EstadoRuta.REPLANIFICADA || ruta.getEstado() == EstadoRuta.FALLIDA) {
-                continue;
-            }
-            final Maleta maleta = ruta.getIdMaleta() != null ? maletasPorId.get(ruta.getIdMaleta()) : null;
-            if (maleta == null || maleta.getFechaRegistro() == null || maleta.getFechaRegistro().isAfter(simTimeUtc)) {
-                continue;
-            }
-            for (final VueloInstancia vuelo : ruta.getSubrutas()) {
-                if (vuelo == null || vuelo.getIdVueloInstancia() == null) {
-                    continue;
-                }
-                usoPorVuelo.merge(vuelo.getIdVueloInstancia(), 1, Integer::sum);
-            }
-        }
-        return usoPorVuelo;
-    }
-
-    private void actualizarEstadoVuelos(final List<VueloInstancia> vuelos,
-                                        final Map<String, Integer> usoPorVuelo,
-                                        final LocalDateTime simTimeUtc) {
-        for (final VueloInstancia vuelo : vuelos) {
-            if (vuelo == null) {
-                continue;
-            }
-            final int uso = usoPorVuelo.getOrDefault(vuelo.getIdVueloInstancia(), 0);
-            vuelo.setCapacidadDisponible(Math.max(0, vuelo.getCapacidadMaxima() - uso));
-            vuelo.actualizarCapacidad();
-            if (vuelo.getEstado() == EstadoVuelo.CANCELADO) {
-                continue;
-            }
-            if (vuelo.getFechaLlegada() != null && !vuelo.getFechaLlegada().isAfter(simTimeUtc)) {
-                vuelo.setEstado(EstadoVuelo.FINALIZADO);
-            } else if (vuelo.getFechaSalida() != null && !vuelo.getFechaSalida().isAfter(simTimeUtc)) {
-                vuelo.setEstado(EstadoVuelo.EN_PROGRESO);
-            } else if (vuelo.getFechaSalida() != null
-                    && !vuelo.getFechaSalida().minusMinutes(sistemaConfiguracion.getUmbralConfirmacionMinutos())
-                            .isAfter(simTimeUtc)) {
-                vuelo.setEstado(EstadoVuelo.CONFIRMADO);
-            } else {
-                vuelo.setEstado(EstadoVuelo.PROGRAMADO);
-            }
-        }
-    }
-
-    private void actualizarEstadoRuta(final Ruta ruta, final LocalDateTime simTimeUtc) {
-        if (ruta == null) {
-            return;
-        }
-        if (ruta.getSubrutas() == null || ruta.getSubrutas().isEmpty()) {
-            ruta.setEstado(EstadoRuta.FALLIDA);
-            ruta.setDuracion(0D);
-            return;
-        }
-        final VueloInstancia primero = ruta.getSubrutas().getFirst();
-        final VueloInstancia ultimo = ruta.getSubrutas().getLast();
-        ruta.calcularPlazo();
-        if (ultimo.getFechaLlegada() != null && !simTimeUtc.isBefore(ultimo.getFechaLlegada())) {
-            ruta.setEstado(EstadoRuta.COMPLETADA);
-        } else if (primero.getFechaSalida() != null && !simTimeUtc.isBefore(primero.getFechaSalida())) {
-            ruta.setEstado(EstadoRuta.ACTIVA);
-        } else {
-            ruta.setEstado(EstadoRuta.PLANIFICADA);
-        }
-    }
-
-    private String actualizarEstadoMaleta(final Maleta maleta,
-                                          final Ruta ruta,
-                                          final LocalDateTime simTimeUtc) {
-        if (ruta == null || ruta.getSubrutas() == null || ruta.getSubrutas().isEmpty()) {
-            maleta.setEstado(EstadoMaleta.EN_ALMACEN);
-            maleta.setFechaLlegada(null);
-            return maleta.getPedido() != null && maleta.getPedido().getAeropuertoOrigen() != null
-                    ? maleta.getPedido().getAeropuertoOrigen().getIdAeropuerto()
-                    : null;
-        }
-
-        String aeropuertoActual = ruta.getSubrutas().getFirst().getAeropuertoOrigen() != null
-                ? ruta.getSubrutas().getFirst().getAeropuertoOrigen().getIdAeropuerto()
-                : null;
-        for (final VueloInstancia vuelo : ruta.getSubrutas()) {
-            if (vuelo == null) {
-                continue;
-            }
-            if (vuelo.getFechaSalida() != null && simTimeUtc.isBefore(vuelo.getFechaSalida())) {
-                maleta.setEstado(EstadoMaleta.EN_ALMACEN);
-                maleta.setFechaLlegada(null);
-                return aeropuertoActual;
-            }
-            if (vuelo.getFechaLlegada() != null && simTimeUtc.isBefore(vuelo.getFechaLlegada())) {
-                maleta.setEstado(EstadoMaleta.EN_TRANSITO);
-                maleta.setFechaLlegada(null);
-                return null;
-            }
-            aeropuertoActual = vuelo.getAeropuertoDestino() != null
-                    ? vuelo.getAeropuertoDestino().getIdAeropuerto()
-                    : aeropuertoActual;
-        }
-
-        maleta.setEstado(EstadoMaleta.ENTREGADA);
-        maleta.setFechaLlegada(ruta.getSubrutas().getLast().getFechaLlegada());
-        return null;
     }
 
     private void actualizarEstadoPedido(final Pedido pedido, final List<Maleta> maletasPedido) {
@@ -470,16 +323,7 @@ public class SimulacionSnapshotService {
     }
 
     private String resolveUbicacionActual(final Maleta maleta) {
-        if (maleta.getPedido() == null) {
-            return null;
-        }
-        return switch (maleta.getEstado()) {
-            case ENTREGADA -> maleta.getPedido().getAeropuertoDestino() != null
-                    ? maleta.getPedido().getAeropuertoDestino().getIdAeropuerto() : null;
-            case EN_TRANSITO -> null;
-            default -> maleta.getPedido().getAeropuertoOrigen() != null
-                    ? maleta.getPedido().getAeropuertoOrigen().getIdAeropuerto() : null;
-        };
+        return maleta.getAeropuertoActual();
     }
 
     private String formatDateTime(final LocalDateTime value) {
@@ -517,12 +361,16 @@ public class SimulacionSnapshotService {
         return estados;
     }
 
-    public List<EstadoVueloDTO> mapearEstadosVuelos(final List<VueloInstancia> vuelos) {
-        final Set<String> idsVistos = new HashSet<>();
+    public List<EstadoVueloDTO> mapearEstadosVuelos(final List<VueloInstancia> vuelos,
+                                                       final LocalDateTime simTimeUtc) {
+        final LocalDateTime limiteInferior = simTimeUtc.minusDays(1);
+        final LocalDateTime limiteSuperior = simTimeUtc.plusDays(2);
         final List<EstadoVueloDTO> estados = new ArrayList<>();
         for (final VueloInstancia v : vuelos) {
             if (v == null) continue;
-            idsVistos.add(v.getIdVueloInstancia());
+            if (v.getFechaSalida() != null
+                    && (v.getFechaSalida().isBefore(limiteInferior)
+                        || v.getFechaSalida().isAfter(limiteSuperior))) continue;
             estados.add(EstadoVueloDTO.builder()
                     .withId(v.getIdVueloInstancia())
                     .withE(v.getEstado() != null ? v.getEstado().ordinal() : 0)

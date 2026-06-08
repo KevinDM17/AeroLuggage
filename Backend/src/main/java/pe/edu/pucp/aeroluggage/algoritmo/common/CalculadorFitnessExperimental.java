@@ -182,8 +182,7 @@ public final class CalculadorFitnessExperimental {
         if (ruta == null || maleta == null) {
             return false;
         }
-        return ruta.getEstado() != EstadoRuta.FALLIDA
-                && ruta.getSubrutas() != null
+        return ruta.getSubrutas() != null
                 && !ruta.getSubrutas().isEmpty();
     }
 

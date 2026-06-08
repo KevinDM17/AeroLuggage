@@ -315,7 +315,7 @@ public class ACO extends Metaheuristico {
             }
 
             final Ruta rutaConfirmada = constructorSoluciones.clonarRuta(rutaOriginal);
-            rutaConfirmada.setEstado(EstadoRuta.CONFIRMADA);
+            rutaConfirmada.setEstado(EstadoRuta.PLANIFICADA);
             planesConfirmados.add(rutaConfirmada);
             yaConfirmadas.add(rutaConfirmada.getIdMaleta());
         }
@@ -413,7 +413,7 @@ public class ACO extends Metaheuristico {
                     Double.MAX_VALUE,
                     0D,
                     new ArrayList<>(),
-                    EstadoRuta.FALLIDA
+                    EstadoRuta.REPLANIFICADA
             );
             rutasCompletas.add(rutaSinPlan);
             maletasConRuta.add(maleta.getIdMaleta());

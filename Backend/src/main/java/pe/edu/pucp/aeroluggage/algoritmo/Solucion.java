@@ -48,8 +48,7 @@ public class Solucion {
                 continue;
             }
             final boolean cumplePlazo = ruta.getDuracion() <= ruta.getPlazoMaximoDias();
-            final boolean estadoValido = ruta.getEstado() != EstadoRuta.FALLIDA;
-            if (cumplePlazo && estadoValido) {
+            if (cumplePlazo) {
                 entregadasATiempo++;
             } else {
                 incumplidas++;

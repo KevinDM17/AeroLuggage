@@ -81,11 +81,11 @@ public final class HeuristicaSolomon {
 
             if (camino == null) {
                 ruta.setSubrutas(new ArrayList<>());
-                ruta.setEstado(EstadoRuta.FALLIDA);
+                ruta.setEstado(EstadoRuta.REPLANIFICADA);
                 ruta.setDuracion(0.0);
             } else {
                 ruta.setSubrutas(new ArrayList<>(camino));
-                ruta.setEstado(camino.isEmpty() ? EstadoRuta.FALLIDA : EstadoRuta.PLANIFICADA);
+                ruta.setEstado(camino.isEmpty() ? EstadoRuta.REPLANIFICADA : EstadoRuta.PLANIFICADA);
                 ruta.setDuracion(duracionHoras(camino));
                 for (final VueloInstancia v : camino) {
                     consumoVuelo.merge(v.getIdVueloInstancia(), 1, Integer::sum);
@@ -147,11 +147,11 @@ public final class HeuristicaSolomon {
             ruta.setPlazoMaximoDias(pedido.getPlazoDias());
             if (camino == null) {
                 ruta.setSubrutas(new ArrayList<>());
-                ruta.setEstado(EstadoRuta.FALLIDA);
+                ruta.setEstado(EstadoRuta.REPLANIFICADA);
                 ruta.setDuracion(0.0);
             } else {
                 ruta.setSubrutas(new ArrayList<>(camino));
-                ruta.setEstado(camino.isEmpty() ? EstadoRuta.FALLIDA : EstadoRuta.PLANIFICADA);
+                ruta.setEstado(camino.isEmpty() ? EstadoRuta.REPLANIFICADA : EstadoRuta.PLANIFICADA);
                 ruta.setDuracion(duracionHoras(camino));
                 for (final VueloInstancia vueloInstancia : camino) {
                     consumoVuelo.merge(vueloInstancia.getIdVueloInstancia(), 1, Integer::sum);

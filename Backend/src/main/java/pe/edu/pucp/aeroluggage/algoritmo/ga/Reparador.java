@@ -77,14 +77,14 @@ public final class Reparador {
             }
             final List<VueloInstancia> subrutas = ruta.getSubrutas();
             if (subrutas == null || subrutas.isEmpty()) {
-                ruta.setEstado(EstadoRuta.FALLIDA);
+                ruta.setEstado(EstadoRuta.REPLANIFICADA);
                 ruta.setDuracion(0.0);
                 continue;
             }
             final Maleta maleta = maletas.get(ruta.getIdMaleta());
             if (maleta == null || maleta.getPedido() == null) {
                 ruta.setSubrutas(new ArrayList<>());
-                ruta.setEstado(EstadoRuta.FALLIDA);
+                ruta.setEstado(EstadoRuta.REPLANIFICADA);
                 ruta.setDuracion(0.0);
                 continue;
             }
@@ -94,7 +94,7 @@ public final class Reparador {
                     || !ultimoVueloCoherente(subrutas, pedido.getAeropuertoDestino())
                     || !conexionesCoherentes(subrutas)) {
                 ruta.setSubrutas(new ArrayList<>());
-                ruta.setEstado(EstadoRuta.FALLIDA);
+                ruta.setEstado(EstadoRuta.REPLANIFICADA);
                 ruta.setDuracion(0.0);
             }
         }
@@ -176,7 +176,7 @@ public final class Reparador {
             ruta.setPlazoMaximoDias(pedido.getPlazoDias());
             if (grafo == null) {
                 ruta.setSubrutas(new ArrayList<>());
-                ruta.setEstado(EstadoRuta.FALLIDA);
+                ruta.setEstado(EstadoRuta.REPLANIFICADA);
                 ruta.setDuracion(0.0);
             } else {
                 final List<VueloInstancia> camino = rutearConCapacidadDisponible(
@@ -190,11 +190,11 @@ public final class Reparador {
                 );
                 if (camino == null) {
                     ruta.setSubrutas(new ArrayList<>());
-                    ruta.setEstado(EstadoRuta.FALLIDA);
+                    ruta.setEstado(EstadoRuta.REPLANIFICADA);
                     ruta.setDuracion(0.0);
                 } else {
                     ruta.setSubrutas(new ArrayList<>(camino));
-                    ruta.setEstado(camino.isEmpty() ? EstadoRuta.FALLIDA : EstadoRuta.PLANIFICADA);
+                    ruta.setEstado(camino.isEmpty() ? EstadoRuta.REPLANIFICADA : EstadoRuta.PLANIFICADA);
                     ruta.setDuracion(duracionHoras(camino));
                     acumularConsumoRuta(ruta, consumoVuelo, consumoAeropuerto);
                 }
@@ -216,7 +216,7 @@ public final class Reparador {
             final List<VueloInstancia> subrutas = ruta.getSubrutas();
             if (subrutas == null || subrutas.isEmpty()) {
                 ruta.setDuracion(0.0);
-                ruta.setEstado(EstadoRuta.FALLIDA);
+                ruta.setEstado(EstadoRuta.REPLANIFICADA);
             } else {
                 ruta.setDuracion(duracionHoras(subrutas));
                 if (ruta.getEstado() == null) {
@@ -231,7 +231,7 @@ public final class Reparador {
                                            final long minutosConexion, final long tiempoRecojo) {
         if (maleta == null || maleta.getPedido() == null) {
             ruta.setSubrutas(new ArrayList<>());
-            ruta.setEstado(EstadoRuta.FALLIDA);
+            ruta.setEstado(EstadoRuta.REPLANIFICADA);
             ruta.setDuracion(0.0);
             return;
         }
@@ -244,12 +244,12 @@ public final class Reparador {
                 grafo, minutosConexion, bloqueados);
         if (nuevo == null) {
             ruta.setSubrutas(new ArrayList<>());
-            ruta.setEstado(EstadoRuta.FALLIDA);
+            ruta.setEstado(EstadoRuta.REPLANIFICADA);
             ruta.setDuracion(0.0);
             return;
         }
         ruta.setSubrutas(new ArrayList<>(nuevo));
-        ruta.setEstado(nuevo.isEmpty() ? EstadoRuta.FALLIDA : EstadoRuta.PLANIFICADA);
+        ruta.setEstado(nuevo.isEmpty() ? EstadoRuta.REPLANIFICADA : EstadoRuta.PLANIFICADA);
         ruta.setDuracion(duracionHoras(nuevo));
     }
 
@@ -537,7 +537,7 @@ public final class Reparador {
             return false;
         }
         final List<VueloInstancia> subrutas = ruta.getSubrutas();
-        if (ruta.getEstado() == EstadoRuta.FALLIDA || subrutas == null || subrutas.isEmpty()) {
+        if (ruta.getEstado() == EstadoRuta.REPLANIFICADA || subrutas == null || subrutas.isEmpty()) {
             return true;
         }
         final VueloInstancia ultimoVuelo = subrutas.get(subrutas.size() - 1);
@@ -690,7 +690,7 @@ public final class Reparador {
                                                      final long tiempoRecojo) {
         if (maleta == null || maleta.getPedido() == null) {
             ruta.setSubrutas(new ArrayList<>());
-            ruta.setEstado(EstadoRuta.FALLIDA);
+            ruta.setEstado(EstadoRuta.REPLANIFICADA);
             ruta.setDuracion(0.0);
             return;
         }
@@ -703,12 +703,12 @@ public final class Reparador {
                 grafo, minutosConexion, bloqueados);
         if (nuevo == null) {
             ruta.setSubrutas(new ArrayList<>());
-            ruta.setEstado(EstadoRuta.FALLIDA);
+            ruta.setEstado(EstadoRuta.REPLANIFICADA);
             ruta.setDuracion(0.0);
             return;
         }
         ruta.setSubrutas(new ArrayList<>(nuevo));
-        ruta.setEstado(nuevo.isEmpty() ? EstadoRuta.FALLIDA : EstadoRuta.PLANIFICADA);
+        ruta.setEstado(nuevo.isEmpty() ? EstadoRuta.REPLANIFICADA : EstadoRuta.PLANIFICADA);
         ruta.setDuracion(duracionHoras(nuevo));
     }
 

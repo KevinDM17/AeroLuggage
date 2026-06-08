@@ -62,9 +62,7 @@ const routeStatusColor = (s) => {
     case "EN_CURSO":
     case "ACTIVA":
     case "REPLANIFICADA": return "border-warning/40 text-warning";
-    case "CONFIRMADA": return "border-indigo-500/40 text-indigo-300";
     case "COMPLETADA": return "border-success/40 text-success";
-    case "FALLIDA": return "border-danger/40 text-danger";
     default: return "border-slate-700 text-slate-400";
   }
 };

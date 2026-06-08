@@ -286,7 +286,7 @@ class SimulacionTemporalTest {
             final Set<String> idsMaletasEnrutadas = new HashSet<>();
             if (sol != null) {
                 for (final Ruta ruta : sol.getSolucion()) {
-                    if (ruta == null || ruta.getEstado() == EstadoRuta.FALLIDA
+                    if (ruta == null || ruta.getEstado() == EstadoRuta.REPLANIFICADA
                             || ruta.getSubrutas().isEmpty()) {
                         continue;
                     }

@@ -23,7 +23,7 @@ import pe.edu.pucp.aeroluggage.dominio.enums.EstadoRuta;
 
 final class ACOConstructorSoluciones {
     private static final EstadoRuta ESTADO_PLANIFICADA = EstadoRuta.PLANIFICADA;
-    private static final EstadoRuta ESTADO_NO_FACTIBLE = EstadoRuta.FALLIDA;
+    private static final EstadoRuta ESTADO_NO_FACTIBLE = EstadoRuta.REPLANIFICADA;
     private static final EstadoRuta ESTADO_REPLANIFICADA = EstadoRuta.REPLANIFICADA;
     private static final int UNIDAD_MALETA = 1;
     private static final int MAX_ESCALAS_RUTA = 8;

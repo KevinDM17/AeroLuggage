@@ -170,7 +170,7 @@ public class SimulacionInicioQueryService {
                 final boolean rutaValida = ruta.getSubrutas() != null
                         && !ruta.getSubrutas().isEmpty()
                         && ruta.getEstado() != null
-                        && ruta.getEstado() != pe.edu.pucp.aeroluggage.dominio.enums.EstadoRuta.FALLIDA;
+                        && ruta.getEstado() != pe.edu.pucp.aeroluggage.dominio.enums.EstadoRuta.REPLANIFICADA;
                 rutaValidaPorMaleta.putIfAbsent(ruta.getIdMaleta(), rutaValida);
             }
         }
@@ -208,7 +208,7 @@ public class SimulacionInicioQueryService {
                 final boolean rutaValida = ruta.getSubrutas() != null
                         && !ruta.getSubrutas().isEmpty()
                         && ruta.getEstado() != null
-                        && ruta.getEstado() != pe.edu.pucp.aeroluggage.dominio.enums.EstadoRuta.FALLIDA;
+                        && ruta.getEstado() != pe.edu.pucp.aeroluggage.dominio.enums.EstadoRuta.REPLANIFICADA;
                 rutaValidaPorMaleta.putIfAbsent(ruta.getIdMaleta(), rutaValida);
             }
         }

@@ -234,7 +234,7 @@ public final class SimulacionTemporalALNSRunner {
                     if (ruta == null || ruta.getIdMaleta() == null) {
                         continue;
                     }
-                    if (ruta.getEstado() == EstadoRuta.FALLIDA || ruta.getSubrutas().isEmpty()) {
+                    if (ruta.getEstado() == EstadoRuta.REPLANIFICADA || ruta.getSubrutas().isEmpty()) {
                         idsSinRuta.add(ruta.getIdMaleta());
                         continue;
                     }

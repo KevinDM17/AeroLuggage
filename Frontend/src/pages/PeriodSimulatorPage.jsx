@@ -24,7 +24,7 @@ import {
 
 const ENUM_VUELO = ["PROGRAMADO", "CONFIRMADO", "EN_PROGRESO", "FINALIZADO", "CANCELADO"];
 const ENUM_MALETA = ["EN_ALMACEN", "EN_TRANSITO", "ENTREGADA"];
-const ENUM_RUTA = ["PLANIFICADA", "ACTIVA", "COMPLETADA", "FALLIDA", "REPLANIFICADA"];
+const ENUM_RUTA = ["PLANIFICADA", "ACTIVA", "COMPLETADA", "REPLANIFICADA"];
 
 
 
@@ -94,7 +94,6 @@ export default function PeriodSimulatorPage() {
   const [windowSizeMinutes, setWindowSizeMinutes] = useState(120);
   const [windowSpacingMinutes, setWindowSpacingMinutes] = useState(120);
   const startSimMsRef = useRef(null);
-  const lastTickTimingRef = useRef(null);
   const ventanasCargadasRef = useRef(new Set());
 
   const clearSimulationData = () => {
@@ -203,13 +202,24 @@ export default function PeriodSimulatorPage() {
           }
           return [...merged.values()];
         });
-        setSimulationPanelData((prev) => ({
-          ...prev,
-          flights: [...prev.flights, ...adaptedFlights],
-          orders: [...prev.orders, ...(ventanaData.pedidos ?? [])],
-          bags: [...prev.bags, ...(ventanaData.maletas ?? [])],
-          routes: [...prev.routes, ...(ventanaData.rutas ?? [])],
-        }));
+        setSimulationPanelData((prev) => {
+          const flightsIds = new Set(prev.flights.map((f) => f.idVueloInstancia ?? f.id));
+          const newFlights = adaptedFlights.filter((f) => !flightsIds.has(f.idVueloInstancia ?? f.id));
+
+          const bagsIds = new Set(prev.bags.map((b) => b.idMaleta));
+          const newBags = (ventanaData.maletas ?? []).filter((m) => !bagsIds.has(m.idMaleta));
+
+          const routesIds = new Set(prev.routes.map((r) => r.idRuta));
+          const newRoutes = (ventanaData.rutas ?? []).filter((r) => !routesIds.has(r.idRuta));
+
+          return {
+            ...prev,
+            flights: [...prev.flights, ...newFlights],
+            orders: [...prev.orders, ...(ventanaData.pedidos ?? [])],
+            bags: [...prev.bags, ...newBags],
+            routes: [...prev.routes, ...newRoutes],
+          };
+        });
       })();
       return;
     }
@@ -222,8 +232,6 @@ export default function PeriodSimulatorPage() {
     }
 
     setCurrentSimTimeUtc(tick.simTime);
-
-    const perfT0 = performance.now();
 
     const occMap = {};
     if (Array.isArray(tick.aeropuertos)) {
@@ -260,7 +268,7 @@ export default function PeriodSimulatorPage() {
         });
       }
     } catch (e) {
-      console.warn("[TICK] estadosVuelos:", e);
+      // ignore
     }
 
     try {
@@ -270,7 +278,7 @@ export default function PeriodSimulatorPage() {
         );
       }
     } catch (e) {
-      console.warn("[TICK] estadosMaletas:", e);
+      // ignore
     }
 
     try {
@@ -280,7 +288,7 @@ export default function PeriodSimulatorPage() {
         );
       }
     } catch (e) {
-      console.warn("[TICK] estadosRutas:", e);
+      // ignore
     }
 
     const maletaIdsInTick = new Set((tick.estadosMaletas ?? []).map((m) => m.id));
@@ -314,7 +322,11 @@ export default function PeriodSimulatorPage() {
               ...(st ? { status: ENUM_VUELO[st.e], used: f.capacity > 0 ? f.capacity - st.cap : 0 } : {}),
             };
           })
-          .filter((f) => (f.ticksAusente ?? 0) < 2),
+          .filter((f) => {
+            const st = vueloStateMap[f.idVueloInstancia ?? f.id];
+            if (st && (st.e === 3 || st.e === 4)) return false;
+            return (f.ticksAusente ?? 0) < 2;
+          }),
         bags: bagsFiltradas,
         routes: prev.routes
           .map((r) => ({
@@ -326,20 +338,6 @@ export default function PeriodSimulatorPage() {
         orders: prev.orders.filter((o) => pedidosActivos.has(o.id ?? o.idPedido)),
       };
     });
-
-    const perfT1 = performance.now();
-    const perfElapsed = perfT1 - perfT0;
-    const now = Date.now();
-    const gap = lastTickTimingRef.current ? now - lastTickTimingRef.current.timestamp : 0;
-    if (tick.tick === 1 || tick.tick % 5 === 0 || perfElapsed > 500) {
-      console.log("[TICK-PERF] tick=%d, processMs=%d, gapMs=%d, estadosVuelos=%d, estadosMaletas=%d, estadosRutas=%d, aeropuertos=%d",
-          tick.tick, Math.round(perfElapsed), gap,
-          tick.estadosVuelos?.length ?? 0,
-          tick.estadosMaletas?.length ?? 0,
-          tick.estadosRutas?.length ?? 0,
-          tick.aeropuertos?.length ?? 0);
-    }
-    lastTickTimingRef.current = { tick: tick.tick, timestamp: now };
 
     return;
   }, [tick]);

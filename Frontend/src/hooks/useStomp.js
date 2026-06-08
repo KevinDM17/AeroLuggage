@@ -60,7 +60,6 @@ export function useStompSubscribe(topic, { enabled = true } = {}) {
 export function useStompPublish() {
   return useCallback(async (destination, body) => {
     if (!isStompEnabled()) {
-      console.warn("[STOMP] publish ignorado en modo mock:", destination);
       return;
     }
     const client = await whenConnected();

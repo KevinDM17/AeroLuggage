@@ -134,7 +134,7 @@ public final class OperadorCruce {
 
     private static boolean esRutaValida(final Ruta ruta) {
         return ruta.getEstado() != null
-                && ruta.getEstado() != EstadoRuta.FALLIDA
+                && ruta.getEstado() != EstadoRuta.REPLANIFICADA
                 && ruta.getSubrutas() != null
                 && !ruta.getSubrutas().isEmpty();
     }

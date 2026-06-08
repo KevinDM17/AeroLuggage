@@ -7,6 +7,7 @@ import java.util.List;
 import java.util.Map;
 import java.util.NavigableMap;
 
+import lombok.extern.slf4j.Slf4j;
 import pe.edu.pucp.aeroluggage.algoritmo.InstanciaProblema;
 import pe.edu.pucp.aeroluggage.algoritmo.Solucion;
 import pe.edu.pucp.aeroluggage.dominio.entidades.Aeropuerto;
@@ -15,6 +16,8 @@ import pe.edu.pucp.aeroluggage.dominio.entidades.Ruta;
 import pe.edu.pucp.aeroluggage.dominio.entidades.VueloInstancia;
 import pe.edu.pucp.aeroluggage.dominio.enums.EstadoRuta;
 
+@Slf4j
+
 final class ALNSFitness {
     private ALNSFitness() {
         throw new UnsupportedOperationException("This class should never be instantiated");
@@ -22,6 +25,8 @@ final class ALNSFitness {
 
     static Resultado evaluar(final ALNSEstado estado, final ParametrosALNS parametros) {
         final InstanciaProblema instancia = estado.getInstancia();
+
+        final long t0 = System.nanoTime();
         final List<Maleta> maletas = estado.getMaletasNoComprometidas();
         final int totalMaletas = Math.max(1, maletas.size());
         final Map<String, Maleta> maletasPorId = estado.getMaletasPorId();
@@ -36,8 +41,7 @@ final class ALNSFitness {
                 continue;
             }
             final Ruta ruta = estado.obtenerRuta(maleta.getIdMaleta());
-            if (ruta == null || ruta.getSubrutas() == null || ruta.getSubrutas().isEmpty()
-                    || ruta.getEstado() == EstadoRuta.FALLIDA) {
+            if (ruta == null || ruta.getSubrutas() == null || ruta.getSubrutas().isEmpty()) {
                 noEnrutadas++;
                 continue;
             }
@@ -55,6 +59,10 @@ final class ALNSFitness {
                 holgurasContadas++;
             }
         }
+        final long tMaletas = System.nanoTime();
+
+        final LocalDateTime fechaEval = instancia.getFechaEvaluacion();
+        final LocalDateTime corteVuelos = fechaEval != null ? fechaEval.plusDays(2) : null;
 
         double overflowVuelos = 0.0D;
         double ocupacionPromedioVuelos = 0.0D;
@@ -62,6 +70,14 @@ final class ALNSFitness {
         for (final VueloInstancia vuelo : instancia.getVueloInstancias()) {
             if (vuelo == null || vuelo.getIdVueloInstancia() == null || vuelo.getCapacidadDisponible() < 0) {
                 continue;
+            }
+            if (vuelo.getFechaSalida() != null) {
+                if (corteVuelos != null && vuelo.getFechaSalida().isAfter(corteVuelos)) {
+                    continue;
+                }
+                if (fechaEval != null && vuelo.getFechaSalida().isBefore(fechaEval)) {
+                    continue;
+                }
             }
             final int uso = estado.getUsoPorVuelo().getOrDefault(vuelo.getIdVueloInstancia(), 0);
             final int capacidadBase = Math.max(0, vuelo.getCapacidadDisponible());
@@ -78,6 +94,7 @@ final class ALNSFitness {
             vuelosContados++;
         }
         ocupacionPromedioVuelos = vuelosContados > 0 ? ocupacionPromedioVuelos / vuelosContados : 0.0D;
+        final long tVuelos = System.nanoTime();
 
         double overflowAeropuertos = 0.0D;
         double ocupacionPromedioAeropuertos = 0.0D;
@@ -98,6 +115,15 @@ final class ALNSFitness {
         ocupacionPromedioAeropuertos = aeropuertosContados > 0
                 ? ocupacionPromedioAeropuertos / aeropuertosContados
                 : 0.0D;
+        final long tAeropuertos = System.nanoTime();
+
+        if (log.isTraceEnabled()) {
+            log.trace("[ALNS-EVAL] maletas={}ms vuelos={}ms aeropuertos={}ms total={}ms",
+                    (tMaletas - t0) / 1_000_000L,
+                    (tVuelos - tMaletas) / 1_000_000L,
+                    (tAeropuertos - tVuelos) / 1_000_000L,
+                    (tAeropuertos - t0) / 1_000_000L);
+        }
 
         final double proporcionNoEnrutadas = noEnrutadas / (double) totalMaletas;
         final double proporcionFueraDePlazo = fueraDePlazo / (double) totalMaletas;

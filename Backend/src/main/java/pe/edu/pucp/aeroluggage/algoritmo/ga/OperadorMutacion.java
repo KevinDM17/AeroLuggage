@@ -90,14 +90,14 @@ public final class OperadorMutacion {
         if (nuevoCamino == null) {
             return;
         }
-        final boolean mejoraCobertura = ruta.getEstado() == EstadoRuta.FALLIDA
+        final boolean mejoraCobertura = ruta.getEstado() == EstadoRuta.REPLANIFICADA
                 || ruta.getSubrutas() == null
                 || ruta.getSubrutas().isEmpty();
         if (!mejoraCobertura && ruta.getDuracion() > 0.0 && duracionHoras(nuevoCamino) >= ruta.getDuracion()) {
             return;
         }
         ruta.setSubrutas(new ArrayList<>(nuevoCamino));
-        ruta.setEstado(nuevoCamino.isEmpty() ? EstadoRuta.FALLIDA : EstadoRuta.PLANIFICADA);
+        ruta.setEstado(nuevoCamino.isEmpty() ? EstadoRuta.REPLANIFICADA : EstadoRuta.PLANIFICADA);
         ruta.setDuracion(duracionHoras(nuevoCamino));
     }
 
@@ -174,11 +174,11 @@ public final class OperadorMutacion {
         if (!terminaEnDestino(nuevo, pedido)) {
             return;
         }
-        if (ruta.getDuracion() > 0.0 && duracionHoras(nuevo) >= ruta.getDuracion() && ruta.getEstado() != EstadoRuta.FALLIDA) {
+        if (ruta.getDuracion() > 0.0 && duracionHoras(nuevo) >= ruta.getDuracion() && ruta.getEstado() != EstadoRuta.REPLANIFICADA) {
             return;
         }
         ruta.setSubrutas(nuevo);
-        ruta.setEstado(nuevo.isEmpty() ? EstadoRuta.FALLIDA : EstadoRuta.PLANIFICADA);
+        ruta.setEstado(nuevo.isEmpty() ? EstadoRuta.REPLANIFICADA : EstadoRuta.PLANIFICADA);
         ruta.setDuracion(duracionHoras(nuevo));
     }
 
@@ -193,7 +193,7 @@ public final class OperadorMutacion {
             if (ruta == null) {
                 continue;
             }
-            final boolean sinCobertura = ruta.getEstado() == EstadoRuta.FALLIDA
+            final boolean sinCobertura = ruta.getEstado() == EstadoRuta.REPLANIFICADA
                     || ruta.getSubrutas() == null
                     || ruta.getSubrutas().isEmpty();
             if (sinCobertura) {
@@ -237,7 +237,7 @@ public final class OperadorMutacion {
             if (ruta == null) {
                 continue;
             }
-            final boolean fallida = ruta.getEstado() == EstadoRuta.FALLIDA
+            final boolean fallida = ruta.getEstado() == EstadoRuta.REPLANIFICADA
                     || ruta.getSubrutas() == null
                     || ruta.getSubrutas().isEmpty();
             if (fallida) {

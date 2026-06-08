@@ -48,9 +48,7 @@ export function getStompClient() {
       notifyWaiters();
     },
     onWebSocketClose: () => { _connected = false; },
-    onStompError: (frame) => {
-      console.error("[STOMP] error", frame.headers["message"], frame.body);
-    },
+    onStompError: () => {},
   });
   _client.activate();
   return _client;

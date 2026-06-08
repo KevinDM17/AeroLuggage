@@ -1,6 +1,7 @@
 package pe.edu.pucp.aeroluggage.dominio.entidades;
 
 import java.time.LocalDateTime;
+import java.util.Map;
 
 import pe.edu.pucp.aeroluggage.dominio.enums.Continente;
 import pe.edu.pucp.aeroluggage.dominio.enums.EstadoPedido;
@@ -55,6 +56,20 @@ public class Pedido {
         this.fechaRegistro = fechaRegistro;
         this.cantidadMaletas = cantidadMaletas;
         this.estado = estado;
+    }
+
+    public Pedido(final Pedido other, final Map<String, Aeropuerto> aeropuertoIndex) {
+        this.idPedido = other.idPedido;
+        this.aeropuertoOrigen = other.aeropuertoOrigen != null && other.aeropuertoOrigen.getIdAeropuerto() != null
+                ? aeropuertoIndex.get(other.aeropuertoOrigen.getIdAeropuerto())
+                : null;
+        this.aeropuertoDestino = other.aeropuertoDestino != null && other.aeropuertoDestino.getIdAeropuerto() != null
+                ? aeropuertoIndex.get(other.aeropuertoDestino.getIdAeropuerto())
+                : null;
+        this.fechaHoraPlazo = other.fechaHoraPlazo;
+        this.fechaRegistro = other.fechaRegistro;
+        this.cantidadMaletas = other.cantidadMaletas;
+        this.estado = other.estado;
     }
 
     public String getIdPedido() {

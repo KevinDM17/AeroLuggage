@@ -32,6 +32,7 @@ public class SimulacionPeriodoService {
             final LocalDateTime cutoff = ventana.getStartUtc()
                     .minusMinutes(sesion.getWindowSpacingMinutes() * simulacionParams.getRetencionVentanas());
             sesion.podarEntidadesAnteriores(cutoff);
+            sesion.podarEventosPasados(cutoff);
         }
         snapshotService.recalcularEstadoSesion(sesion);
 
@@ -43,7 +44,6 @@ public class SimulacionPeriodoService {
         final int vuelosActivos = snapshotService.contarVuelosActivos(sesion);
         final int capacidadLibrePct = snapshotService.calcularCapacidadLibrePct(sesion);
 
-        final long t0 = System.nanoTime();
         final SimulacionTickLigeroDTO dto = SimulacionTickLigeroDTO.builder()
                 .withType("TICK")
                 .withTick(tick)
@@ -58,12 +58,11 @@ public class SimulacionPeriodoService {
                 .withCapacidadLibrePct(capacidadLibrePct)
                 .withEstadosMaletas(snapshotService.mapearEstadosMaletas(sesion.getMaletas(), simTimeUtc))
                 .withEstadosRutas(snapshotService.mapearEstadosRutas(sesion.getRutas(), simTimeUtc, sesion.getMaletasPorId()))
-                .withEstadosVuelos(snapshotService.mapearEstadosVuelos(sesion.getVuelosInstancia()))
+                .withEstadosVuelos(snapshotService.mapearEstadosVuelos(sesion.getVuelosInstancia(), simTimeUtc))
                 .withAeropuertos(snapshotService.mapearOcupacionAeropuertos(sesion.getAeropuertos()))
                 .build();
-        final long buildMs = (System.nanoTime() - t0) / 1_000_000L;
 
-        if (tick == 1 || tick % 5 == 0) {
+        if (tick == 1 || tick % 10 == 0) {
             int almacen = 0, transito = 0, entregada = 0;
             for (final pe.edu.pucp.aeroluggage.dto.simulacion.ws.EstadoMaletaDTO em : dto.getEstadosMaletas()) {
                 switch (em.getE()) {
@@ -72,22 +71,32 @@ public class SimulacionPeriodoService {
                     case 2 -> entregada++;
                 }
             }
-            int planificadas = 0, activas = 0, completadas = 0, fallidas = 0;
+            int planificadas = 0, activas = 0, completadas = 0, replanificadas = 0;
             for (final pe.edu.pucp.aeroluggage.dto.simulacion.ws.EstadoRutaDTO er : dto.getEstadosRutas()) {
                 switch (er.getE()) {
                     case 0 -> planificadas++;
                     case 1 -> activas++;
                     case 2 -> completadas++;
-                    case 3 -> fallidas++;
+                    case 3 -> replanificadas++;
                 }
             }
-            log.info("[TICK] tick={} | simTime={} | vuelos={} | maletas={} [ALMACEN={} TRANSITO={} ENTREGADA={}] | rutas={} [PLANIFICADAS={} ACTIVAS={} COMPLETADAS={} FALLIDAS={}] | aeropuertos={} | build={}ms",
+            int programados = 0, confirmados = 0, enProgreso = 0, finalizados = 0, cancelados = 0;
+            for (final pe.edu.pucp.aeroluggage.dto.simulacion.ws.EstadoVueloDTO ev : dto.getEstadosVuelos()) {
+                switch (ev.getE()) {
+                    case 0 -> programados++;
+                    case 1 -> confirmados++;
+                    case 2 -> enProgreso++;
+                    case 3 -> finalizados++;
+                    case 4 -> cancelados++;
+                }
+            }
+            log.info("[TICK] tick={} | simTime={} | vuelos={} [PG={} CF={} EP={} FN={} CN={}] | maletas={} [AL={} TR={} EN={}] | rutas={} [PL={} AC={} CO={} RP={}] | aeropuertos={} | sinRuta={}",
                     tick, simTimeUtc,
-                    dto.getEstadosVuelos().size(),
+                    dto.getEstadosVuelos().size(), programados, confirmados, enProgreso, finalizados, cancelados,
                     dto.getEstadosMaletas().size(), almacen, transito, entregada,
-                    dto.getEstadosRutas().size(), planificadas, activas, completadas, fallidas,
+                    dto.getEstadosRutas().size(), planificadas, activas, completadas, replanificadas,
                     dto.getAeropuertos().size(),
-                    buildMs);
+                    sinRuta);
         }
 
         return dto;

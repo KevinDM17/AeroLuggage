@@ -12,11 +12,13 @@ public class Ruta {
     private String idMaleta;
     private double plazoMaximoDias;
     private double duracion;
-    private List<VueloInstancia> subrutas;
+    private List<String> subrutaIds;
     private EstadoRuta estado;
+    private List<VueloInstancia> subrutasCache;
 
     public Ruta() {
-        this.subrutas = new ArrayList<>();
+        this.subrutaIds = new ArrayList<>();
+        this.subrutasCache = new ArrayList<>();
     }
 
     public Ruta(final String idRuta, final String idMaleta, final double plazoMaximoDias,
@@ -32,6 +34,16 @@ public class Ruta {
     public Ruta(final String idRuta, final String idMaleta, final double plazoMaximoDias,
                 final double duracion, final List<VueloInstancia> subrutas, final String estado) {
         this(idRuta, idMaleta, plazoMaximoDias, duracion, subrutas, convertirEstado(estado));
+    }
+
+    public Ruta(final Ruta other) {
+        this.idRuta = other.idRuta;
+        this.idMaleta = other.idMaleta;
+        this.plazoMaximoDias = other.plazoMaximoDias;
+        this.duracion = other.duracion;
+        this.subrutaIds = other.subrutaIds == null ? null : new ArrayList<>(other.subrutaIds);
+        this.estado = other.estado;
+        this.subrutasCache = null;
     }
 
     public String getIdRuta() {
@@ -67,11 +79,25 @@ public class Ruta {
     }
 
     public List<VueloInstancia> getSubrutas() {
-        return subrutas;
+        return subrutasCache == null ? List.of() : subrutasCache;
     }
 
     public void setSubrutas(final List<VueloInstancia> subrutas) {
-        this.subrutas = subrutas == null ? new ArrayList<>() : new ArrayList<>(subrutas);
+        if (subrutas == null) {
+            this.subrutaIds = new ArrayList<>();
+            this.subrutasCache = new ArrayList<>();
+            return;
+        }
+        final ArrayList<String> ids = new ArrayList<>(subrutas.size());
+        for (final VueloInstancia v : subrutas) {
+            ids.add(v == null ? null : v.getIdVueloInstancia());
+        }
+        this.subrutaIds = ids;
+        this.subrutasCache = new ArrayList<>(subrutas);
+    }
+
+    public List<String> getSubrutaIds() {
+        return subrutaIds == null ? List.of() : new ArrayList<>(subrutaIds);
     }
 
     public EstadoRuta getEstado() {
@@ -87,6 +113,7 @@ public class Ruta {
     }
 
     public double calcularPlazo() {
+        final List<VueloInstancia> subrutas = getSubrutas();
         if (subrutas == null || subrutas.isEmpty()) {
             duracion = 0D;
             return duracion;
@@ -120,9 +147,10 @@ public class Ruta {
     }
 
     public void replanificar() {
+        final List<VueloInstancia> subrutas = getSubrutas();
         if (subrutas == null || subrutas.isEmpty()) {
             duracion = 0D;
-            estado = EstadoRuta.FALLIDA;
+            estado = EstadoRuta.REPLANIFICADA;
             return;
         }
         calcularPlazo();
@@ -135,7 +163,7 @@ public class Ruta {
         }
         final String normalizado = estado.trim();
         if ("NO_FACTIBLE".equals(normalizado) || "PENDIENTE_REPLANIFICACION".equals(normalizado)) {
-            return EstadoRuta.FALLIDA;
+            return EstadoRuta.REPLANIFICADA;
         }
         try {
             return EstadoRuta.valueOf(normalizado);

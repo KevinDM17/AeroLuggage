@@ -27,16 +27,16 @@ public final class Replanificador {
     public static final class ResultadoReplanificacion {
         private final int rutasAfectadas;
         private final int rutasRecuperadas;
-        private final int rutasFallidas;
-        private final List<String> idsMaletasFallidas;
+        private final int rutasReplanificadas;
+        private final List<String> idsMaletasReplanificadas;
 
         public ResultadoReplanificacion(final int rutasAfectadas, final int rutasRecuperadas,
-                                        final int rutasFallidas, final List<String> idsMaletasFallidas) {
+                                        final int rutasReplanificadas, final List<String> idsMaletasReplanificadas) {
             this.rutasAfectadas = rutasAfectadas;
             this.rutasRecuperadas = rutasRecuperadas;
-            this.rutasFallidas = rutasFallidas;
-            this.idsMaletasFallidas = idsMaletasFallidas != null
-                    ? Collections.unmodifiableList(idsMaletasFallidas)
+            this.rutasReplanificadas = rutasReplanificadas;
+            this.idsMaletasReplanificadas = idsMaletasReplanificadas != null
+                    ? Collections.unmodifiableList(idsMaletasReplanificadas)
                     : Collections.emptyList();
         }
 
@@ -48,19 +48,19 @@ public final class Replanificador {
             return rutasRecuperadas;
         }
 
-        public int getRutasFallidas() {
-            return rutasFallidas;
+        public int getRutasReplanificadas() {
+            return rutasReplanificadas;
         }
 
-        public List<String> getIdsMaletasFallidas() {
-            return idsMaletasFallidas;
+        public List<String> getIdsMaletasReplanificadas() {
+            return idsMaletasReplanificadas;
         }
 
         @Override
         public String toString() {
             return "ResultadoReplanificacion{afectadas=" + rutasAfectadas
                     + ", recuperadas=" + rutasRecuperadas
-                    + ", fallidas=" + rutasFallidas + '}';
+                    + ", replanificadas=" + rutasReplanificadas + '}';
         }
     }
 
@@ -87,8 +87,8 @@ public final class Replanificador {
 
         int afectadas = 0;
         int recuperadas = 0;
-        int fallidas = 0;
-        final List<String> idsFallidas = new ArrayList<>();
+        int replanificadas = 0;
+        final List<String> idsReplanificadas = new ArrayList<>();
 
         for (final Ruta ruta : solucion.getSolucion()) {
             if (ruta == null || ruta.getSubrutas() == null || ruta.getSubrutas().isEmpty()) {
@@ -109,13 +109,13 @@ public final class Replanificador {
             if (exito) {
                 recuperadas++;
             } else {
-                fallidas++;
-                idsFallidas.add(ruta.getIdMaleta());
+                replanificadas++;
+                idsReplanificadas.add(ruta.getIdMaleta());
             }
         }
 
         solucion.calcularMetricas();
-        return new ResultadoReplanificacion(afectadas, recuperadas, fallidas, idsFallidas);
+        return new ResultadoReplanificacion(afectadas, recuperadas, replanificadas, idsReplanificadas);
     }
 
     private static boolean replanificarRuta(final Ruta ruta, final int idxCancelado,
@@ -201,7 +201,7 @@ public final class Replanificador {
         nuevoCamino.addAll(prefijo);
         nuevoCamino.addAll(suffix);
         ruta.setSubrutas(nuevoCamino);
-        ruta.setEstado(nuevoCamino.isEmpty() ? EstadoRuta.FALLIDA : estado);
+        ruta.setEstado(nuevoCamino.isEmpty() ? EstadoRuta.REPLANIFICADA : estado);
         ruta.setDuracion(duracionHoras(nuevoCamino));
     }
 
@@ -211,7 +211,7 @@ public final class Replanificador {
     }
 
     private static void marcarFallida(final Ruta ruta) {
-        ruta.setEstado(EstadoRuta.FALLIDA);
+        ruta.setEstado(EstadoRuta.REPLANIFICADA);
     }
 
     private static Map<String, Maleta> indexarMaletas(final InstanciaProblema instancia) {

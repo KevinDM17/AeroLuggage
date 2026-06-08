@@ -7,7 +7,9 @@ import java.util.HashMap;
 import java.util.List;
 import java.util.Map;
 import java.util.NavigableMap;
+import java.util.Objects;
 import java.util.TreeMap;
+import java.util.stream.Collectors;
 
 import pe.edu.pucp.aeroluggage.algoritmo.common.GrafoTiempoExpandido;
 import pe.edu.pucp.aeroluggage.dominio.entidades.Aeropuerto;
@@ -74,6 +76,10 @@ public class InstanciaProblema {
 
     public void construirGrafo() {
         this.grafo = GrafoTiempoExpandido.construir(vuelosInstancia);
+    }
+
+    public Map<String, VueloInstancia> getVueloIndex() {
+        return getVuelosPorId();
     }
 
     public Map<String, Aeropuerto> indexarAeropuertosPorIcao() {
@@ -305,6 +311,87 @@ public class InstanciaProblema {
             }
         }
         return null;
+    }
+
+    public InstanciaProblema deepCopy() {
+        final Map<String, Aeropuerto> aeroIdx = new HashMap<>();
+        final ArrayList<Aeropuerto> aeroCopias = new ArrayList<>(this.aeropuertos.size());
+        for (final Aeropuerto a : this.aeropuertos) {
+            if (a == null) {
+                continue;
+            }
+            final Aeropuerto copia = new Aeropuerto(
+                    a.getIdAeropuerto(),
+                    a.getCiudad(),
+                    a.getCapacidadAlmacen(),
+                    a.getMaletasActuales(),
+                    a.getLongitud(),
+                    a.getLatitud(),
+                    a.getHusoGMT()
+            );
+            aeroIdx.put(copia.getIdAeropuerto(), copia);
+            aeroCopias.add(copia);
+        }
+
+        final Map<String, VueloInstancia> viIdx = new HashMap<>();
+        final ArrayList<VueloInstancia> viCopias = new ArrayList<>(this.vuelosInstancia.size());
+        for (final VueloInstancia v : this.vuelosInstancia) {
+            if (v == null) {
+                continue;
+            }
+            final VueloInstancia copia = new VueloInstancia(v, aeroIdx);
+            viIdx.put(copia.getIdVueloInstancia(), copia);
+            viCopias.add(copia);
+        }
+
+        final ArrayList<Maleta> maletasCopias = new ArrayList<>(this.maletas.size());
+        for (final Maleta m : this.maletas) {
+            if (m == null) {
+                continue;
+            }
+            maletasCopias.add(new Maleta(m, aeroIdx));
+        }
+
+        final ArrayList<Ruta> rutasCopias = new ArrayList<>(this.rutasComprometidas.size());
+        for (final Ruta r : this.rutasComprometidas) {
+            if (r == null) {
+                continue;
+            }
+            final List<VueloInstancia> subrutasResueltas = r.getSubrutaIds().stream()
+                    .map(viIdx::get)
+                    .filter(Objects::nonNull)
+                    .collect(Collectors.toList());
+            final Ruta copiaRuta = new Ruta(
+                    r.getIdRuta(), r.getIdMaleta(),
+                    r.getPlazoMaximoDias(), r.getDuracion(),
+                    subrutasResueltas, r.getEstado());
+            rutasCopias.add(copiaRuta);
+        }
+
+        final InstanciaProblema copia = new InstanciaProblema();
+        copia.idInstanciaProblema = this.idInstanciaProblema;
+        copia.aeropuertos = aeroCopias;
+        copia.vuelosProgramados = new ArrayList<>(this.vuelosProgramados);
+        copia.vuelosInstancia = viCopias;
+        copia.setMaletas(maletasCopias);
+        copia.rutasComprometidas = rutasCopias;
+        copia.ocupacionBaseAeropuerto = new HashMap<>(this.ocupacionBaseAeropuerto);
+
+        final Map<String, NavigableMap<LocalDateTime, Integer>> eventosCopia = new HashMap<>();
+        if (this.eventosBaseAeropuerto != null) {
+            for (final Map.Entry<String, NavigableMap<LocalDateTime, Integer>> entry : this.eventosBaseAeropuerto.entrySet()) {
+                eventosCopia.put(entry.getKey(), entry.getValue() == null ? new TreeMap<>() : new TreeMap<>(entry.getValue()));
+            }
+        }
+        copia.eventosBaseAeropuerto = eventosCopia;
+
+        copia.fechaEvaluacion = this.fechaEvaluacion;
+        copia.minutosConexion = this.minutosConexion;
+        copia.tiempoRecojo = this.tiempoRecojo;
+        copia.indiceAeropuertos = null;
+        copia.indiceMaletas = null;
+        copia.indiceVuelos = null;
+        return copia;
     }
 
     @Override

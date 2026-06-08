@@ -267,12 +267,12 @@ public final class GAConstructorTemporal {
         ruta.setPlazoMaximoDias(maleta.getPedido().getPlazoDias());
         if (vuelos == null || vuelos.isEmpty()) {
             ruta.setSubrutas(new ArrayList<>());
-            ruta.setEstado(EstadoRuta.FALLIDA);
+            ruta.setEstado(EstadoRuta.REPLANIFICADA);
             ruta.setDuracion(0.0);
             return ruta;
         }
         ruta.setSubrutas(new ArrayList<>(vuelos));
-        ruta.setEstado(terminaEnDestino(vuelos, maleta.getPedido()) ? EstadoRuta.PLANIFICADA : EstadoRuta.FALLIDA);
+        ruta.setEstado(terminaEnDestino(vuelos, maleta.getPedido()) ? EstadoRuta.PLANIFICADA : EstadoRuta.REPLANIFICADA);
         ruta.setDuracion(duracionHoras(vuelos));
         return ruta;
     }
@@ -571,7 +571,7 @@ public final class GAConstructorTemporal {
                 continue;
             }
             final String claveGrupo = claveGrupo(maleta);
-            if (ruta.getEstado() == EstadoRuta.FALLIDA || ruta.getSubrutas() == null || ruta.getSubrutas().isEmpty()) {
+            if (ruta.getEstado() == EstadoRuta.REPLANIFICADA || ruta.getSubrutas() == null || ruta.getSubrutas().isEmpty()) {
                 gruposConflictivos.add(claveGrupo);
                 continue;
             }

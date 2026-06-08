@@ -56,7 +56,7 @@ public final class CalculadorSemaforo {
     }
 
     public static Semaforo clasificarRuta(final Ruta ruta) {
-        if (ruta == null || ruta.getEstado() == EstadoRuta.FALLIDA) {
+        if (ruta == null || ruta.getSubrutas() == null || ruta.getSubrutas().isEmpty()) {
             return Semaforo.ROJO;
         }
         final double horasPlazo = ruta.getPlazoMaximoDias() * 24.0;

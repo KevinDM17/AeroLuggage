@@ -69,8 +69,7 @@ final class ALNSEstado {
             }
             if (sol != null) {
                 for (final Ruta r : sol) {
-                    if (r != null && r.getIdMaleta() != null && !idsMaletasComprometidas.contains(r.getIdMaleta())
-                            && r.getEstado() != EstadoRuta.FALLIDA) {
+                    if (r != null && r.getIdMaleta() != null && !idsMaletasComprometidas.contains(r.getIdMaleta())) {
                         final Integer idx = indicePorMaleta.get(r.getIdMaleta());
                         if (idx != null) {
                             fijo.set(idx, r);
@@ -325,15 +324,6 @@ final class ALNSEstado {
             return true;
         }
         return solucion.stream().noneMatch(Objects::nonNull);
-    }
-
-    Ruta crearRutaFallida(final Maleta maleta, final int secuencia) {
-        final Ruta ruta = ALNSUtil.crearRuta(ALNSUtil.siguienteIdRuta(secuencia), maleta, List.of(), EstadoRuta.FALLIDA);
-        if (ruta == null) {
-            return null;
-        }
-        ruta.setDuracion(0.0D);
-        return ruta;
     }
 
     void registrarFalloMaleta(final String idMaleta, final String razon) {

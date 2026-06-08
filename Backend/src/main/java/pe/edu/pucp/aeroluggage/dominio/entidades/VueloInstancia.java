@@ -2,6 +2,7 @@ package pe.edu.pucp.aeroluggage.dominio.entidades;
 
 import java.time.LocalDate;
 import java.time.LocalDateTime;
+import java.util.Map;
 
 import pe.edu.pucp.aeroluggage.dominio.enums.EstadoVuelo;
 
@@ -75,6 +76,24 @@ public class VueloInstancia {
         this.aeropuertoOrigen = aeropuertoOrigen;
         this.aeropuertoDestino = aeropuertoDestino;
         this.estado = estado;
+    }
+
+    public VueloInstancia(final VueloInstancia other, final Map<String, Aeropuerto> aeropuertoIndex) {
+        this.idVueloInstancia = other.idVueloInstancia;
+        this.codigo = other.codigo;
+        this.vueloProgramado = other.vueloProgramado;
+        this.fechaOperacion = other.fechaOperacion;
+        this.fechaSalida = other.fechaSalida;
+        this.fechaLlegada = other.fechaLlegada;
+        this.capacidadMaxima = other.capacidadMaxima;
+        this.capacidadDisponible = other.capacidadDisponible;
+        this.aeropuertoOrigen = other.aeropuertoOrigen != null && other.aeropuertoOrigen.getIdAeropuerto() != null
+                ? aeropuertoIndex.get(other.aeropuertoOrigen.getIdAeropuerto())
+                : null;
+        this.aeropuertoDestino = other.aeropuertoDestino != null && other.aeropuertoDestino.getIdAeropuerto() != null
+                ? aeropuertoIndex.get(other.aeropuertoDestino.getIdAeropuerto())
+                : null;
+        this.estado = other.estado;
     }
 
     public String getIdVueloInstancia() {

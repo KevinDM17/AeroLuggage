@@ -11,7 +11,7 @@ import { mockListRutas } from "./mock";
  *   idMaleta: string,
  *   plazoMaximoDias: number,
  *   duracion: number,                 // dias
- *   estado: "PLANIFICADA" | "EN_CURSO" | "COMPLETADA" | "FALLIDA",
+ *   estado: "PLANIFICADA" | "ACTIVA" | "COMPLETADA" | "REPLANIFICADA",
  *   vuelos: Array<{
  *     idVueloInstancia: string,
  *     codigo: string,
