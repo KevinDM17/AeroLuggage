@@ -12,4 +12,5 @@ public class SimulacionIniciarRequest {
     private String fechaInicio;
     private int totalDias;
     private String horaInicio;
+    private Integer husoGMT;
 }

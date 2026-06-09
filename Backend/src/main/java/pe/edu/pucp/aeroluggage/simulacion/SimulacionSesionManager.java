@@ -99,7 +99,8 @@ public class SimulacionSesionManager {
                 params.getTotalDias(),
                 simulacionParams.getDuracionDiaSimuladoMs(),
                 simulacionParams.getVentana().getTamanioMinutos(),
-                simulacionParams.getVentana().getEspaciadoMinutos()
+                simulacionParams.getVentana().getEspaciadoMinutos(),
+                params.getHusoGMT()
         );
 
         sesionesActivas.put(sessionId, sesion);

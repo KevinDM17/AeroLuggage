@@ -82,7 +82,7 @@ public class SimulacionSesion {
     private final ConcurrentHashMap<String, List<Pedido>> pedidosPorVentana = new ConcurrentHashMap<>();
     private final ConcurrentHashMap<String, List<VueloInstancia>> vuelosPorVentana = new ConcurrentHashMap<>();
     private final AtomicLong ultimoIndiceVuelosEnviado = new AtomicLong(0);
-    private final Set<LocalDate> fechasVuelosGeneradas = ConcurrentHashMap.newKeySet();
+    private final Set<String> vuelosGenerados = ConcurrentHashMap.newKeySet();
     private volatile int umbralConfirmacionMinutos;
 
     // ====== MAPA DE EVENTOS INCREMENTAL ======
@@ -658,13 +658,27 @@ public class SimulacionSesion {
             final long duracionDiaSimuladoMs,
             final int windowSizeMinutes,
             final int windowSpacingMinutes) {
+        this(sessionId, fechaInicio, horaInicio, totalDias,
+                duracionDiaSimuladoMs, windowSizeMinutes, windowSpacingMinutes, 0);
+    }
+
+    public SimulacionSesion(
+            final String sessionId,
+            final LocalDate fechaInicio,
+            final LocalTime horaInicio,
+            final int totalDias,
+            final long duracionDiaSimuladoMs,
+            final int windowSizeMinutes,
+            final int windowSpacingMinutes,
+            final Integer husoGMT) {
         this.sessionId = sessionId;
         this.fechaInicio = fechaInicio;
         this.totalDias = totalDias;
         this.duracionDiaSimuladoMs = Math.max(1L, duracionDiaSimuladoMs);
         this.windowSizeMinutes = Math.max(1, windowSizeMinutes);
         this.windowSpacingMinutes = Math.max(1, windowSpacingMinutes);
-        this.fechaInicioUtc = LocalDateTime.of(fechaInicio, horaInicio);
+        final int offset = husoGMT != null ? husoGMT : 0;
+        this.fechaInicioUtc = LocalDateTime.of(fechaInicio, horaInicio).minusHours(offset);
         this.fechaFinUtc = fechaInicioUtc.plusDays(Math.max(0L, totalDias));
         this.startedAtRealMs = System.currentTimeMillis();
         this.currentSimTimeUtc = new AtomicReference<>(fechaInicioUtc);
@@ -689,7 +703,7 @@ public class SimulacionSesion {
         this.maletasPorVentana.clear();
         this.pedidosPorVentana.clear();
         this.vuelosPorVentana.clear();
-        this.fechasVuelosGeneradas.clear();
+        this.vuelosGenerados.clear();
         this.eventosSimulacion = null;
         this.ultimoTiempoSim = null;
         this.tareaScheduled = null;
@@ -1076,7 +1090,7 @@ public class SimulacionSesion {
         this.pedidosPorVentana.clear();
         this.vuelosPorVentana.clear();
         this.ultimoIndiceVuelosEnviado.set(0);
-        this.fechasVuelosGeneradas.clear();
+        this.vuelosGenerados.clear();
         if (maletas != null) {
             for (final Maleta m : maletas) {
                 if (m != null && m.getIdMaleta() != null) {
@@ -1177,67 +1191,70 @@ public class SimulacionSesion {
     }
 
     public synchronized void asegurarVuelosParaBanda(final long desdeBucket, final long hastaBucket) {
-        final Set<LocalDate> fechasPendientes = new HashSet<>();
-        for (long b = desdeBucket; b <= hastaBucket; b++) {
-            if (vuelosPorVentana.containsKey("W" + String.format("%04d", b))) {
-                continue;
-            }
-            final LocalDateTime ventanaStart = fechaInicioUtc.plusMinutes((b - 1L) * windowSpacingMinutes);
-            final LocalDate fecha = ventanaStart.toLocalDate();
-            if (!fecha.isAfter(fechaFinVuelos()) && fechasVuelosGeneradas.add(fecha)) {
-                fechasPendientes.add(fecha);
-            }
-        }
-        if (fechasPendientes.isEmpty()) {
-            return;
-        }
+        final long rangoBuckets = hastaBucket - desdeBucket + 1L;
+        final LocalDateTime bucketStart = fechaInicioUtc
+                .plusMinutes((desdeBucket - 1L) * windowSpacingMinutes);
+        final LocalDateTime bucketEnd = bucketStart
+                .plusMinutes(rangoBuckets * windowSpacingMinutes);
 
         final List<VueloInstancia> nuevos = new ArrayList<>();
-        for (final LocalDate fechaOperacion : fechasPendientes) {
-            final long secuenciaBase = fechaOperacion.toEpochDay() * (long) vuelosProgramados.size();
-            int secuencia = (int) Math.min(secuenciaBase + 1L, Integer.MAX_VALUE);
-            for (final VueloProgramado vp : vuelosProgramados) {
-                if (vp == null) continue;
-                final int gmtOrigen = vp.getAeropuertoOrigen() != null
-                        ? vp.getAeropuertoOrigen().getHusoGMT() : 0;
-                final int gmtDestino = vp.getAeropuertoDestino() != null
-                        ? vp.getAeropuertoDestino().getHusoGMT() : 0;
-                final LocalDateTime salidaLocal = LocalDateTime.of(fechaOperacion, vp.getHoraSalida());
-                LocalDateTime llegadaLocal = LocalDateTime.of(fechaOperacion, vp.getHoraLlegada());
-                if (!llegadaLocal.isAfter(salidaLocal)) {
-                    llegadaLocal = llegadaLocal.plusDays(1);
-                }
-                final LocalDateTime salidaUtc = salidaLocal.minusHours(gmtOrigen);
-                if (salidaUtc.isBefore(fechaInicioUtc)) continue;
-                final LocalDateTime llegadaUtc = llegadaLocal.minusHours(gmtDestino);
-                final String id = String.format("VI%08d", secuencia++);
-                final VueloInstancia vi = new VueloInstancia(
-                        id, vp.getCodigo(), salidaUtc, llegadaUtc,
-                        vp.getCapacidadMaxima(), vp.getCapacidadMaxima(),
-                        vp.getAeropuertoOrigen(), vp.getAeropuertoDestino(),
-                        EstadoVuelo.PROGRAMADO
-                );
-                final String ventana = calcularVentana(salidaUtc);
-                vuelosPorVentana.computeIfAbsent(ventana, k -> new ArrayList<>()).add(vi);
-                nuevos.add(vi);
-                final LocalDateTime tConf = salidaUtc.minusMinutes(umbralConfirmacionMinutos);
-                agregarEvento(tConf, TipoEventoSim.VUELO_CONFIRMA, id, null, 0);
-                agregarEvento(salidaUtc, TipoEventoSim.VUELO_INICIA, id, null, 0);
-                if (llegadaUtc != null) {
-                    agregarEvento(llegadaUtc, TipoEventoSim.VUELO_FINALIZA, id, null, 0);
-                }
+        for (int idxVp = 0; idxVp < vuelosProgramados.size(); idxVp++) {
+            final VueloProgramado vp = vuelosProgramados.get(idxVp);
+            if (vp == null) continue;
+
+            final int gmtOrigen = vp.getAeropuertoOrigen() != null
+                    ? vp.getAeropuertoOrigen().getHusoGMT() : 0;
+            final int gmtDestino = vp.getAeropuertoDestino() != null
+                    ? vp.getAeropuertoDestino().getHusoGMT() : 0;
+
+            LocalDate opDate = bucketStart.plusHours(gmtOrigen).toLocalDate();
+            LocalDateTime salidaUtc = LocalDateTime.of(opDate, vp.getHoraSalida())
+                    .minusHours(gmtOrigen);
+
+            while (salidaUtc.isBefore(bucketStart)) {
+                opDate = opDate.plusDays(1);
+                salidaUtc = salidaUtc.plusDays(1);
+            }
+            if (!salidaUtc.isBefore(bucketEnd)) continue;
+            if (salidaUtc.isBefore(fechaInicioUtc)) continue;
+
+            final String key = vp.getIdVueloProgramado() + "@" + opDate;
+            if (!vuelosGenerados.add(key)) continue;
+
+            final LocalDate fechaDestino = salidaUtc.plusHours(gmtDestino).toLocalDate();
+            LocalDateTime llegadaUtc = LocalDateTime.of(fechaDestino, vp.getHoraLlegada())
+                    .minusHours(gmtDestino);
+            while (!llegadaUtc.isAfter(salidaUtc)) {
+                llegadaUtc = llegadaUtc.plusDays(1);
+            }
+
+            final long secuenciaBase = opDate.toEpochDay() * (long) vuelosProgramados.size() + idxVp;
+            final String id = String.format("VI%08d", secuenciaBase + 1L);
+
+            final VueloInstancia vi = new VueloInstancia(
+                    id, vp.getCodigo(), salidaUtc, llegadaUtc,
+                    vp.getCapacidadMaxima(), vp.getCapacidadMaxima(),
+                    vp.getAeropuertoOrigen(), vp.getAeropuertoDestino(),
+                    EstadoVuelo.PROGRAMADO
+            );
+
+            final String ventana = calcularVentana(salidaUtc);
+            vuelosPorVentana.computeIfAbsent(ventana, k -> new ArrayList<>()).add(vi);
+            nuevos.add(vi);
+
+            final LocalDateTime tConf = salidaUtc.minusMinutes(umbralConfirmacionMinutos);
+            agregarEvento(tConf, TipoEventoSim.VUELO_CONFIRMA, id, null, 0);
+            agregarEvento(salidaUtc, TipoEventoSim.VUELO_INICIA, id, null, 0);
+            if (llegadaUtc != null) {
+                agregarEvento(llegadaUtc, TipoEventoSim.VUELO_FINALIZA, id, null, 0);
             }
         }
+
         if (!nuevos.isEmpty()) {
             final List<VueloInstancia> combinados = new ArrayList<>(this.vuelosInstancia);
             combinados.addAll(nuevos);
             this.vuelosInstancia = List.copyOf(combinados);
         }
-    }
-
-    private LocalDate fechaFinVuelos() {
-        return fechaInicioUtc.toLocalDate()
-                .plusDays(Math.max(0L, totalDias));
     }
 
     private SimulacionVentana buildWindowFor(final LocalDateTime dateTime, final String status) {
