@@ -800,7 +800,7 @@ public class SimulacionSesionManager {
                     return new Ruta(
                             ruta.getIdRuta(), ruta.getIdMaleta(),
                             ruta.getPlazoMaximoDias(), ruta.getDuracion(),
-                            subrutasResueltas, ruta.getEstado());
+                            subrutasResueltas, ruta.getEstado(), ruta.getFechaEntrega());
                 })
                 .collect(Collectors.toCollection(ArrayList::new));
 

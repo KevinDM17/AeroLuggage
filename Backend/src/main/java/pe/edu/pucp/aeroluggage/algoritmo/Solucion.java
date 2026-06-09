@@ -99,7 +99,8 @@ public class Solucion {
                     ruta.getPlazoMaximoDias(),
                     ruta.getDuracion(),
                     subrutasCopia,
-                    ruta.getEstado()
+                    ruta.getEstado(),
+                    ruta.getFechaEntrega()
             ));
         }
         final Solucion clon = new Solucion(copia);

@@ -15,6 +15,7 @@ public class Pedido {
     private Aeropuerto aeropuertoDestino;
     private LocalDateTime fechaHoraPlazo;
     private LocalDateTime fechaRegistro;
+    private LocalDateTime fechaEntrega;
     private int cantidadMaletas;
     private EstadoPedido estado;
 
@@ -42,6 +43,7 @@ public class Pedido {
         this.aeropuertoDestino = aeropuertoDestino;
         this.fechaHoraPlazo = fechaHoraPlazo;
         this.fechaRegistro = fechaRegistro;
+        this.fechaEntrega = null;
         this.cantidadMaletas = cantidadMaletas;
         this.estado = convertirEstado(estado);
     }
@@ -54,6 +56,7 @@ public class Pedido {
         this.aeropuertoDestino = aeropuertoDestino;
         this.fechaHoraPlazo = fechaHoraPlazo;
         this.fechaRegistro = fechaRegistro;
+        this.fechaEntrega = null;
         this.cantidadMaletas = cantidadMaletas;
         this.estado = estado;
     }
@@ -68,6 +71,7 @@ public class Pedido {
                 : null;
         this.fechaHoraPlazo = other.fechaHoraPlazo;
         this.fechaRegistro = other.fechaRegistro;
+        this.fechaEntrega = other.fechaEntrega;
         this.cantidadMaletas = other.cantidadMaletas;
         this.estado = other.estado;
     }
@@ -118,6 +122,14 @@ public class Pedido {
 
     public void setCantidadMaletas(final int cantidadMaletas) {
         this.cantidadMaletas = cantidadMaletas;
+    }
+
+    public LocalDateTime getFechaEntrega() {
+        return fechaEntrega;
+    }
+
+    public void setFechaEntrega(final LocalDateTime fechaEntrega) {
+        this.fechaEntrega = fechaEntrega;
     }
 
     public EstadoPedido getEstado() {

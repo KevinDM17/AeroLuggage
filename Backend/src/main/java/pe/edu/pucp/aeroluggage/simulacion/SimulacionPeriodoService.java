@@ -33,6 +33,7 @@ public class SimulacionPeriodoService {
     public SimulacionTickLigeroDTO ejecutarTick(final SimulacionSesion sesion) {
         final int tick = sesion.getTickActual().incrementAndGet();
         sesion.updateCurrentSimTimeUtc();
+        final LocalDateTime simTimeUtc = sesion.getCurrentSimTimeUtc().get();
         final SimulacionVentana ventanaAnterior = sesion.getCurrentWindow().get();
         final SimulacionVentana ventana = sesion.refreshCurrentWindow();
         final boolean ventanaCambio = ventanaAnterior == null
@@ -44,8 +45,7 @@ public class SimulacionPeriodoService {
             sesion.podarEventosPasados(cutoff);
         }
         snapshotService.recalcularEstadoSesion(sesion);
-
-        final LocalDateTime simTimeUtc = sesion.getCurrentSimTimeUtc().get();
+        sesion.podarEntidadesAnteriores(simTimeUtc);
 
         final SimulacionSesion.TickSnapshot snap = sesion.consolidar(simTimeUtc);
 

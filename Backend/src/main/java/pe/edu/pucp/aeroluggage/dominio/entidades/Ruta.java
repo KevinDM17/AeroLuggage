@@ -14,6 +14,7 @@ public class Ruta {
     private double duracion;
     private List<String> subrutaIds;
     private EstadoRuta estado;
+    private LocalDateTime fechaEntrega;
     private List<VueloInstancia> subrutasCache;
 
     public Ruta() {
@@ -23,12 +24,19 @@ public class Ruta {
 
     public Ruta(final String idRuta, final String idMaleta, final double plazoMaximoDias,
                 final double duracion, final List<VueloInstancia> subrutas, final EstadoRuta estado) {
+        this(idRuta, idMaleta, plazoMaximoDias, duracion, subrutas, estado, null);
+    }
+
+    public Ruta(final String idRuta, final String idMaleta, final double plazoMaximoDias,
+                final double duracion, final List<VueloInstancia> subrutas, final EstadoRuta estado,
+                final LocalDateTime fechaEntrega) {
         this.idRuta = idRuta;
         this.idMaleta = idMaleta;
         this.plazoMaximoDias = plazoMaximoDias;
         this.duracion = duracion;
         setSubrutas(subrutas);
         this.estado = estado;
+        this.fechaEntrega = fechaEntrega;
     }
 
     public Ruta(final Ruta other) {
@@ -38,6 +46,7 @@ public class Ruta {
         this.duracion = other.duracion;
         this.subrutaIds = other.subrutaIds == null ? null : new ArrayList<>(other.subrutaIds);
         this.estado = other.estado;
+        this.fechaEntrega = other.fechaEntrega;
         this.subrutasCache = null;
     }
 
@@ -71,6 +80,14 @@ public class Ruta {
 
     public void setDuracion(final double duracion) {
         this.duracion = duracion;
+    }
+
+    public LocalDateTime getFechaEntrega() {
+        return fechaEntrega;
+    }
+
+    public void setFechaEntrega(final LocalDateTime fechaEntrega) {
+        this.fechaEntrega = fechaEntrega;
     }
 
     public List<VueloInstancia> getSubrutas() {

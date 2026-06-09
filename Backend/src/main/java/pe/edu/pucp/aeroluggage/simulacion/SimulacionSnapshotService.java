@@ -65,7 +65,8 @@ public class SimulacionSnapshotService {
         for (final Pedido pedido : sesion.getPedidos()) {
             if (pedido == null || pedido.getIdPedido() == null) continue;
             actualizarEstadoPedido(pedido,
-                    maletasPorPedido.getOrDefault(pedido.getIdPedido(), List.of()));
+                    maletasPorPedido.getOrDefault(pedido.getIdPedido(), List.of()),
+                    simTimeActual);
         }
     }
 
@@ -186,21 +187,28 @@ public class SimulacionSnapshotService {
                 .build();
     }
 
-    private void actualizarEstadoPedido(final Pedido pedido, final List<Maleta> maletasPedido) {
+    private void actualizarEstadoPedido(final Pedido pedido, final List<Maleta> maletasPedido,
+                                        final LocalDateTime simTimeActual) {
         if (maletasPedido.isEmpty()) {
             pedido.setEstado(EstadoPedido.REGISTRADO);
+            pedido.setFechaEntrega(null);
             return;
         }
+        final EstadoPedido estadoAnterior = pedido.getEstado();
         final boolean todasEntregadas = maletasPedido.stream()
                 .allMatch(maleta -> maleta.getEstado() == EstadoMaleta.ENTREGADA);
         if (todasEntregadas) {
             pedido.setEstado(EstadoPedido.ENTREGADO);
+            if (estadoAnterior != EstadoPedido.ENTREGADO && pedido.getFechaEntrega() == null) {
+                pedido.setFechaEntrega(simTimeActual);
+            }
             return;
         }
         final boolean algunaConMovimiento = maletasPedido.stream()
                 .anyMatch(maleta -> maleta.getEstado() == EstadoMaleta.EN_TRANSITO
                         || maleta.getEstado() == EstadoMaleta.ENTREGADA);
         pedido.setEstado(algunaConMovimiento ? EstadoPedido.EN_PROCESO : EstadoPedido.REGISTRADO);
+        pedido.setFechaEntrega(null);
     }
 
     public record EntidadesVisibles(

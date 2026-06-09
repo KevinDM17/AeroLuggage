@@ -110,7 +110,8 @@ public final class OperadorCruce {
                 original.getPlazoMaximoDias(),
                 original.getDuracion(),
                 copiaSubrutas,
-                original.getEstado());
+                original.getEstado(),
+                original.getFechaEntrega());
         return copia;
     }
 

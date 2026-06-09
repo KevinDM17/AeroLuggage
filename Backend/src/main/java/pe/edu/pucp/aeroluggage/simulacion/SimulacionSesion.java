@@ -303,6 +303,7 @@ public class SimulacionSesion {
                 final Ruta r = rutasPorMaleta.remove(idEntidad);
                 if (r != null) {
                     r.setEstado(EstadoRuta.COMPLETADA);
+                    r.setFechaEntrega(currentSimTimeUtc.get());
                 }
                 maletasFrias.put(idEntidad, new ColdEntry(m, r, currentSimTimeUtc.get()));
                 idsEntregadasEnTick.add(idEntidad);
@@ -494,6 +495,17 @@ public class SimulacionSesion {
                         }
                     }
                     case MALETA_ENTREGADA -> {
+                        final String idRuta = rutaPorMaleta.get(e.idEntidad());
+                        if (idRuta != null) {
+                            final Ruta r = rutasIndex.get(idRuta);
+                            if (r != null) {
+                                r.setEstado(EstadoRuta.COMPLETADA);
+                                if (!r.getSubrutas().isEmpty() && r.getSubrutas().getLast() != null
+                                        && r.getSubrutas().getLast().getFechaLlegada() != null) {
+                                    r.setFechaEntrega(r.getSubrutas().getLast().getFechaLlegada().plusMinutes(10));
+                                }
+                            }
+                        }
                         if (e.idAeropuerto() != null) {
                             final Aeropuerto a = aeropuertosIndex.get(e.idAeropuerto());
                             if (a != null) a.setMaletasActuales(Math.max(0, a.getMaletasActuales() - 1));
@@ -525,6 +537,9 @@ public class SimulacionSesion {
                         final Ruta r = rutasIndex.get(e.idEntidad());
                         if (r != null && r.getEstado() == EstadoRuta.ACTIVA) {
                             r.setEstado(EstadoRuta.COMPLETADA);
+                            if (!r.getSubrutas().isEmpty() && r.getSubrutas().getLast() != null) {
+                                r.setFechaEntrega(r.getSubrutas().getLast().getFechaLlegada());
+                            }
                         }
                     }
                 }
@@ -659,22 +674,70 @@ public class SimulacionSesion {
     }
 
     public synchronized void podarEntidadesAnteriores(final LocalDateTime cutoff) {
-        if (maletasFrias.isEmpty()) {
+        if (cutoff == null || pedidos.isEmpty()) {
             return;
         }
 
-        final Set<String> aPodar = new HashSet<>();
-        for (final Map.Entry<String, ColdEntry> entry : maletasFrias.entrySet()) {
-            if (entry.getValue().entrega() != null && entry.getValue().entrega().isBefore(cutoff)) {
-                aPodar.add(entry.getKey());
+        final Set<String> pedidosPodables = new HashSet<>();
+        for (final Pedido pedido : pedidos) {
+            if (pedido == null || pedido.getIdPedido() == null || pedido.getFechaEntrega() == null) {
+                continue;
+            }
+            if (!pedido.getFechaEntrega().plusHours(2).isAfter(cutoff)) {
+                pedidosPodables.add(pedido.getIdPedido());
             }
         }
 
-        if (aPodar.isEmpty()) {
+        if (pedidosPodables.isEmpty()) {
             return;
         }
 
-        aPodar.forEach(maletasFrias::remove);
+        final Set<String> maletasPodables = new HashSet<>();
+        for (final Maleta maleta : maletasPorId.values()) {
+            if (maleta == null || maleta.getIdMaleta() == null || maleta.getPedido() == null) {
+                continue;
+            }
+            final String idPedido = maleta.getPedido().getIdPedido();
+            if (idPedido != null && pedidosPodables.contains(idPedido)) {
+                maletasPodables.add(maleta.getIdMaleta());
+            }
+        }
+        for (final Map.Entry<String, ColdEntry> entry : maletasFrias.entrySet()) {
+            final ColdEntry coldEntry = entry.getValue();
+            final Maleta maleta = coldEntry != null ? coldEntry.maleta() : null;
+            if (maleta == null || maleta.getIdMaleta() == null || maleta.getPedido() == null) {
+                continue;
+            }
+            final String idPedido = maleta.getPedido().getIdPedido();
+            if (idPedido != null && pedidosPodables.contains(idPedido)) {
+                maletasPodables.add(maleta.getIdMaleta());
+            }
+        }
+
+        if (maletasPodables.isEmpty()) {
+            this.pedidos = pedidos.stream()
+                    .filter(p -> p != null && p.getIdPedido() != null && !pedidosPodables.contains(p.getIdPedido()))
+                    .toList();
+            this.stateVersion.incrementAndGet();
+            return;
+        }
+
+        for (final String idMaleta : maletasPodables) {
+            maletasPorId.remove(idMaleta);
+            rutasPorMaleta.remove(idMaleta);
+            maletasFrias.remove(idMaleta);
+            idsEntregadasEnTick.remove(idMaleta);
+        }
+        idsCompletadasEnTick.entrySet().removeIf(entry -> maletasPodables.contains(entry.getValue()));
+        evaluacionesMaletas.entrySet().removeIf(entry -> maletasPodables.contains(entry.getKey()));
+        maletasPorVentana.values().forEach(lista ->
+                lista.removeIf(m -> m != null && m.getIdMaleta() != null && maletasPodables.contains(m.getIdMaleta())));
+
+        this.pedidos = pedidos.stream()
+                .filter(p -> p != null && p.getIdPedido() != null && !pedidosPodables.contains(p.getIdPedido()))
+                .toList();
+        pedidosPorVentana.values().forEach(lista ->
+                lista.removeIf(p -> p != null && p.getIdPedido() != null && pedidosPodables.contains(p.getIdPedido())));
 
         final Set<String> vuelosEnUso = new HashSet<>();
         for (final Ruta ruta : rutasPorMaleta.values()) {
@@ -701,6 +764,13 @@ public class SimulacionSesion {
                 .filter(v -> v.getEstado() != EstadoVuelo.FINALIZADO
                         || vuelosEnUso.contains(v.getIdVueloInstancia()))
                 .toList();
+        final Set<String> vuelosActivos = this.vuelosInstancia.stream()
+                .map(VueloInstancia::getIdVueloInstancia)
+                .filter(Objects::nonNull)
+                .collect(Collectors.toSet());
+        vuelosPorVentana.values().forEach(lista ->
+                lista.removeIf(v -> v != null && v.getIdVueloInstancia() != null
+                        && !vuelosActivos.contains(v.getIdVueloInstancia())));
 
         this.stateVersion.incrementAndGet();
     }
