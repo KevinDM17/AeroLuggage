@@ -4,13 +4,10 @@ import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.stereotype.Service;
 import pe.edu.pucp.aeroluggage.config.SimulacionParams;
-<<<<<<< HEAD
-=======
 import pe.edu.pucp.aeroluggage.dominio.enums.EstadoMaleta;
 import pe.edu.pucp.aeroluggage.dominio.enums.EstadoRuta;
 import pe.edu.pucp.aeroluggage.dto.simulacion.ws.EstadoMaletaDTO;
 import pe.edu.pucp.aeroluggage.dto.simulacion.ws.EstadoRutaDTO;
->>>>>>> main
 import pe.edu.pucp.aeroluggage.dto.simulacion.ws.EstadoVueloDTO;
 import pe.edu.pucp.aeroluggage.dto.simulacion.ws.SimulacionTickLigeroDTO;
 

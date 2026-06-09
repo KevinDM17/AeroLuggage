@@ -72,7 +72,6 @@ public class SimulacionSesion {
     private volatile ScheduledFuture<?> tareaScheduled;
     private final ConcurrentHashMap<String, Maleta> maletasPorId = new ConcurrentHashMap<>();
     private final ConcurrentHashMap<String, Ruta> rutasPorMaleta = new ConcurrentHashMap<>();
-    private final ConcurrentHashMap<String, ColdEntry> maletasFrias = new ConcurrentHashMap<>();
 
     record ColdEntry(Maleta maleta, Ruta ruta, LocalDateTime entrega) {}
     private final ConcurrentHashMap<String, MaletaFallos> evaluacionesMaletas = new ConcurrentHashMap<>();
@@ -705,11 +704,8 @@ public class SimulacionSesion {
         this.maletasPorId.clear();
         this.rutasPorMaleta.clear();
         this.maletasFrias.clear();
-<<<<<<< HEAD
-=======
         this.idsEntregadasEnTick.clear();
         this.idsCompletadasEnTick.clear();
->>>>>>> main
         this.evaluacionesMaletas.clear();
         this.segmentosReplanificacion.clear();
         this.maletasPorVentana.clear();
