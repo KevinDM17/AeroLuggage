@@ -260,11 +260,10 @@ public class SimulacionSesion {
                 }
             }
             case MALETA_SALE_AEROP -> {
-                final Maleta m = maletasPorId.get(idEntidad);
-                if (m != null) {
-                    m.setEstado(EstadoMaleta.EN_TRANSITO);
-                    m.setAeropuertoActual(null);
-                }
+                final Maleta mSale = maletasPorId.get(idEntidad);
+                if (mSale == null) return;
+                mSale.setEstado(EstadoMaleta.EN_TRANSITO);
+                mSale.setAeropuertoActual(null);
                 if (idAeropuerto != null) {
                     for (final Aeropuerto a : aeropuertos) {
                         if (a != null && a.getIdAeropuerto() != null
@@ -276,6 +275,11 @@ public class SimulacionSesion {
                 }
             }
             case MALETA_LLEGA_AEROP -> {
+                final Maleta mLlega = maletasPorId.get(idEntidad);
+                if (mLlega != null) {
+                    mLlega.setEstado(EstadoMaleta.EN_ALMACEN);
+                    mLlega.setAeropuertoActual(idAeropuerto);
+                }
                 if (idAeropuerto != null) {
                     for (final Aeropuerto a : aeropuertos) {
                         if (a != null && a.getIdAeropuerto() != null
@@ -348,127 +352,10 @@ public class SimulacionSesion {
                 .values();
         for (final List<EventoSim> lote : eventos) {
             for (final EventoSim e : lote) {
-                switch (e.tipo()) {
-                    case MALETA_APARECE -> aplicarMaletaAparece(e);
-                    case VUELO_CONFIRMA -> aplicarVueloConfirma(e);
-                    case VUELO_INICIA -> aplicarVueloInicia(e);
-                    case VUELO_FINALIZA -> aplicarVueloFinaliza(e);
-                    case MALETA_SALE_AEROP -> aplicarMaletaSale(e);
-                    case MALETA_LLEGA_AEROP -> aplicarMaletaLlega(e);
-                    case MALETA_ENTREGADA -> aplicarMaletaEntregada(e);
-                    case RUTA_ACTIVA -> aplicarRutaActiva(e);
-                    case RUTA_COMPLETA -> aplicarRutaCompleta(e);
-                }
+                aplicarEventoAhora(e.tipo(), e.idEntidad(), e.idAeropuerto(), e.delta());
             }
         }
         this.ultimoTiempoSim = simTimeActual;
-    }
-
-    private void aplicarMaletaAparece(final EventoSim e) {
-        final Maleta m = maletasPorId.get(e.idEntidad());
-        if (m == null) return;
-        m.setEstado(EstadoMaleta.EN_ALMACEN);
-        m.setAeropuertoActual(e.idAeropuerto());
-        final Ruta r = rutasPorMaleta.get(m.getIdMaleta());
-        if (r != null && !r.getSubrutas().isEmpty()) {
-            final VueloInstancia v1 = r.getSubrutas().getFirst();
-            v1.setCapacidadDisponible(Math.max(0, v1.getCapacidadDisponible() - 1));
-        }
-        if (e.idAeropuerto() != null) {
-            for (final Aeropuerto a : aeropuertos) {
-                if (a != null && a.getIdAeropuerto() != null
-                        && a.getIdAeropuerto().equals(e.idAeropuerto())) {
-                    a.setMaletasActuales(a.getMaletasActuales() + 1);
-                    break;
-                }
-            }
-        }
-    }
-
-    private void aplicarMaletaSale(final EventoSim e) {
-        final Maleta m = maletasPorId.get(e.idEntidad());
-        if (m == null) return;
-        m.setEstado(EstadoMaleta.EN_TRANSITO);
-        m.setAeropuertoActual(null);
-        if (e.idAeropuerto() != null) {
-            for (final Aeropuerto a : aeropuertos) {
-                if (a != null && a.getIdAeropuerto() != null
-                        && a.getIdAeropuerto().equals(e.idAeropuerto())) {
-                    a.setMaletasActuales(Math.max(0, a.getMaletasActuales() - 1));
-                    break;
-                }
-            }
-        }
-    }
-
-    private void aplicarMaletaLlega(final EventoSim e) {
-        final Maleta m = maletasPorId.get(e.idEntidad());
-        if (m == null) return;
-        m.setEstado(EstadoMaleta.EN_ALMACEN);
-        m.setAeropuertoActual(e.idAeropuerto());
-        if (e.idAeropuerto() != null) {
-            for (final Aeropuerto a : aeropuertos) {
-                if (a != null && a.getIdAeropuerto() != null
-                        && a.getIdAeropuerto().equals(e.idAeropuerto())) {
-                    a.setMaletasActuales(a.getMaletasActuales() + 1);
-                    break;
-                }
-            }
-        }
-    }
-
-    private void aplicarMaletaEntregada(final EventoSim e) {
-        aplicarEventoAhora(TipoEventoSim.MALETA_ENTREGADA, e.idEntidad(), e.idAeropuerto(), e.delta());
-    }
-
-    private void aplicarVueloConfirma(final EventoSim e) {
-        for (final VueloInstancia v : vuelosInstancia) {
-            if (v != null && v.getIdVueloInstancia() != null
-                    && v.getIdVueloInstancia().equals(e.idEntidad())
-                    && v.getEstado() == EstadoVuelo.PROGRAMADO) {
-                v.setEstado(EstadoVuelo.CONFIRMADO);
-                break;
-            }
-        }
-    }
-
-    private void aplicarVueloInicia(final EventoSim e) {
-        for (final VueloInstancia v : vuelosInstancia) {
-            if (v != null && v.getIdVueloInstancia() != null
-                    && v.getIdVueloInstancia().equals(e.idEntidad())
-                    && v.getEstado() != EstadoVuelo.CANCELADO) {
-                v.setEstado(EstadoVuelo.EN_PROGRESO);
-                break;
-            }
-        }
-    }
-
-    private void aplicarVueloFinaliza(final EventoSim e) {
-        for (final VueloInstancia v : vuelosInstancia) {
-            if (v != null && v.getIdVueloInstancia() != null
-                    && v.getIdVueloInstancia().equals(e.idEntidad())) {
-                v.setEstado(EstadoVuelo.FINALIZADO);
-                break;
-            }
-        }
-    }
-
-    private void aplicarRutaActiva(final EventoSim e) {
-        final Ruta r = rutasPorMaleta.values().stream()
-                .filter(rt -> rt != null && e.idEntidad().equals(rt.getIdRuta()))
-                .findFirst().orElse(null);
-        if (r != null && r.getEstado() == EstadoRuta.PLANIFICADA) {
-            r.setEstado(EstadoRuta.ACTIVA);
-        }
-    }
-
-    private void aplicarRutaCompleta(final EventoSim e) {
-        final Ruta r = rutasPorMaleta.values().stream()
-                .filter(rt -> rt != null && e.idEntidad().equals(rt.getIdRuta()))
-                .findFirst().orElse(null);
-        if (r != null && r.getEstado() == EstadoRuta.ACTIVA) {
-            r.setEstado(EstadoRuta.COMPLETADA);
-        }
     }
 
     public void onRutaAgregada(final Ruta ruta, final int umbralConfirmacionMinutos) {

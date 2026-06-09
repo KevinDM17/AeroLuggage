@@ -85,8 +85,8 @@ public class SimulacionPeriodoService {
                 .withMaletasNoAsignadas(snap.sinRuta())
                 .withVuelosActivos(snap.vuelosActivos())
                 .withCapacidadLibrePct(snap.capacidadLibrePct())
-                .withEstadosMaletas(snap.estadosMaletas())
-                .withEstadosRutas(snap.estadosRutas())
+                .withEstadosMaletas(estadosMaletas)
+                .withEstadosRutas(estadosRutas)
                 .withEstadosVuelos(snap.estadosVuelos())
                 .withAeropuertos(snap.aeropuertos())
                 .build();
