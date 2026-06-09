@@ -80,13 +80,7 @@ public class SimulacionSnapshotService {
     }
 
     public int contarMaletasEntregadas(final SimulacionSesion sesion) {
-        final LocalDateTime simTimeUtc = sesion.getCurrentSimTimeUtc().get();
-        return (int) sesion.getMaletas().stream()
-                .filter(maleta -> maleta != null
-                        && maleta.getFechaRegistro() != null
-                        && !maleta.getFechaRegistro().isAfter(simTimeUtc)
-                        && maleta.getEstado() == EstadoMaleta.ENTREGADA)
-                .count();
+        return sesion.getTotalMaletasEntregadas();
     }
 
     public int contarMaletasSinRuta(final SimulacionSesion sesion) {
@@ -356,6 +350,7 @@ public class SimulacionSnapshotService {
             estados.add(EstadoRutaDTO.builder()
                     .withId(r.getIdRuta())
                     .withE(r.getEstado() != null ? r.getEstado().ordinal() : 0)
+                    .withIdMaleta(r.getIdMaleta())
                     .build());
         }
         return estados;

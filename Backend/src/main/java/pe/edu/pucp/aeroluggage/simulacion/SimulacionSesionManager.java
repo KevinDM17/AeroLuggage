@@ -807,7 +807,7 @@ public class SimulacionSesionManager {
                 .filter(Objects::nonNull)
                 .collect(Collectors.toSet());
 
-        final ArrayList<Maleta> pendientes = sesion.getMaletas().stream()
+        final ArrayList<Maleta> pendientes = sesion.getMaletasCalientes().stream()
                 .filter(maleta -> maleta != null
                         && maleta.getIdMaleta() != null
                         && maleta.getFechaRegistro() != null

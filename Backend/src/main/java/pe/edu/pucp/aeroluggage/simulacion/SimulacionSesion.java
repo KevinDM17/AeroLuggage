@@ -69,6 +69,12 @@ public class SimulacionSesion {
     private final ConcurrentHashMap<String, Maleta> maletasPorId = new ConcurrentHashMap<>();
     private final ConcurrentHashMap<String, Ruta> rutasPorMaleta = new ConcurrentHashMap<>();
     private final ConcurrentHashMap<String, MaletaFallos> evaluacionesMaletas = new ConcurrentHashMap<>();
+    private final AtomicInteger totalMaletasEntregadas = new AtomicInteger(0);
+    private final ConcurrentHashMap<String, ColdEntry> maletasFrias = new ConcurrentHashMap<>();
+    private final Set<String> idsEntregadasEnTick = new HashSet<>();
+    private final Map<String, String> idsCompletadasEnTick = new HashMap<>();
+
+    record ColdEntry(Maleta maleta, Ruta ruta, LocalDateTime entrega) {}
     private final List<SegmentoReplanificacion> segmentosReplanificacion = new CopyOnWriteArrayList<>();
 
     private final ConcurrentHashMap<String, List<Maleta>> maletasPorVentana = new ConcurrentHashMap<>();
@@ -271,7 +277,8 @@ public class SimulacionSesion {
                 }
             }
             case MALETA_ENTREGADA -> {
-                final Maleta m = maletasPorId.get(idEntidad);
+                totalMaletasEntregadas.incrementAndGet();
+                final Maleta m = maletasPorId.remove(idEntidad);
                 if (m != null) {
                     m.setEstado(EstadoMaleta.ENTREGADA);
                     m.setFechaLlegada(currentSimTimeUtc.get());
@@ -279,6 +286,13 @@ public class SimulacionSesion {
                         m.setAeropuertoActual(m.getPedido().getAeropuertoDestino().getIdAeropuerto());
                     }
                 }
+                final Ruta r = rutasPorMaleta.remove(idEntidad);
+                if (r != null) {
+                    r.setEstado(EstadoRuta.COMPLETADA);
+                }
+                maletasFrias.put(idEntidad, new ColdEntry(m, r, currentSimTimeUtc.get()));
+                idsEntregadasEnTick.add(idEntidad);
+                if (r != null) idsCompletadasEnTick.put(r.getIdRuta(), idEntidad);
                 if (idAeropuerto != null) {
                     for (final Aeropuerto a : aeropuertos) {
                         if (a != null && a.getIdAeropuerto() != null
@@ -669,6 +683,9 @@ public class SimulacionSesion {
         this.resumenesVentana = List.of();
         this.maletasPorId.clear();
         this.rutasPorMaleta.clear();
+        this.maletasFrias.clear();
+        this.idsEntregadasEnTick.clear();
+        this.idsCompletadasEnTick.clear();
         this.evaluacionesMaletas.clear();
         this.segmentosReplanificacion.clear();
         this.maletasPorVentana.clear();
@@ -679,6 +696,7 @@ public class SimulacionSesion {
         this.ultimoTiempoSim = null;
         this.tareaScheduled = null;
         this.tickActual.set(0);
+        this.totalMaletasEntregadas.set(0);
         this.currentSimTimeUtc.set(fechaInicioUtc);
         this.currentWindow.set(null);
         this.ultimoIndiceVuelosEnviado.set(0);
@@ -692,30 +710,63 @@ public class SimulacionSesion {
     }
 
     public Collection<Maleta> getMaletas() {
+        final List<Maleta> todas = new ArrayList<>(maletasPorId.values());
+        for (final ColdEntry entry : maletasFrias.values()) {
+            if (entry.maleta() != null) {
+                todas.add(entry.maleta());
+            }
+        }
+        return todas;
+    }
+
+    public Collection<Maleta> getMaletasCalientes() {
         return maletasPorId.values();
     }
 
     public Collection<Ruta> getRutas() {
-        return rutasPorMaleta.values();
+        final List<Ruta> todas = new ArrayList<>(rutasPorMaleta.values());
+        for (final ColdEntry entry : maletasFrias.values()) {
+            if (entry.ruta() != null) {
+                todas.add(entry.ruta());
+            }
+        }
+        return todas;
     }
 
     public Ruta getRutaPorMaleta(final String idMaleta) {
-        return rutasPorMaleta.get(idMaleta);
+        final Ruta r = rutasPorMaleta.get(idMaleta);
+        if (r != null) {
+            return r;
+        }
+        final ColdEntry entry = maletasFrias.get(idMaleta);
+        return entry == null ? null : entry.ruta();
+    }
+
+    public int getTotalMaletasEntregadas() {
+        return totalMaletasEntregadas.get();
+    }
+
+    public Set<String> consumirIdsEntregadasEnTick() {
+        final Set<String> ids = new HashSet<>(idsEntregadasEnTick);
+        idsEntregadasEnTick.clear();
+        return ids;
+    }
+
+    public Map<String, String> consumirIdsCompletadasEnTick() {
+        final Map<String, String> ids = new HashMap<>(idsCompletadasEnTick);
+        idsCompletadasEnTick.clear();
+        return ids;
     }
 
     public synchronized void podarEntidadesAnteriores(final LocalDateTime cutoff) {
+        if (maletasFrias.isEmpty()) {
+            return;
+        }
+
         final Set<String> aPodar = new HashSet<>();
-        for (final Maleta maleta : maletasPorId.values()) {
-            if (maleta.getEstado() != EstadoMaleta.ENTREGADA) {
-                continue;
-            }
-            final Ruta ruta = rutasPorMaleta.get(maleta.getIdMaleta());
-            if (ruta == null || ruta.getSubrutas() == null || ruta.getSubrutas().isEmpty()) {
-                continue;
-            }
-            final LocalDateTime ultimaLlegada = ruta.getSubrutas().getLast().getFechaLlegada();
-            if (ultimaLlegada != null && ultimaLlegada.isBefore(cutoff)) {
-                aPodar.add(maleta.getIdMaleta());
+        for (final Map.Entry<String, ColdEntry> entry : maletasFrias.entrySet()) {
+            if (entry.getValue().entrega() != null && entry.getValue().entrega().isBefore(cutoff)) {
+                aPodar.add(entry.getKey());
             }
         }
 
@@ -723,8 +774,7 @@ public class SimulacionSesion {
             return;
         }
 
-        aPodar.forEach(maletasPorId::remove);
-        aPodar.forEach(rutasPorMaleta::remove);
+        aPodar.forEach(maletasFrias::remove);
 
         final Set<String> vuelosEnUso = new HashSet<>();
         for (final Ruta ruta : rutasPorMaleta.values()) {
@@ -734,6 +784,15 @@ public class SimulacionSesion {
             for (final VueloInstancia vuelo : ruta.getSubrutas()) {
                 if (vuelo != null && vuelo.getIdVueloInstancia() != null) {
                     vuelosEnUso.add(vuelo.getIdVueloInstancia());
+                }
+            }
+        }
+        for (final ColdEntry entry : maletasFrias.values()) {
+            if (entry.ruta() != null && entry.ruta().getSubrutas() != null) {
+                for (final VueloInstancia vuelo : entry.ruta().getSubrutas()) {
+                    if (vuelo != null && vuelo.getIdVueloInstancia() != null) {
+                        vuelosEnUso.add(vuelo.getIdVueloInstancia());
+                    }
                 }
             }
         }

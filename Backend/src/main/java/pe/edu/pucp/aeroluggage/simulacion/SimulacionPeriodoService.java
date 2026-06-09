@@ -4,11 +4,20 @@ import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.stereotype.Service;
 import pe.edu.pucp.aeroluggage.config.SimulacionParams;
+import pe.edu.pucp.aeroluggage.dominio.enums.EstadoMaleta;
+import pe.edu.pucp.aeroluggage.dominio.enums.EstadoRuta;
+import pe.edu.pucp.aeroluggage.dto.simulacion.ws.EstadoMaletaDTO;
+import pe.edu.pucp.aeroluggage.dto.simulacion.ws.EstadoRutaDTO;
+import pe.edu.pucp.aeroluggage.dto.simulacion.ws.EstadoVueloDTO;
 import pe.edu.pucp.aeroluggage.dto.simulacion.ws.SimulacionTickLigeroDTO;
 
 import java.time.Duration;
 import java.time.LocalDateTime;
 import java.time.format.DateTimeFormatter;
+import java.util.ArrayList;
+import java.util.List;
+import java.util.Map;
+import java.util.Set;
 
 @Slf4j
 @Service
@@ -44,6 +53,30 @@ public class SimulacionPeriodoService {
         final int vuelosActivos = snapshotService.contarVuelosActivos(sesion);
         final int capacidadLibrePct = snapshotService.calcularCapacidadLibrePct(sesion);
 
+        final Set<String> idsEntregadas = sesion.consumirIdsEntregadasEnTick();
+        final Map<String, String> idsCompletadas = sesion.consumirIdsCompletadasEnTick();
+
+        final List<EstadoMaletaDTO> estadosMaletas = new ArrayList<>(
+                snapshotService.mapearEstadosMaletas(sesion.getMaletasCalientes(), simTimeUtc)
+        );
+        for (final String id : idsEntregadas) {
+            estadosMaletas.add(EstadoMaletaDTO.builder()
+                    .withId(id)
+                    .withE(EstadoMaleta.ENTREGADA.ordinal())
+                    .build());
+        }
+
+        final List<EstadoRutaDTO> estadosRutas = new ArrayList<>(
+                snapshotService.mapearEstadosRutas(sesion.getRutas(), simTimeUtc, sesion.getMaletasPorId())
+        );
+        for (final Map.Entry<String, String> entry : idsCompletadas.entrySet()) {
+            estadosRutas.add(EstadoRutaDTO.builder()
+                    .withId(entry.getKey())
+                    .withE(EstadoRuta.COMPLETADA.ordinal())
+                    .withIdMaleta(entry.getValue())
+                    .build());
+        }
+
         final SimulacionTickLigeroDTO dto = SimulacionTickLigeroDTO.builder()
                 .withType("TICK")
                 .withTick(tick)
@@ -56,8 +89,8 @@ public class SimulacionPeriodoService {
                 .withMaletasNoAsignadas(sinRuta)
                 .withVuelosActivos(vuelosActivos)
                 .withCapacidadLibrePct(capacidadLibrePct)
-                .withEstadosMaletas(snapshotService.mapearEstadosMaletas(sesion.getMaletas(), simTimeUtc))
-                .withEstadosRutas(snapshotService.mapearEstadosRutas(sesion.getRutas(), simTimeUtc, sesion.getMaletasPorId()))
+                .withEstadosMaletas(estadosMaletas)
+                .withEstadosRutas(estadosRutas)
                 .withEstadosVuelos(snapshotService.mapearEstadosVuelos(sesion.getVuelosInstancia(), simTimeUtc))
                 .withAeropuertos(snapshotService.mapearOcupacionAeropuertos(sesion.getAeropuertos()))
                 .build();

@@ -9,4 +9,5 @@ public class EstadoRutaDTO {
 
     private String id;
     private int e;
+    private String idMaleta;
 }
