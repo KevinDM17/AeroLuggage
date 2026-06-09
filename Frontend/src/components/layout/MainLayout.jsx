@@ -7,10 +7,10 @@ import RightPanel from "./RightPanel";
 const DESKTOP_BREAKPOINT = 1024;
 const EMPTY_SIMULATION_PANEL_DATA = {
   airports: [],
-  flights: [],
-  orders: [],
-  bags: [],
-  routes: [],
+  flights: new Map(),
+  orders: new Map(),
+  bags: new Map(),
+  routes: new Map(),
   loaded: false,
 };
 

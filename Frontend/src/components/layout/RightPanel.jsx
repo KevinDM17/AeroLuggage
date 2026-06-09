@@ -403,11 +403,32 @@ export default function RightPanel({
   const maletasFetch = useFetch(() => (isSimulator ? Promise.resolve([]) : listMaletas()), [isSimulator]);
   const rutasFetch = useFetch(() => (isSimulator ? Promise.resolve([]) : listRutas()), [isSimulator]);
 
-  const flights = isSimulator ? createStaticSource(simulationLoaded ? simulationPanelData?.flights ?? [] : []) : flightsFetch;
-  const airports = isSimulator ? createStaticSource(simulationLoaded ? simulationPanelData?.airports ?? [] : []) : airportsFetch;
-  const orders = isSimulator ? createStaticSource(simulationLoaded ? simulationPanelData?.orders ?? [] : []) : ordersFetch;
-  const maletas = isSimulator ? createStaticSource(simulationLoaded ? simulationPanelData?.bags ?? [] : []) : maletasFetch;
-  const rutas = isSimulator ? createStaticSource(simulationLoaded ? simulationPanelData?.routes ?? [] : []) : rutasFetch;
+  const flightsData = useMemo(
+    () => [...(simulationLoaded ? simulationPanelData?.flights ?? new Map() : new Map()).values()],
+    [simulationPanelData?.flights, simulationLoaded]
+  );
+  const bagsData = useMemo(
+    () => [...(simulationLoaded ? simulationPanelData?.bags ?? new Map() : new Map()).values()],
+    [simulationPanelData?.bags, simulationLoaded]
+  );
+  const routesData = useMemo(
+    () => [...(simulationLoaded ? simulationPanelData?.routes ?? new Map() : new Map()).values()],
+    [simulationPanelData?.routes, simulationLoaded]
+  );
+  const ordersData = useMemo(
+    () => [...(simulationLoaded ? simulationPanelData?.orders ?? new Map() : new Map()).values()],
+    [simulationPanelData?.orders, simulationLoaded]
+  );
+  const airportsData = useMemo(
+    () => simulationLoaded ? (simulationPanelData?.airports ?? []) : [],
+    [simulationPanelData?.airports, simulationLoaded]
+  );
+
+  const flights = isSimulator ? createStaticSource(flightsData) : flightsFetch;
+  const airports = isSimulator ? createStaticSource(airportsData) : airportsFetch;
+  const orders = isSimulator ? createStaticSource(ordersData) : ordersFetch;
+  const maletas = isSimulator ? createStaticSource(bagsData) : maletasFetch;
+  const rutas = isSimulator ? createStaticSource(routesData) : rutasFetch;
 
   const activeSource = {
     flights,
@@ -442,14 +463,14 @@ export default function RightPanel({
       next.add(flightId);
       return next;
     });
-    setSimulationPanelData?.((previous) => ({
-      ...previous,
-      flights: (previous?.flights ?? []).map((flight) =>
-        flight.id === flightId
-          ? { ...flight, status: "CANCELADO", used: 0 }
-          : flight,
-      ),
-    }));
+    setSimulationPanelData?.((previous) => {
+      const updated = new Map(previous?.flights ?? new Map());
+      const flight = updated.get(flightId);
+      if (flight) {
+        updated.set(flightId, { ...flight, status: "CANCELADO", used: 0 });
+      }
+      return { ...previous, flights: updated };
+    });
   };
 
   const handleCancelFlight = async (flight) => {

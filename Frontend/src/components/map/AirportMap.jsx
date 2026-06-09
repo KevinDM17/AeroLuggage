@@ -64,16 +64,6 @@ const PLANE_ICON_MAPPING = {
 
 const MAX_FLIGHTS_ON_MAP = 1000;
 
-const pickFlightsToAnimate = (flights, airportsByIata, limit) => {
-  const out = [];
-  for (const f of flights) {
-    if (normalizeStatus(f.status) === "CANCELADO") continue;
-    if (!airportsByIata.has(f.origin) || !airportsByIata.has(f.dest)) continue;
-    out.push(f);
-  }
-  return out;
-};
-
 const MAP_STYLE = import.meta.env.VITE_MAP_STYLE_URL
   ?? "https://basemaps.cartocdn.com/gl/dark-matter-nolabels-gl-style/style.json";
 
@@ -122,22 +112,12 @@ function AirportMap({
 
   /* Geometría estática de rutas — solo cambia con vuelos/aeropuertos, NO por frame. */
   const routesGeometry = useMemo(() => {
-    const picked = pickFlightsToAnimate(flights ?? [], airportsByIata, MAX_FLIGHTS_ON_MAP);
-    const nowMs = typeof simulatedNowMs === "number" && Number.isFinite(simulatedNowMs)
-      ? simulatedNowMs : null;
-    const enProgreso = picked.filter((route) => {
-      if (nowMs == null) return true;
-      const salidaMs = Date.parse(`${route.depTime}Z`);
-      const llegadaMs = Date.parse(`${route.arrTime}Z`);
-      if (!Number.isFinite(salidaMs) || !Number.isFinite(llegadaMs)) return false;
-      return nowMs >= salidaMs && nowMs < llegadaMs;
-    });
-    return enProgreso.map((route, idx) => {
+    return (flights ?? []).map((route, idx) => {
       const origin = airportsByIata.get(route.origin);
       const destination = airportsByIata.get(route.dest);
+      if (!origin || !destination) return null;
       const dLat = destination.lat - origin.lat;
       const dLng = destination.lng - origin.lng;
-      const bearing = (Math.atan2(dLng, dLat) * 180) / Math.PI;
       const salidaMs = Date.parse(`${route.depTime}Z`);
       const llegadaMs = Date.parse(`${route.arrTime}Z`);
       return {
@@ -148,13 +128,13 @@ function AirportMap({
         oLat: origin.lat,
         dLng,
         dLat,
-        angle: bearing,
+        angle: (Math.atan2(dLng, dLat) * 180) / Math.PI,
         color: hexToRgba(flightLoadColor(route.used, route.capacity)),
         depMs: Number.isFinite(salidaMs) ? salidaMs : null,
         arrMs: Number.isFinite(llegadaMs) ? llegadaMs : null,
       };
-    });
-  }, [flights, airportsByIata, simulatedNowMs]);
+    }).filter(Boolean);
+  }, [flights, airportsByIata]);
 
   /* Estado de las posiciones animadas — viene del worker. */
   const [planes, setPlanes] = useState([]);

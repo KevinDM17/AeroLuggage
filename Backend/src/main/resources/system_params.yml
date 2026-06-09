@@ -15,7 +15,7 @@ simulacion:
 algoritmos:
   alns:
     max-iteraciones: 150
-    max-iteraciones-sin-mejora: 15
+    max-iteraciones-sin-mejora: 20
     tiempo-maximo-ms: 60000
     q-min: 1
     q-max: 6

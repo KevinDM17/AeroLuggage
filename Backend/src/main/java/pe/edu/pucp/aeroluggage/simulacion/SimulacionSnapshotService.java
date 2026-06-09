@@ -350,6 +350,7 @@ public class SimulacionSnapshotService {
             estados.add(EstadoRutaDTO.builder()
                     .withId(r.getIdRuta())
                     .withE(r.getEstado() != null ? r.getEstado().ordinal() : 0)
+                    .withIdMaleta(r.getIdMaleta())
                     .build());
         }
         return estados;

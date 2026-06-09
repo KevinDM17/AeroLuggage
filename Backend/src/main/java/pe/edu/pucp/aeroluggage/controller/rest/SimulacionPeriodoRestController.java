@@ -208,7 +208,7 @@ public class SimulacionPeriodoRestController {
                         .map(pe.edu.pucp.aeroluggage.dominio.entidades.Maleta::getIdMaleta)
                         .filter(Objects::nonNull).collect(java.util.stream.Collectors.toSet())
                 : java.util.Set.of();
-        final var rutas = sesion.getRutasPorMaleta().values();
+        final var rutas = sesion.getRutas();
         for (final var r : rutas) {
             if (r == null || r.getIdMaleta() == null || !idMaletasVentana.contains(r.getIdMaleta())) continue;
             final List<RutaVueloResponse> vuelosRuta = r.getSubrutas() == null ? List.of()

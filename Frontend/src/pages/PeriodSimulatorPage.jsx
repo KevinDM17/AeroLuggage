@@ -25,6 +25,7 @@ import {
 const ENUM_VUELO = ["PROGRAMADO", "CONFIRMADO", "EN_PROGRESO", "FINALIZADO", "CANCELADO"];
 const ENUM_MALETA = ["EN_ALMACEN", "EN_TRANSITO", "ENTREGADA"];
 const ENUM_RUTA = ["PLANIFICADA", "ACTIVA", "COMPLETADA", "REPLANIFICADA"];
+const SIMULATED_TWO_HOURS_MS = 7200000;
 
 
 
@@ -72,6 +73,7 @@ export default function PeriodSimulatorPage() {
   const toast = useToast();
   const publish = useStompPublish();
   const {
+    simulationPanelData,
     setSimulationPanelData,
     resetSimulationPanelData,
     cancelledFlightIds,
@@ -87,7 +89,7 @@ export default function PeriodSimulatorPage() {
   const [runId, setRunId] = useState(0);
   const [lastMockState, setLastMockState] = useState(null);
   const [mapAirports, setMapAirports] = useState([]);
-  const [mapFlights, setMapFlights] = useState([]);
+  // mapFlights se maneja dentro de simulationPanelData.flights
   const [showRouteLines, setShowRouteLines] = useState(true);
   const [currentSimTimeUtc, setCurrentSimTimeUtc] = useState(null);
   const [simulatedDayDurationMs, setSimulatedDayDurationMs] = useState(null);
@@ -95,12 +97,21 @@ export default function PeriodSimulatorPage() {
   const [windowSpacingMinutes, setWindowSpacingMinutes] = useState(120);
   const startSimMsRef = useRef(null);
   const ventanasCargadasRef = useRef(new Set());
+  const lastMapFlightsRef = useRef([]);
+  const completionTimesRef = useRef(new Map());
 
   const clearSimulationData = () => {
     ventanasCargadasRef.current.clear();
+    completionTimesRef.current.clear();
     setMapAirports([]);
-    setMapFlights([]);
-    resetSimulationPanelData();
+    setSimulationPanelData({
+      airports: [],
+      flights: new Map(),
+      orders: new Map(),
+      bags: new Map(),
+      routes: new Map(),
+      loaded: false,
+    });
     startSimMsRef.current = null;
   };
 
@@ -110,6 +121,21 @@ export default function PeriodSimulatorPage() {
         ? { ...flight, status: "CANCELADO", used: 0 }
         : flight,
     );
+
+  const updateEstadosOnly = (oldMap, stateMap, enumArr, statusField = "estado", extraFields) => {
+    if (Object.keys(stateMap).length === 0) return oldMap;
+    const updated = new Map(oldMap);
+    for (const [id, entity] of updated) {
+      const st = stateMap[id];
+      if (st) {
+        updated.set(id, { ...entity, [statusField]: enumArr[st.e], ...(extraFields ? extraFields(st, entity) : {}) });
+      }
+    }
+    return updated;
+  };
+
+  const normalizeFlightStatus = (status) =>
+    String(status ?? "").trim().toUpperCase().replace(/\s+/g, "_");
 
   const sessionIdRef = useRef(null);
   sessionIdRef.current = sessionId;
@@ -204,34 +230,41 @@ export default function PeriodSimulatorPage() {
             : Promise.resolve([]),
         ]);
         const adaptedFlights = (vuelosData ?? []).map(adaptFlightInstance);
-        setMapFlights((prev) => {
-          const merged = new Map(prev.map((f) => [f.idVueloInstancia ?? f.id, f]));
-          for (const f of adaptedFlights) {
-            merged.set(f.idVueloInstancia ?? f.id, { ...f, ticksAusente: 0 });
-          }
-          return [...merged.values()];
-        });
         setSimulationPanelData((prev) => {
-          const flightsIds = new Set(prev.flights.map((f) => f.idVueloInstancia ?? f.id));
-          const newFlights = adaptedFlights.filter((f) => !flightsIds.has(f.idVueloInstancia ?? f.id));
-
-          const bagsIds = new Set(prev.bags.map((b) => b.idMaleta));
-          const newBags = (ventanaData.maletas ?? []).filter((m) => !bagsIds.has(m.idMaleta));
-
-          const routesIds = new Set(prev.routes.map((r) => r.idRuta));
-          const newRoutes = (ventanaData.rutas ?? []).filter((r) => !routesIds.has(r.idRuta));
-
-          const ordersIds = new Set(prev.orders.map((o) => o.id ?? o.idPedido));
-          const newOrders = (ventanaData.pedidos ?? []).filter((o) => !ordersIds.has(o.id ?? o.idPedido));
-
-          return {
-            ...prev,
-            flights: [...prev.flights, ...newFlights],
-            orders: [...prev.orders, ...newOrders],
-            bags: [...prev.bags, ...newBags],
-            routes: [...prev.routes, ...newRoutes],
-          };
+          const flights = new Map(prev.flights);
+          for (const f of adaptedFlights) {
+            flights.set(f.idVueloInstancia ?? f.id, { ...f, ticksAusente: 0 });
+          }
+          const bags = new Map(prev.bags);
+          for (const b of ventanaData.maletas ?? []) {
+            bags.set(b.idMaleta, { ...b, ticksAusente: 0 });
+          }
+          const routes = new Map(prev.routes);
+          for (const r of ventanaData.rutas ?? []) {
+            routes.set(r.idRuta, { ...r, ticksAusente: 0 });
+          }
+          const orders = new Map(prev.orders);
+          for (const o of ventanaData.pedidos ?? []) {
+            orders.set(o.id ?? o.idPedido, o);
+          }
+          return { ...prev, flights, bags, routes, orders };
         });
+        const simTimeMs = currentSimTimeUtc
+            ? Date.parse(`${currentSimTimeUtc}Z`)
+            : null;
+        if (Number.isFinite(simTimeMs)) {
+          const completion = completionTimesRef.current;
+          for (const b of ventanaData.maletas ?? []) {
+            if (b.estado === "ENTREGADA" && !completion.has(b.idMaleta)) {
+              completion.set(b.idMaleta, simTimeMs);
+            }
+          }
+          for (const r of ventanaData.rutas ?? []) {
+            if (r.estado === "COMPLETADA" && !completion.has(r.idRuta)) {
+              completion.set(r.idRuta, simTimeMs);
+            }
+          }
+        }
       })();
       return;
     }
@@ -263,21 +296,6 @@ export default function PeriodSimulatorPage() {
         vueloStateMap = Object.fromEntries(
           tick.estadosVuelos.map((v) => [v.id, v]),
         );
-        setMapFlights((prev) => {
-          const updated = prev.map((f) => {
-            const st = vueloStateMap[f.idVueloInstancia ?? f.id];
-            if (st) {
-              return {
-                ...f,
-                status: ENUM_VUELO[st.e],
-                used: f.capacity > 0 ? f.capacity - st.cap : 0,
-                ticksAusente: 0,
-              };
-            }
-            return { ...f, ticksAusente: (f.ticksAusente ?? 0) + 1 };
-          });
-          return updated.filter((f) => (f.ticksAusente ?? 0) < 2);
-        });
       }
     } catch (e) {
       // ignore
@@ -286,7 +304,7 @@ export default function PeriodSimulatorPage() {
     try {
       if (Array.isArray(tick.estadosMaletas)) {
         maletaStateMap = Object.fromEntries(
-          tick.estadosMaletas.map((m) => [m.id, ENUM_MALETA[m.e]]),
+          tick.estadosMaletas.map((m) => [m.id, m]),
         );
       }
     } catch (e) {
@@ -296,58 +314,56 @@ export default function PeriodSimulatorPage() {
     try {
       if (Array.isArray(tick.estadosRutas)) {
         rutaStateMap = Object.fromEntries(
-          tick.estadosRutas.map((r) => [r.id, ENUM_RUTA[r.e]]),
+          tick.estadosRutas.map((r) => [r.id, r]),
         );
       }
     } catch (e) {
       // ignore
     }
 
-    const maletaIdsInTick = new Set((tick.estadosMaletas ?? []).map((m) => m.id));
-    const rutaIdsInTick = new Set((tick.estadosRutas ?? []).map((r) => r.id));
-    const hasFlightUpdates = Object.keys(vueloStateMap).length > 0;
-    const hasBagUpdates = Object.keys(maletaStateMap).length > 0;
-    const hasRouteUpdates = Object.keys(rutaStateMap).length > 0;
-
     setSimulationPanelData((prev) => {
-      const vueloIdsInTick = new Set((tick.estadosVuelos ?? []).map((v) => v.id));
-      const bagsFiltradas = prev.bags
-        .map((b) => ({
-          ...b,
-          ticksAusente: b.fechaRegistro && b.fechaRegistro > tick.simTime
-            ? (b.ticksAusente ?? 0)
-            : maletaIdsInTick.has(b.idMaleta) ? 0 : (b.ticksAusente ?? 0) + 1,
-          estado: maletaStateMap[b.idMaleta] ?? b.estado,
-        }))
-        .filter((b) => (b.ticksAusente ?? 0) < 2);
-      const pedidosActivos = new Set(bagsFiltradas.map((b) => b.idPedido));
+      const simTimeMs = Date.parse(`${tick.simTime}Z`);
+      const cutoffMs = Number.isFinite(simTimeMs) ? simTimeMs - SIMULATED_TWO_HOURS_MS : null;
+      const completion = completionTimesRef.current;
+
+      for (const st of tick.estadosMaletas ?? []) {
+        if (st.e === 2 && !completion.has(st.id)) {
+          completion.set(st.id, simTimeMs);
+        }
+      }
+      for (const st of tick.estadosVuelos ?? []) {
+        if ((st.e === 3 || st.e === 4) && !completion.has(st.id)) {
+          completion.set(st.id, simTimeMs);
+        }
+      }
+
+      const prunedIds = new Set();
+      if (cutoffMs != null) {
+        for (const [id, completedAt] of completion) {
+          if (completedAt < cutoffMs) {
+            prunedIds.add(id);
+            completion.delete(id);
+          }
+        }
+      }
+
+      const updatedBags = updateEstadosOnly(prev.bags, maletaStateMap, ENUM_MALETA, "estado");
+      for (const id of prunedIds) updatedBags.delete(id);
+
+      const updatedRoutes = updateEstadosOnly(prev.routes, rutaStateMap, ENUM_RUTA, "estado");
+
+      const updatedFlights = updateEstadosOnly(prev.flights, vueloStateMap, ENUM_VUELO, "status",
+        (st, flight) => ({ used: flight.capacity > 0 ? flight.capacity - st.cap : 0 }));
+      for (const id of prunedIds) updatedFlights.delete(id);
+
       return {
         ...prev,
         simTime: tick.simTime,
         airports: prev.airports.map((ap) => ({ ...ap, used: occMap[ap.iata] ?? ap.used })),
-        flights: prev.flights
-          .map((f) => {
-            const st = vueloStateMap[f.idVueloInstancia ?? f.id];
-            return {
-              ...f,
-              ticksAusente: vueloIdsInTick.has(f.idVueloInstancia ?? f.id) ? 0 : (f.ticksAusente ?? 0) + 1,
-              ...(st ? { status: ENUM_VUELO[st.e], used: f.capacity > 0 ? f.capacity - st.cap : 0 } : {}),
-            };
-          })
-          .filter((f) => {
-            const st = vueloStateMap[f.idVueloInstancia ?? f.id];
-            if (st && (st.e === 3 || st.e === 4)) return false;
-            return (f.ticksAusente ?? 0) < 2;
-          }),
-        bags: bagsFiltradas,
-        routes: prev.routes
-          .map((r) => ({
-            ...r,
-            ticksAusente: rutaIdsInTick.has(r.idRuta) ? 0 : (r.ticksAusente ?? 0) + 1,
-            estado: rutaStateMap[r.idRuta] ?? r.estado,
-          }))
-          .filter((r) => (r.ticksAusente ?? 0) < 2),
-        orders: prev.orders.filter((o) => pedidosActivos.has(o.id ?? o.idPedido)),
+        flights: updatedFlights,
+        bags: updatedBags,
+        routes: updatedRoutes,
+        orders: prev.orders,
       };
     });
 
@@ -375,6 +391,34 @@ export default function PeriodSimulatorPage() {
     executionElapsedMs,
     simulatedDayDurationMs,
   ]);
+
+  const mapVisibleFlights = useMemo(() => {
+    if (simStatus === "running") {
+      if (!simulationPanelData?.flights || !simulatedNowMs) return [];
+      const nowMs = simulatedNowMs;
+      const out = [];
+      for (const flight of simulationPanelData.flights.values()) {
+        const status = flight.status ?? flight.estado;
+        if (normalizeFlightStatus(status) === "CANCELADO") continue;
+        const salidaMs = Date.parse(`${flight.depTime}Z`);
+        const llegadaMs = Date.parse(`${flight.arrTime}Z`);
+        if (!Number.isFinite(salidaMs) || !Number.isFinite(llegadaMs)) continue;
+        if (!(nowMs >= salidaMs && nowMs < llegadaMs)) continue;
+        out.push({
+          id: flight.idVueloInstancia ?? flight.id,
+          origin: flight.origin,
+          dest: flight.dest,
+          depTime: flight.depTime,
+          arrTime: flight.arrTime,
+          used: flight.used,
+          capacity: flight.capacity,
+        });
+      }
+      lastMapFlightsRef.current = out;
+      return out;
+    }
+    return lastMapFlightsRef.current;
+  }, [simulationPanelData?.flights, simulatedNowMs, simStatus]);
 
   const simulationClock = useMemo(() => {
     if (simulatedNowMs === null || Number.isNaN(simulatedNowMs)) {
@@ -454,13 +498,28 @@ export default function PeriodSimulatorPage() {
       ventanasCargadasRef.current.add(primeraVentana);
       ventanasCargadasRef.current.add(segundaVentana);
       const adaptedFlights = (vuelosData ?? []).map(adaptFlightInstance);
-      setMapFlights(adaptedFlights.map((f) => ({ ...f, ticksAusente: 0 })));
+      const initialFlights = new Map();
+      for (const f of adaptedFlights) {
+        initialFlights.set(f.idVueloInstancia ?? f.id, { ...f, ticksAusente: 0 });
+      }
+      const initialBags = new Map();
+      for (const b of [...(ventana1.maletas ?? []), ...(ventana2.maletas ?? [])]) {
+        initialBags.set(b.idMaleta, { ...b, ticksAusente: 0 });
+      }
+      const initialRoutes = new Map();
+      for (const r of [...(ventana1.rutas ?? []), ...(ventana2.rutas ?? [])]) {
+        initialRoutes.set(r.idRuta, { ...r, ticksAusente: 0 });
+      }
+      const initialOrders = new Map();
+      for (const o of [...(ventana1.pedidos ?? []), ...(ventana2.pedidos ?? [])]) {
+        initialOrders.set(o.id ?? o.idPedido, o);
+      }
       setSimulationPanelData({
         airports: adaptedAirports,
-        flights: adaptedFlights,
-        orders: [...(ventana1.pedidos ?? []), ...(ventana2.pedidos ?? [])],
-        bags: [...(ventana1.maletas ?? []), ...(ventana2.maletas ?? [])],
-        routes: [...(ventana1.rutas ?? []), ...(ventana2.rutas ?? [])],
+        flights: initialFlights,
+        orders: initialOrders,
+        bags: initialBags,
+        routes: initialRoutes,
         sessionId: newSessionId,
         loaded: true,
       });
@@ -672,7 +731,7 @@ export default function PeriodSimulatorPage() {
       animateMapFlights={simStatus === "running"}
       mapAutoload={false}
       airports={mapAirports}
-      flights={mapFlights}
+      flights={mapVisibleFlights}
       simulatedNowMs={simulatedNowMs}
       simulatedDayDurationMs={simulatedDayDurationMs}
       date={simulationClock.date}
