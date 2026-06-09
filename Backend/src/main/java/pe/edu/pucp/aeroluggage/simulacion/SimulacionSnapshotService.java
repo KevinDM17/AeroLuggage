@@ -71,7 +71,7 @@ public class SimulacionSnapshotService {
 
     public int contarMaletasEnTransito(final SimulacionSesion sesion) {
         final LocalDateTime simTimeUtc = sesion.getCurrentSimTimeUtc().get();
-        return (int) sesion.getMaletas().stream()
+        return (int) sesion.getMaletasCalientes().stream()
                 .filter(maleta -> maleta != null
                         && maleta.getFechaRegistro() != null
                         && !maleta.getFechaRegistro().isAfter(simTimeUtc)
@@ -80,19 +80,13 @@ public class SimulacionSnapshotService {
     }
 
     public int contarMaletasEntregadas(final SimulacionSesion sesion) {
-        final LocalDateTime simTimeUtc = sesion.getCurrentSimTimeUtc().get();
-        return (int) sesion.getMaletas().stream()
-                .filter(maleta -> maleta != null
-                        && maleta.getFechaRegistro() != null
-                        && !maleta.getFechaRegistro().isAfter(simTimeUtc)
-                        && maleta.getEstado() == EstadoMaleta.ENTREGADA)
-                .count();
+        return sesion.getMaletasFrias().size();
     }
 
     public int contarMaletasSinRuta(final SimulacionSesion sesion) {
         final LocalDateTime simTimeUtc = sesion.getCurrentSimTimeUtc().get();
         int sinRuta = 0;
-        for (final Maleta m : sesion.getMaletas()) {
+        for (final Maleta m : sesion.getMaletasCalientes()) {
             if (m == null || m.getFechaRegistro() == null
                     || m.getFechaRegistro().isAfter(simTimeUtc)) continue;
             final Ruta r = sesion.getRutaPorMaleta(m.getIdMaleta());

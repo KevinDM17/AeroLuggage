@@ -51,6 +51,7 @@ import java.util.concurrent.ExecutorService;
 import java.util.concurrent.Executors;
 import java.util.concurrent.ScheduledExecutorService;
 import java.util.concurrent.ScheduledFuture;
+import java.util.concurrent.ScheduledThreadPoolExecutor;
 import java.util.concurrent.TimeUnit;
 import java.util.stream.Collectors;
 
@@ -240,9 +241,9 @@ public class SimulacionSesionManager {
 
         if (sesion.haTerminado()) {
             sesion.getActiva().set(false);
-            cancelarTarea(sesion);
+            limpiarSesion(sesion);
             sesionesActivas.remove(sesion.getSessionId());
-            sesionesFinalizadas.put(sesion.getSessionId(), sesion);
+            sesionesFinalizadas.remove(sesion.getSessionId());
             log.info("[AeroLuggage/Simulacion] - FINALIZADA: sessionId: {}", sesion.getSessionId());
 
             broker.convertAndSend(
@@ -768,7 +769,7 @@ public class SimulacionSesionManager {
         final LocalDateTime inicioVentana = calcularInicioVentana(sesion, windowId);
         final LocalDateTime finVentana = inicioVentana.plusMinutes(sesion.getWindowSizeMinutes());
 
-        final List<VueloInstancia> vuelosInstanciaCopia = sesion.getVuelosInstancia().stream()
+        final ArrayList<VueloInstancia> vuelosInstanciaCopia = sesion.getVuelosInstancia().stream()
                 .map(v -> new VueloInstancia(
                         v.getIdVueloInstancia(),
                         v.getCodigo(),
@@ -782,12 +783,12 @@ public class SimulacionSesionManager {
                         v.getAeropuertoDestino(),
                         v.getEstado()
                 ))
-                .toList();
+                .collect(Collectors.toCollection(ArrayList::new));
 
         final Map<String, VueloInstancia> idxVuelos = vuelosInstanciaCopia.stream()
                 .collect(Collectors.toMap(VueloInstancia::getIdVueloInstancia, v -> v, (a, b) -> a));
 
-        final List<Ruta> rutasComprometidas = sesion.getRutas().stream()
+        final ArrayList<Ruta> rutasComprometidas = sesion.getRutas().stream()
                 .filter(ruta -> ruta != null
                         && ruta.getEstado() != EstadoRuta.REPLANIFICADA)
                 .map(ruta -> {
@@ -800,14 +801,14 @@ public class SimulacionSesionManager {
                             ruta.getPlazoMaximoDias(), ruta.getDuracion(),
                             subrutasResueltas, ruta.getEstado());
                 })
-                .collect(Collectors.toList());
+                .collect(Collectors.toCollection(ArrayList::new));
 
         final Set<String> maletasConRuta = rutasComprometidas.stream()
                 .map(Ruta::getIdMaleta)
                 .filter(Objects::nonNull)
                 .collect(Collectors.toSet());
 
-        final ArrayList<Maleta> pendientes = sesion.getMaletas().stream()
+        final ArrayList<Maleta> pendientes = sesion.getMaletasCalientes().stream()
                 .filter(maleta -> maleta != null
                         && maleta.getIdMaleta() != null
                         && maleta.getFechaRegistro() != null
@@ -858,7 +859,7 @@ public class SimulacionSesionManager {
             if (r != null && r.getIdRuta() != null) idxRutas.put(r.getIdRuta(), r);
         }
 
-        final List<Aeropuerto> aeropuertosCopia = sesion.getAeropuertos().stream()
+        final ArrayList<Aeropuerto> aeropuertosCopia = sesion.getAeropuertos().stream()
                 .map(a -> new Aeropuerto(
                         a.getIdAeropuerto(),
                         a.getCiudad(),
@@ -867,7 +868,7 @@ public class SimulacionSesionManager {
                         a.getLongitud(),
                         a.getLatitud(),
                         a.getHusoGMT()))
-                .collect(Collectors.toList());
+                .collect(Collectors.toCollection(ArrayList::new));
         final Map<String, Aeropuerto> idxAeropuertos = new HashMap<>();
         for (final Aeropuerto a : aeropuertosCopia) {
             if (a != null && a.getIdAeropuerto() != null) idxAeropuertos.put(a.getIdAeropuerto(), a);
@@ -880,21 +881,21 @@ public class SimulacionSesionManager {
                     sistemaConfiguracion.getUmbralConfirmacionMinutos());
         }
 
-        final List<VueloInstancia> vuelosFiltrados = vuelosInstanciaCopia.stream()
+        final ArrayList<VueloInstancia> vuelosFiltrados = vuelosInstanciaCopia.stream()
                 .filter(v -> v != null && v.getFechaSalida() != null
                         && !v.getFechaSalida().isBefore(inicioVentana)
                         && !v.getFechaSalida().isAfter(finVentana.plusDays(2)))
-                .collect(Collectors.toList());
+                .collect(Collectors.toCollection(ArrayList::new));
 
         final InstanciaProblema instancia = new InstanciaProblema(
                 "SIM-" + sesion.getSessionId() + "-" + windowId,
                 pendientes,
                 new ArrayList<>(sesion.getVuelosProgramados()),
-                new ArrayList<>(vuelosFiltrados),
-                new ArrayList<>(aeropuertosCopia)
+                vuelosFiltrados,
+                aeropuertosCopia
         );
         instancia.setFechaEvaluacion(inicioVentana);
-        instancia.setRutasComprometidas(new ArrayList<>(rutasComprometidas));
+        instancia.setRutasComprometidas(rutasComprometidas);
         instancia.setOcupacionBaseAeropuerto(construirOcupacionBaseAeropuerto(sesion.getAeropuertos()));
         instancia.setEventosBaseAeropuerto(ALNSUtil.construirEventosBase(
                 rutasComprometidas, instancia, sesion.getMaletasPorId()));
@@ -927,5 +928,6 @@ public class SimulacionSesionManager {
         if (tarea != null && !tarea.isCancelled()) {
             tarea.cancel(false);
         }
+        ((ScheduledThreadPoolExecutor) scheduler).purge();
     }
 }

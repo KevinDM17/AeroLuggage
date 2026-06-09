@@ -34,6 +34,10 @@ import pe.edu.pucp.aeroluggage.dominio.entidades.VueloProgramado;
 import pe.edu.pucp.aeroluggage.dominio.enums.EstadoMaleta;
 import pe.edu.pucp.aeroluggage.dominio.enums.EstadoRuta;
 import pe.edu.pucp.aeroluggage.dominio.enums.EstadoVuelo;
+import pe.edu.pucp.aeroluggage.dto.simulacion.ws.EstadoMaletaDTO;
+import pe.edu.pucp.aeroluggage.dto.simulacion.ws.EstadoRutaDTO;
+import pe.edu.pucp.aeroluggage.dto.simulacion.ws.EstadoVueloDTO;
+import pe.edu.pucp.aeroluggage.dto.simulacion.ws.OcupacionAeropuertoDTO;
 
 @Getter
 public class SimulacionSesion {
@@ -68,6 +72,9 @@ public class SimulacionSesion {
     private volatile ScheduledFuture<?> tareaScheduled;
     private final ConcurrentHashMap<String, Maleta> maletasPorId = new ConcurrentHashMap<>();
     private final ConcurrentHashMap<String, Ruta> rutasPorMaleta = new ConcurrentHashMap<>();
+    private final ConcurrentHashMap<String, ColdEntry> maletasFrias = new ConcurrentHashMap<>();
+
+    record ColdEntry(Maleta maleta, Ruta ruta, LocalDateTime entrega) {}
     private final ConcurrentHashMap<String, MaletaFallos> evaluacionesMaletas = new ConcurrentHashMap<>();
     private final List<SegmentoReplanificacion> segmentosReplanificacion = new CopyOnWriteArrayList<>();
 
@@ -279,6 +286,13 @@ public class SimulacionSesion {
                         m.setAeropuertoActual(m.getPedido().getAeropuertoDestino().getIdAeropuerto());
                     }
                 }
+                final Ruta r = rutasPorMaleta.get(idEntidad);
+                if (r != null) {
+                    r.setEstado(EstadoRuta.COMPLETADA);
+                }
+                maletasFrias.put(idEntidad, new ColdEntry(m, r, currentSimTimeUtc.get()));
+                maletasPorId.remove(idEntidad);
+                rutasPorMaleta.remove(idEntidad);
                 if (idAeropuerto != null) {
                     for (final Aeropuerto a : aeropuertos) {
                         if (a != null && a.getIdAeropuerto() != null
@@ -669,6 +683,7 @@ public class SimulacionSesion {
         this.resumenesVentana = List.of();
         this.maletasPorId.clear();
         this.rutasPorMaleta.clear();
+        this.maletasFrias.clear();
         this.evaluacionesMaletas.clear();
         this.segmentosReplanificacion.clear();
         this.maletasPorVentana.clear();
@@ -692,30 +707,158 @@ public class SimulacionSesion {
     }
 
     public Collection<Maleta> getMaletas() {
+        final List<Maleta> todas = new ArrayList<>(maletasPorId.values());
+        for (final ColdEntry entry : maletasFrias.values()) {
+            if (entry.maleta() != null) {
+                todas.add(entry.maleta());
+            }
+        }
+        return todas;
+    }
+
+    public Collection<Maleta> getMaletasCalientes() {
         return maletasPorId.values();
     }
 
+    public Collection<ColdEntry> getMaletasFrias() {
+        return maletasFrias.values();
+    }
+
     public Collection<Ruta> getRutas() {
-        return rutasPorMaleta.values();
+        final List<Ruta> todas = new ArrayList<>(rutasPorMaleta.values());
+        for (final ColdEntry entry : maletasFrias.values()) {
+            if (entry.ruta() != null) {
+                todas.add(entry.ruta());
+            }
+        }
+        return todas;
     }
 
     public Ruta getRutaPorMaleta(final String idMaleta) {
-        return rutasPorMaleta.get(idMaleta);
+        final Ruta r = rutasPorMaleta.get(idMaleta);
+        if (r != null) {
+            return r;
+        }
+        final ColdEntry entry = maletasFrias.get(idMaleta);
+        return entry == null ? null : entry.ruta();
+    }
+
+    public record TickSnapshot(
+            int enTransito,
+            int almacen,
+            int entregadas,
+            int sinRuta,
+            int vuelosActivos,
+            int capacidadLibrePct,
+            List<EstadoMaletaDTO> estadosMaletas,
+            List<EstadoRutaDTO> estadosRutas,
+            List<EstadoVueloDTO> estadosVuelos,
+            List<OcupacionAeropuertoDTO> aeropuertos
+    ) {}
+
+    public TickSnapshot consolidar(final LocalDateTime simTimeUtc) {
+        int enTransito = 0;
+        int almacen = 0;
+        int sinRuta = 0;
+        final List<EstadoMaletaDTO> estadosMaletas = new ArrayList<>();
+
+        for (final Maleta m : maletasPorId.values()) {
+            if (m == null || m.getFechaRegistro() == null
+                    || m.getFechaRegistro().isAfter(simTimeUtc)) {
+                continue;
+            }
+            if (m.getEstado() == EstadoMaleta.EN_TRANSITO) {
+                enTransito++;
+            } else if (m.getEstado() == EstadoMaleta.EN_ALMACEN) {
+                almacen++;
+            }
+            final Ruta r = rutasPorMaleta.get(m.getIdMaleta());
+            if (r == null || r.getEstado() == EstadoRuta.REPLANIFICADA
+                    || r.getSubrutas() == null || r.getSubrutas().isEmpty()) {
+                sinRuta++;
+            }
+            estadosMaletas.add(EstadoMaletaDTO.builder()
+                    .withId(m.getIdMaleta())
+                    .withE(m.getEstado() != null ? m.getEstado().ordinal() : 0)
+                    .build());
+        }
+
+        final int entregadas = maletasFrias.size();
+
+        final List<EstadoRutaDTO> estadosRutas = new ArrayList<>();
+        for (final Ruta r : rutasPorMaleta.values()) {
+            if (r == null) {
+                continue;
+            }
+            final Maleta m = maletasPorId.get(r.getIdMaleta());
+            if (m == null || m.getFechaRegistro() == null
+                    || m.getFechaRegistro().isAfter(simTimeUtc)) {
+                continue;
+            }
+            estadosRutas.add(EstadoRutaDTO.builder()
+                    .withId(r.getIdRuta())
+                    .withE(r.getEstado() != null ? r.getEstado().ordinal() : 0)
+                    .build());
+        }
+
+        int vuelosActivos = 0;
+        int capacidadTotal = 0;
+        int capacidadDisponible = 0;
+        final List<EstadoVueloDTO> estadosVuelos = new ArrayList<>();
+        final LocalDateTime vueloLimiteInf = simTimeUtc.minusDays(1);
+        final LocalDateTime vueloLimiteSup = simTimeUtc.plusDays(2);
+
+        for (final VueloInstancia v : vuelosInstancia) {
+            if (v == null) {
+                continue;
+            }
+            if (v.getEstado() == EstadoVuelo.EN_PROGRESO) {
+                vuelosActivos++;
+            }
+            capacidadTotal += v.getCapacidadMaxima();
+            capacidadDisponible += v.getCapacidadDisponible();
+            if (v.getFechaSalida() != null
+                    && !v.getFechaSalida().isBefore(vueloLimiteInf)
+                    && !v.getFechaSalida().isAfter(vueloLimiteSup)) {
+                estadosVuelos.add(EstadoVueloDTO.builder()
+                        .withId(v.getIdVueloInstancia())
+                        .withE(v.getEstado() != null ? v.getEstado().ordinal() : 0)
+                        .withCap(v.getCapacidadDisponible())
+                        .build());
+            }
+        }
+
+        final int capacidadLibrePct = capacidadTotal > 0
+                ? (capacidadDisponible * 100) / capacidadTotal
+                : 0;
+
+        final List<OcupacionAeropuertoDTO> aeropuertosDTO = new ArrayList<>();
+        for (final Aeropuerto a : aeropuertos) {
+            if (a == null) {
+                continue;
+            }
+            aeropuertosDTO.add(OcupacionAeropuertoDTO.builder()
+                    .withId(a.getIdAeropuerto())
+                    .withOcc(a.getMaletasActuales())
+                    .build());
+        }
+
+        return new TickSnapshot(
+                enTransito, almacen, entregadas, sinRuta,
+                vuelosActivos, capacidadLibrePct,
+                estadosMaletas, estadosRutas, estadosVuelos, aeropuertosDTO
+        );
     }
 
     public synchronized void podarEntidadesAnteriores(final LocalDateTime cutoff) {
+        if (maletasFrias.isEmpty()) {
+            return;
+        }
+
         final Set<String> aPodar = new HashSet<>();
-        for (final Maleta maleta : maletasPorId.values()) {
-            if (maleta.getEstado() != EstadoMaleta.ENTREGADA) {
-                continue;
-            }
-            final Ruta ruta = rutasPorMaleta.get(maleta.getIdMaleta());
-            if (ruta == null || ruta.getSubrutas() == null || ruta.getSubrutas().isEmpty()) {
-                continue;
-            }
-            final LocalDateTime ultimaLlegada = ruta.getSubrutas().getLast().getFechaLlegada();
-            if (ultimaLlegada != null && ultimaLlegada.isBefore(cutoff)) {
-                aPodar.add(maleta.getIdMaleta());
+        for (final Map.Entry<String, ColdEntry> entry : maletasFrias.entrySet()) {
+            if (entry.getValue().entrega() != null && entry.getValue().entrega().isBefore(cutoff)) {
+                aPodar.add(entry.getKey());
             }
         }
 
@@ -723,8 +866,7 @@ public class SimulacionSesion {
             return;
         }
 
-        aPodar.forEach(maletasPorId::remove);
-        aPodar.forEach(rutasPorMaleta::remove);
+        aPodar.forEach(maletasFrias::remove);
 
         final Set<String> vuelosEnUso = new HashSet<>();
         for (final Ruta ruta : rutasPorMaleta.values()) {
@@ -734,6 +876,15 @@ public class SimulacionSesion {
             for (final VueloInstancia vuelo : ruta.getSubrutas()) {
                 if (vuelo != null && vuelo.getIdVueloInstancia() != null) {
                     vuelosEnUso.add(vuelo.getIdVueloInstancia());
+                }
+            }
+        }
+        for (final ColdEntry entry : maletasFrias.values()) {
+            if (entry.ruta() != null && entry.ruta().getSubrutas() != null) {
+                for (final VueloInstancia vuelo : entry.ruta().getSubrutas()) {
+                    if (vuelo != null && vuelo.getIdVueloInstancia() != null) {
+                        vuelosEnUso.add(vuelo.getIdVueloInstancia());
+                    }
                 }
             }
         }
@@ -912,12 +1063,12 @@ public class SimulacionSesion {
                                 final List<Pedido> pedidos,
                                 final List<Maleta> maletas,
                                 final List<Ruta> rutas) {
-        this.aeropuertos = aeropuertos == null ? List.of() : List.copyOf(new ArrayList<>(aeropuertos));
+        this.aeropuertos = aeropuertos == null ? List.of() : List.copyOf(aeropuertos);
         this.vuelosProgramados = vuelosProgramados == null
                 ? List.of()
-                : List.copyOf(new ArrayList<>(vuelosProgramados));
-        this.vuelosInstancia = vuelosInstancia == null ? List.of() : List.copyOf(new ArrayList<>(vuelosInstancia));
-        this.pedidos = pedidos == null ? List.of() : List.copyOf(new ArrayList<>(pedidos));
+                : List.copyOf(vuelosProgramados);
+        this.vuelosInstancia = vuelosInstancia == null ? List.of() : List.copyOf(vuelosInstancia);
+        this.pedidos = pedidos == null ? List.of() : List.copyOf(pedidos);
         this.resumenesVentana = List.of();
         this.maletasPorId.clear();
         this.rutasPorMaleta.clear();
