@@ -3,8 +3,10 @@ import { useOutletContext } from "react-router-dom";
 import MapDashboard from "../components/simulator/MapDashboard";
 import { useStompPublish, useStompSubscribe } from "../hooks/useStomp";
 import { usePolling } from "../hooks/usePolling";
+import { useDefensivePerformanceCleanup } from "../hooks/useDefensivePerformanceCleanup";
 import { iniciarSimulacionPeriodo, getPeriodSimState } from "../api/simulator";
 import { USE_MOCK } from "../api/client";
+import { clearPerformanceTimeline } from "../utils/performanceCleanup";
 
 /**
  * "Día a Día" — monitoreo en vivo de operaciones reales.
@@ -24,7 +26,10 @@ export default function SimulatorPage() {
 
   const clearSimulationData = () => {
     resetSimulationPanelData();
+    clearPerformanceTimeline();
   };
+
+  useDefensivePerformanceCleanup(USE_MOCK || Boolean(sessionId));
 
   /* Auto-iniciar sesión "día a día" en el back al montar */
   // useEffect(() => {

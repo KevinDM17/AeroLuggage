@@ -4,6 +4,7 @@ import { Play, Square, RotateCw } from "lucide-react";
 import MapDashboard from "../components/simulator/MapDashboard";
 import { usePolling } from "../hooks/usePolling";
 import { useElapsedTimer } from "../hooks/useElapsedTimer";
+import { useDefensivePerformanceCleanup } from "../hooks/useDefensivePerformanceCleanup";
 import { useStompPublish, useStompSubscribe } from "../hooks/useStomp";
 import { useToast } from "../components/ui/Toast";
 import {
@@ -17,6 +18,7 @@ import {
 import { adaptAirport } from "../api/airports";
 import { adaptFlightInstance } from "../api/flightInstances";
 import { USE_MOCK } from "../api/client";
+import { clearPerformanceTimeline } from "../utils/performanceCleanup";
 import {
   formatElapsedHMS,
   formatUtcDateTimeDisplay,
@@ -113,6 +115,7 @@ export default function PeriodSimulatorPage() {
       loaded: false,
     });
     startSimMsRef.current = null;
+    clearPerformanceTimeline();
   };
 
   const applyCancelledFlights = (flights) =>
@@ -183,6 +186,8 @@ export default function PeriodSimulatorPage() {
   const isStarting = simStatus === "starting";
   const isSimulationLocked =
     isStarting || simStatus === "running" || simStatus === "paused";
+
+  useDefensivePerformanceCleanup(simStatus === "running");
 
   useEffect(() => {
     if (USE_MOCK) {
