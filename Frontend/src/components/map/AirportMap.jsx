@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useRef, useState } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { Map as MapGL, useControl } from "react-map-gl/maplibre";
 import { MapboxOverlay } from "@deck.gl/mapbox";
 import { ScatterplotLayer, LineLayer, IconLayer, TextLayer } from "@deck.gl/layers";
@@ -7,6 +7,7 @@ import { tokens, semaphoreColor } from "../../utils/tokens";
 import { useFetch } from "../../hooks/useFetch";
 import { listAirports } from "../../api/airports";
 import { listFlights } from "../../api/flights";
+import { useMapFocus } from "../../context/MapFocusContext";
 
 const occupancyStatus = (used, capacity) => {
   const pct = capacity > 0 ? (used / capacity) * 100 : 0;
@@ -110,6 +111,67 @@ function AirportMap({
 
   const airportList = useMemo(() => Array.from(airportsByIata.values()), [airportsByIata]);
 
+  /* Vinculacion panel <-> mapa. */
+  const { mapHighlight, selected, mapFocus, mapDim, setSelected, setPanelFocus } = useMapFocus();
+  const mapRef = useRef(null);
+
+  // Click en el mapa -> seleccionar y pedir enfoque en el panel (req 6/8).
+  const selectFromMap = useCallback((entity) => {
+    setSelected(entity);
+    setPanelFocus({ ...entity, ts: Date.now() });
+  }, [setSelected, setPanelFocus]);
+
+  // Enfoque de camara pedido por el panel (req 5/7/9).
+  useEffect(() => {
+    if (!mapFocus) return;
+    const ref = mapRef.current;
+    const map = ref?.getMap ? ref.getMap() : ref;
+    const { lng, lat, zoom } = mapFocus;
+    if (map?.flyTo && Number.isFinite(lng) && Number.isFinite(lat)) {
+      try {
+        map.flyTo({ center: [lng, lat], zoom: zoom ?? 4, duration: 1200 });
+      } catch (e) {
+        // ignore
+      }
+    }
+  }, [mapFocus]);
+
+  const selectedAirport = useMemo(() => {
+    if (selected?.kind !== "airport") return null;
+    return airportsByIata.get(selected.id) ?? null;
+  }, [selected, airportsByIata]);
+
+  const selectedFlightLine = useMemo(() => {
+    if (selected?.kind !== "flight") return null;
+    const f = (flights ?? []).find((fl) => (fl.id ?? fl.idVueloInstancia) === selected.id);
+    if (!f) return null;
+    const o = airportsByIata.get(f.origin);
+    const d = airportsByIata.get(f.dest);
+    if (!o || !d) return null;
+    return { oLng: o.lng, oLat: o.lat, dLng: d.lng, dLat: d.lat };
+  }, [selected, flights, airportsByIata]);
+
+  const highlightGeometry = useMemo(() => {
+    const legs = mapHighlight?.legs ?? [];
+    return legs
+      .map((leg, i) => {
+        const o = airportsByIata.get(leg.origen);
+        const d = airportsByIata.get(leg.destino);
+        if (!o || !d) return null;
+        return { id: `${leg.origen}-${leg.destino}-${i}`, oLng: o.lng, oLat: o.lat, dLng: d.lng, dLat: d.lat };
+      })
+      .filter(Boolean);
+  }, [mapHighlight, airportsByIata]);
+
+  const highlightAirports = useMemo(() => {
+    const codes = new Set();
+    for (const leg of mapHighlight?.legs ?? []) {
+      if (leg.origen) codes.add(leg.origen);
+      if (leg.destino) codes.add(leg.destino);
+    }
+    return [...codes].map((c) => airportsByIata.get(c)).filter(Boolean);
+  }, [mapHighlight, airportsByIata]);
+
   /* Geometría estática de rutas — solo cambia con vuelos/aeropuertos, NO por frame. */
   const routesGeometry = useMemo(() => {
     return (flights ?? []).map((route, idx) => {
@@ -211,6 +273,8 @@ function AirportMap({
     /* Halo glow de cada aeropuerto (un disco grande semi-transparente).
      * deck.gl no tiene box-shadow → simulamos con un scatterplot debajo. */
     if (airportList.length > 0) {
+      const airportDimmed = (a) => mapDim.airports && !mapDim.airports.has(a.iata);
+
       ls.push(
         new ScatterplotLayer({
           id: "airport-glow",
@@ -218,15 +282,16 @@ function AirportMap({
           getPosition: (a) => [a.lng, a.lat],
           getFillColor: (a) => {
             const s = occupancyStatus(a.used, a.capacity);
-            return hexToRgba(semaphoreColor(s), 90);
+            return hexToRgba(semaphoreColor(s), airportDimmed(a) ? 10 : 90);
           },
           getRadius: 14,
           radiusUnits: "pixels",
           stroked: false,
+          updateTriggers: { getFillColor: mapDim.airports },
         })
       );
 
-      /* Punto central del aeropuerto. */
+      /* Punto central del aeropuerto (clicable -> enlaza al panel, req 6). */
       ls.push(
         new ScatterplotLayer({
           id: "airport-dot",
@@ -234,11 +299,20 @@ function AirportMap({
           getPosition: (a) => [a.lng, a.lat],
           getFillColor: (a) => {
             const s = occupancyStatus(a.used, a.capacity);
-            return hexToRgba(semaphoreColor(s));
+            return hexToRgba(semaphoreColor(s), airportDimmed(a) ? 35 : 255);
           },
           getRadius: 6,
           radiusUnits: "pixels",
           stroked: false,
+          pickable: true,
+          onClick: (info) => {
+            if (info?.object?.iata) {
+              selectFromMap({ kind: "airport", id: info.object.iata });
+              return true;
+            }
+            return false;
+          },
+          updateTriggers: { getFillColor: mapDim.airports },
         })
       );
 
@@ -265,6 +339,7 @@ function AirportMap({
     if (showFlights && planes.length > 0) {
       const iconUrl = getPlaneIconUrl();
       if (iconUrl) {
+        const flightDimmed = (d) => mapDim.flights && !mapDim.flights.has(d.id);
         ls.push(
           new IconLayer({
             id: "planes",
@@ -277,25 +352,99 @@ function AirportMap({
             // Para que apunte al destino: rotar CW por (bearing - 45).
             // Pero deck.gl mide CCW → invertir signo → 45 - bearing.
             getAngle: (d) => 45 - d.angle,
-            getColor: (d) => d.color,
+            getColor: (d) => (flightDimmed(d) ? [d.color[0], d.color[1], d.color[2], 45] : d.color),
             getSize: 22,
             sizeUnits: "pixels",
+            pickable: true,
+            onClick: (info) => {
+              if (info?.object?.id) {
+                selectFromMap({ kind: "flight", id: info.object.id });
+                return true;
+              }
+              return false;
+            },
             updateTriggers: {
               getPosition: planes,
               getAngle: planes,
-              getColor: planes,
+              getColor: [planes, mapDim.flights],
             },
           })
         );
       }
     }
 
+    /* Ruta resaltada (a demanda): lineas gruesas + nodos enfatizados, encima de todo. */
+    if (highlightGeometry.length > 0) {
+      ls.push(
+        new LineLayer({
+          id: "highlight-routes",
+          data: highlightGeometry,
+          getSourcePosition: (d) => [d.oLng, d.oLat],
+          getTargetPosition: (d) => [d.dLng, d.dLat],
+          getColor: hexToRgba(tokens.info, 255),
+          getWidth: 3.5,
+          widthUnits: "pixels",
+        })
+      );
+    }
+    if (highlightAirports.length > 0) {
+      ls.push(
+        new ScatterplotLayer({
+          id: "highlight-airports",
+          data: highlightAirports,
+          getPosition: (a) => [a.lng, a.lat],
+          getFillColor: hexToRgba(tokens.info, 235),
+          getRadius: 8,
+          radiusUnits: "pixels",
+          stroked: true,
+          getLineColor: [255, 255, 255, 255],
+          lineWidthUnits: "pixels",
+          getLineWidth: 1.5,
+        })
+      );
+    }
+
+    /* Entidad seleccionada (panel<->mapa): anillo/linea enfatizados. */
+    if (selectedFlightLine) {
+      ls.push(
+        new LineLayer({
+          id: "selected-flight-line",
+          data: [selectedFlightLine],
+          getSourcePosition: (d) => [d.oLng, d.oLat],
+          getTargetPosition: (d) => [d.dLng, d.dLat],
+          getColor: hexToRgba(tokens.warning, 255),
+          getWidth: 3,
+          widthUnits: "pixels",
+        })
+      );
+    }
+    if (selectedAirport) {
+      ls.push(
+        new ScatterplotLayer({
+          id: "selected-airport-ring",
+          data: [selectedAirport],
+          getPosition: (a) => [a.lng, a.lat],
+          getFillColor: [0, 0, 0, 0],
+          stroked: true,
+          getLineColor: hexToRgba(tokens.warning, 255),
+          lineWidthUnits: "pixels",
+          getLineWidth: 3,
+          getRadius: 12,
+          radiusUnits: "pixels",
+        })
+      );
+    }
+
     return ls;
-  }, [showFlights, showRouteLines, routesGeometry, airportList, planes]);
+  }, [
+    showFlights, showRouteLines, routesGeometry, airportList, planes,
+    highlightGeometry, highlightAirports, mapDim, selectedAirport, selectedFlightLine, selectFromMap,
+  ]);
 
   return (
     <div className="w-full h-full bg-canvas">
       <MapGL
+        ref={mapRef}
         initialViewState={initialViewState}
         mapStyle={MAP_STYLE}
         attributionControl={false}
