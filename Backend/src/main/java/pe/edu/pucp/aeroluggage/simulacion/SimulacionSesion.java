@@ -408,13 +408,22 @@ public class SimulacionSesion {
     }
 
     private void aplicarMaletaEntregada(final EventoSim e) {
-        final Maleta m = maletasPorId.get(e.idEntidad());
+        final Maleta m = maletasPorId.remove(e.idEntidad());
         if (m == null) return;
+        final LocalDateTime entrega = currentSimTimeUtc.get();
+        totalMaletasEntregadas.incrementAndGet();
         m.setEstado(EstadoMaleta.ENTREGADA);
-        m.setFechaLlegada(ultimoTiempoSim);
+        m.setFechaLlegada(entrega);
         if (m.getPedido() != null && m.getPedido().getAeropuertoDestino() != null) {
             m.setAeropuertoActual(m.getPedido().getAeropuertoDestino().getIdAeropuerto());
         }
+        final Ruta r = rutasPorMaleta.remove(e.idEntidad());
+        if (r != null) {
+            r.setEstado(EstadoRuta.COMPLETADA);
+        }
+        maletasFrias.put(e.idEntidad(), new ColdEntry(m, r, entrega));
+        idsEntregadasEnTick.add(e.idEntidad());
+        if (r != null) idsCompletadasEnTick.put(r.getIdRuta(), e.idEntidad());
         if (e.idAeropuerto() != null) {
             for (final Aeropuerto a : aeropuertos) {
                 if (a != null && a.getIdAeropuerto() != null
