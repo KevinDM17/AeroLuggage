@@ -4,10 +4,12 @@ import { Play, Square, AlertTriangle } from "lucide-react";
 import MapDashboard from "../components/simulator/MapDashboard";
 import { usePolling } from "../hooks/usePolling";
 import { useElapsedTimer } from "../hooks/useElapsedTimer";
+import { useDefensivePerformanceCleanup } from "../hooks/useDefensivePerformanceCleanup";
 import { useStompPublish, useStompSubscribe } from "../hooks/useStomp";
 import { useToast } from "../components/ui/Toast";
 import { iniciarSimulacionColapso, stopCollapseSim, getCollapseSimState } from "../api/simulator";
 import { USE_MOCK } from "../api/client";
+import { clearPerformanceTimeline } from "../utils/performanceCleanup";
 import { formatDateTimeDisplay, formatElapsedHMS } from "../utils/formatting";
 
 const WARNING_AT_MS = 60_000;
@@ -41,7 +43,10 @@ export default function CollapseSimulatorPage() {
 
   const clearSimulationData = () => {
     resetSimulationPanelData();
+    clearPerformanceTimeline();
   };
+
+  useDefensivePerformanceCleanup(simStatus === "running");
 
   useEffect(() => {
     clearSimulationData();
@@ -118,6 +123,7 @@ export default function CollapseSimulatorPage() {
   }, [tick, hasActiveRun]);
 
   const handleStart = async () => {
+    clearSimulationData();
     try {
       const result = await iniciarSimulacionColapso({
         fechaInicio: startDate,

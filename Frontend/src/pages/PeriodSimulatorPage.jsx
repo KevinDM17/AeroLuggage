@@ -4,6 +4,7 @@ import { Play, Square, RotateCw } from "lucide-react";
 import MapDashboard from "../components/simulator/MapDashboard";
 import { usePolling } from "../hooks/usePolling";
 import { useElapsedTimer } from "../hooks/useElapsedTimer";
+import { useDefensivePerformanceCleanup } from "../hooks/useDefensivePerformanceCleanup";
 import { useStompPublish, useStompSubscribe } from "../hooks/useStomp";
 import { whenConnected } from "../api/stomp";
 import { useToast } from "../components/ui/Toast";
@@ -18,6 +19,7 @@ import {
 import { adaptAirport } from "../api/airports";
 import { adaptFlightInstance } from "../api/flightInstances";
 import { USE_MOCK } from "../api/client";
+import { clearPerformanceTimeline } from "../utils/performanceCleanup";
 import {
   formatElapsedHMS,
   formatUtcDateTimeDisplay,
@@ -31,7 +33,7 @@ const SIMULATED_TWO_HOURS_MS = 7200000;
 
 
 const PERIOD_DAYS = 5;
-const CLOCK_REFRESH_MS = 33;
+const CLOCK_REFRESH_MS = 500;
 const MAP_REFRESH_MS = 500;
 
 const ESTADO_BACK_A_LOCAL = {
@@ -117,6 +119,7 @@ export default function PeriodSimulatorPage() {
       loaded: false,
     });
     startSimMsRef.current = null;
+    clearPerformanceTimeline();
   };
 
   const applyCancelledFlights = (flights) =>
@@ -140,6 +143,16 @@ export default function PeriodSimulatorPage() {
 
   const normalizeFlightStatus = (status) =>
     String(status ?? "").trim().toUpperCase().replace(/\s+/g, "_");
+
+  const hasOccupiedCapacity = (flight) =>
+    Number(flight?.used ?? flight?.capacidadUsada ?? 0) > 0;
+
+  const getUpdatedFlightOccupancy = (st, flight) => {
+    if (flight.capacity <= 0 || !Number.isFinite(Number(st.cap))) {
+      return flight.used ?? 0;
+    }
+    return Math.max(0, flight.capacity - Number(st.cap));
+  };
 
   const sessionIdRef = useRef(null);
   sessionIdRef.current = sessionId;
@@ -178,6 +191,8 @@ export default function PeriodSimulatorPage() {
   const isStarting = simStatus === "starting";
   const isSimulationLocked =
     isStarting || simStatus === "running" || simStatus === "paused";
+
+  useDefensivePerformanceCleanup(simStatus === "running");
 
   useEffect(() => {
     if (USE_MOCK) {
@@ -362,13 +377,14 @@ export default function PeriodSimulatorPage() {
         }
       }
 
-      const updatedBags = updateEstadosOnly(prev.bags, maletaStateMap, ENUM_MALETA, "estado");
+      const updatedBags = updateEstadosOnly(prev.bags, maletaStateMap, ENUM_MALETA, "estado",
+        (st, bag) => (st.e === 2 ? { fechaLlegada: bag.fechaLlegada ?? tick.simTime } : {}));
       for (const id of prunedIds) updatedBags.delete(id);
 
       const updatedRoutes = updateEstadosOnly(prev.routes, rutaStateMap, ENUM_RUTA, "estado");
 
       const updatedFlights = updateEstadosOnly(prev.flights, vueloStateMap, ENUM_VUELO, "status",
-        (st, flight) => ({ used: flight.capacity > 0 ? flight.capacity - st.cap : 0 }));
+        (st, flight) => ({ used: getUpdatedFlightOccupancy(st, flight) }));
       for (const id of prunedIds) updatedFlights.delete(id);
 
       return {
@@ -415,6 +431,7 @@ export default function PeriodSimulatorPage() {
       for (const flight of simulationPanelData.flights.values()) {
         const status = flight.status ?? flight.estado;
         if (normalizeFlightStatus(status) === "CANCELADO") continue;
+        if (!hasOccupiedCapacity(flight)) continue;
         const salidaMs = Date.parse(`${flight.depTime}Z`);
         const llegadaMs = Date.parse(`${flight.arrTime}Z`);
         if (!Number.isFinite(salidaMs) || !Number.isFinite(llegadaMs)) continue;

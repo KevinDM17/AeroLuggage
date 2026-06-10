@@ -40,6 +40,29 @@ export const obtenerVentanaSimulacion = (sessionId, windowId) =>
 export const obtenerVuelosSimulacion = (sessionId, desde, hasta) =>
   apiGet(`/simulacion/periodo/${sessionId}/vuelos?desde=${desde}&hasta=${hasta}`);
 
+/* Manifiesto de una UT: envios (pedidos) y productos (maletas) que traslada.
+ * Lo calcula el back desde las rutas globales de la sesion. */
+export const obtenerManifiestoVuelo = (sessionId, idVuelo) =>
+  apiGet(`/simulacion/periodo/${sessionId}/vuelo/${encodeURIComponent(idVuelo)}/manifiesto`);
+
+/* Contenido de un almacen: envios (pedidos) y productos (maletas) que estan en
+ * el aeropuerto, separados en destino final vs en transito. */
+export const obtenerContenidoAlmacen = (sessionId, idAeropuerto) =>
+  apiGet(`/simulacion/periodo/${sessionId}/almacen/${encodeURIComponent(idAeropuerto)}/contenido`);
+
+/* Envios del panel agrupados: planificados / en vuelos / entregados ultimas 4h,
+ * cada uno con su UT (vuelos) y los aeropuertos de su ruta. */
+export const obtenerEnviosPanel = (sessionId) =>
+  apiGet(`/simulacion/periodo/${sessionId}/envios`);
+
+/* Ruta (con escalas) de una maleta por su ID, para resaltarla en el mapa. */
+export const obtenerRutaMaleta = (sessionId, idMaleta) =>
+  apiGet(`/simulacion/periodo/${sessionId}/maleta/${encodeURIComponent(idMaleta)}/ruta`);
+
+/* Rutas (una por maleta) de un envio por su ID. */
+export const obtenerRutasEnvio = (sessionId, idPedido) =>
+  apiGet(`/simulacion/periodo/${sessionId}/envio/${encodeURIComponent(idPedido)}/rutas`);
+
 export const obtenerSnapshotSimulacionPeriodo = (sessionId) =>
   apiGet(`/simulacion/periodo/${sessionId}/snapshot`);
 
