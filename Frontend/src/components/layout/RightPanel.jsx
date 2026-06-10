@@ -1887,8 +1887,8 @@ export default function RightPanel({
         )}
       </div>
 
-      <div key={`${activeTab}-${simulationLoaded ? "loaded" : "empty"}`} className="flex-1 overflow-y-auto px-4 py-4 no-scrollbar">
-        {tabContent}
+      <div key={`${activeTab}-${simulationLoaded ? "loaded" : "empty"}`} className="flex-1 overflow-y-auto m-4 no-scrollbar">
+          {tabContent}
       </div>
 
       <ColorLegend />

@@ -3,6 +3,7 @@ package pe.edu.pucp.aeroluggage.servicios;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.stereotype.Service;
 import pe.edu.pucp.aeroluggage.cargador.CargadorEnvios;
+import pe.edu.pucp.aeroluggage.cargador.CargadorEnvios.LectorLotesEnvios;
 import pe.edu.pucp.aeroluggage.cargador.DatosEntrada;
 import pe.edu.pucp.aeroluggage.config.SimulacionParams;
 import pe.edu.pucp.aeroluggage.dominio.entidades.Aeropuerto;
@@ -15,6 +16,7 @@ import pe.edu.pucp.aeroluggage.simulacion.SimulacionSesion;
 
 import java.nio.file.Path;
 import java.time.LocalDate;
+import java.time.LocalDateTime;
 import java.util.ArrayList;
 import java.util.Comparator;
 import java.util.HashMap;
@@ -40,33 +42,29 @@ public class ServicioCargaSimulacion {
     public void cargarDatosSimulacion(final SimulacionSesion sesion, final Path enviosPath) {
         final List<Aeropuerto> aeropuertos = aeropuertoRepositorio.obtenerTodosConCiudad();
         final Map<String, Aeropuerto> indiceAeropuertos = indexarAeropuertos(aeropuertos);
-
         final List<VueloProgramado> vuelosProgramados = vueloProgramadoRepositorio.obtenerTodos();
-
-        final LocalDate fechaInicio = sesion.getFechaInicio();
-        final LocalDate fechaFin = fechaInicio.plusDays(Math.max(0L, sesion.getTotalDias() - 1L));
 
         log.info("[AeroLuggage/Simulacion] - SNAPSHOT: sessionId={}, totalDias={}, "
                         + "vuelosProgramados={}, aeropuertos={}",
                 sesion.getSessionId(), sesion.getTotalDias(),
                 vuelosProgramados.size(), aeropuertos.size());
 
-        final DatosEntrada datosEntrada = CargadorEnvios.cargarEnviosEnRango(
-                enviosPath, indiceAeropuertos, fechaInicio, fechaFin);
-
-        final ArrayList<Pedido> pedidos = new ArrayList<>(datosEntrada.getPedidos());
-        pedidos.sort(Comparator.comparing(Pedido::getFechaRegistro).thenComparing(Pedido::getIdPedido));
-        final ArrayList<Maleta> maletas = new ArrayList<>(datosEntrada.getMaletas());
-        maletas.sort(Comparator.comparing(Maleta::getFechaRegistro).thenComparing(Maleta::getIdMaleta));
+        final LectorLotesEnvios lector = CargadorEnvios.crearLectorLotesEnvios(
+                enviosPath, indiceAeropuertos, sesion.getFechaInicio());
+        final LocalDateTime finPrimeraVentana = sesion.getFechaInicioUtc()
+                .plusMinutes(sesion.getWindowSizeMinutes());
+        final DatosEntrada primerLote = lector.siguienteLoteHasta(finPrimeraVentana);
 
         sesion.setSnapshotData(
                 new ArrayList<>(aeropuertos),
                 new ArrayList<>(vuelosProgramados),
                 new ArrayList<>(),
-                pedidos,
-                maletas,
-                new ArrayList<>()
-        );
+                primerLote.getPedidos(),
+                primerLote.getMaletas(),
+                new ArrayList<>());
+
+        sesion.setLectorEnvios(lector);
+        sesion.setUltimaCargaPedidos(finPrimeraVentana);
     }
 
     private static Map<String, Aeropuerto> indexarAeropuertos(final List<Aeropuerto> aeropuertos) {

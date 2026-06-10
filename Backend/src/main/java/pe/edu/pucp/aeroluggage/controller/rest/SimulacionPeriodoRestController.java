@@ -108,7 +108,14 @@ public class SimulacionPeriodoRestController {
         if (sesion == null) {
             throw new ResponseStatusException(NOT_FOUND, "Sesion no encontrada: " + sessionId);
         }
-        return construirRespuestaVentana(sesion, windowId);
+        final var result = construirRespuestaVentana(sesion, windowId);
+        log.info("[AeroLuggage/SimulacionRest] - REST/ventana: sessionId={}, ventana={}, "
+                + "maletas={}, pedidos={}, rutas={}",
+                sessionId, windowId,
+                result.getMaletas() != null ? result.getMaletas().size() : 0,
+                result.getPedidos() != null ? result.getPedidos().size() : 0,
+                result.getRutas() != null ? result.getRutas().size() : 0);
+        return result;
     }
 
     @GetMapping("/{sessionId}/vuelos")
@@ -149,6 +156,8 @@ public class SimulacionPeriodoRestController {
                 }
             }
         }
+        log.info("[AeroLuggage/SimulacionRest] - REST/vuelos: sessionId={}, desde={}, hasta={}, totalVuelos={}",
+                sessionId, desde, hasta, vuelos.size());
         return vuelos;
     }
 
@@ -346,7 +355,9 @@ public class SimulacionPeriodoRestController {
             }
         }
         // Fallback: subrutas resueltas, por si el id recibido fuera un codigo.
-        for (final VueloInstancia sv : ruta.getSubrutas()) {
+        for (final String subId : ruta.getSubrutas()) {
+            if (subId == null) continue;
+            final VueloInstancia sv = vueloIndex.get(subId);
             if (sv == null) continue;
             if (idVuelo.equals(sv.getIdVueloInstancia()) || idVuelo.equals(sv.getCodigo())) return true;
         }

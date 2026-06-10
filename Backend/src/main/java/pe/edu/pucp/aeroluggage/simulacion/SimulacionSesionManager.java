@@ -495,6 +495,15 @@ public class SimulacionSesionManager {
                 readyMsg.put("vuelosDesde", vuelosDesde);
                 readyMsg.put("vuelosHasta", vuelosHasta);
             }
+            log.info("[AeroLuggage/Simulacion] - VENTANA_READY: sessionId={}, ventana={}, vuelosDesde={}, vuelosHasta={}, "
+                    + "totalVuelosInstancia={}, maletasCalientes={}, rutas={}, aeropuertos={}, "
+                    + "vuelosFiltrados={}",
+                    sesion.getSessionId(), windowId, vuelosDesde, vuelosHasta,
+                    sesion.getVuelosInstancia().size(),
+                    sesion.getMaletasCalientes().size(),
+                    sesion.getRutas().size(),
+                    sesion.getAeropuertos().size(),
+                    instancia.getVueloInstancias().size());
             broker.convertAndSend(
                     (String) (TOPIC_TICKS + sesion.getSessionId()),
                     (Object) readyMsg
@@ -600,6 +609,7 @@ public class SimulacionSesionManager {
                 return;
             }
             vuelo.cancelar();
+            sesion.moverVueloAFrio(idVuelo);
         }
 
         final LocalDateTime simTime = sesion.getCurrentSimTimeUtc().get();
@@ -818,6 +828,7 @@ public class SimulacionSesionManager {
 
         final LocalDateTime inicioVentana = calcularInicioVentana(sesion, windowId);
         final LocalDateTime finVentana = inicioVentana.plusMinutes(sesion.getWindowSizeMinutes());
+        sesion.asegurarPedidosParaVentana(finVentana);
 
         final ArrayList<VueloInstancia> vuelosInstanciaCopia = sesion.getVuelosInstancia().stream()
                 .map(v -> new VueloInstancia(

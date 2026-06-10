@@ -63,11 +63,20 @@ public class SimulacionSnapshotService {
                     .computeIfAbsent(m.getPedido().getIdPedido(), k -> new ArrayList<>())
                     .add(m);
         }
-        for (final Pedido pedido : sesion.getPedidos()) {
+        final Set<String> idsEntregados = new HashSet<>();
+        for (final Pedido pedido : sesion.getPedidosCalientes()) {
             if (pedido == null || pedido.getIdPedido() == null) continue;
+            final EstadoPedido estadoAnterior = pedido.getEstado();
             actualizarEstadoPedido(pedido,
                     maletasPorPedido.getOrDefault(pedido.getIdPedido(), List.of()),
                     simTimeActual);
+            if (estadoAnterior != EstadoPedido.ENTREGADO
+                    && pedido.getEstado() == EstadoPedido.ENTREGADO) {
+                idsEntregados.add(pedido.getIdPedido());
+            }
+        }
+        for (final String id : idsEntregados) {
+            sesion.moverPedidoAFrio(id);
         }
     }
 

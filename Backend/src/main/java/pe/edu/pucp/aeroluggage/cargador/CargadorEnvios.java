@@ -134,49 +134,10 @@ public final class CargadorEnvios {
     }
 
     private static final String ESTADO_PEDIDO_REGISTRADO = "REGISTRADO";
-    private static final String ESTADO_MALETA_PENDIENTE = "PENDIENTE";
     private static final int INDICE_INICIO_FECHA_ENVIO = 10;
     private static final int INDICE_FIN_FECHA_ENVIO = 18;
     private static final int BYTES_MUESTRA_REGISTRO = 256;
     private static final Pattern ARCHIVO_ENVIO = Pattern.compile("^_envios_(\\w+)_\\.txt$");
-
-    public static DatosEntrada cargarEnviosEnRango(final Path carpetaEnvios,
-                                                   final Map<String, Aeropuerto> aeropuertos,
-                                                   final LocalDate fechaInicio,
-                                                   final LocalDate fechaFin) {
-        final ArrayList<Pedido> pedidos = new ArrayList<>();
-        final ArrayList<Maleta> maletas = new ArrayList<>();
-        if (fechaInicio == null || fechaFin == null || fechaFin.isBefore(fechaInicio)) {
-            return new DatosEntrada(pedidos, maletas);
-        }
-
-        try (LectorLotesEnvios lector = new LectorLotesEnvios(carpetaEnvios, aeropuertos, fechaInicio)) {
-            while (!lector.pendientes.isEmpty()) {
-                final RegistroEnvio registro = lector.pendientes.poll();
-                if (registro == null) {
-                    continue;
-                }
-
-                final LocalDate fechaRegistro = registro.getFechaRegistro().toLocalDate();
-                registro.getFuente().leerSiguiente(aeropuertos, lector.pendientes);
-
-                if (fechaRegistro.isBefore(fechaInicio)) {
-                    continue;
-                }
-                if (fechaRegistro.isAfter(fechaFin)) {
-                    break;
-                }
-
-                final Pedido pedido = registro.crearPedido();
-                pedidos.add(pedido);
-                agregarMaletas(pedido, pedido.getCantidadMaletas(), pedido.getFechaRegistro(), maletas);
-            }
-        }
-
-        ordenarPorFecha(maletas);
-        ordenarPedidosPorFecha(pedidos);
-        return new DatosEntrada(pedidos, maletas);
-    }
 
     public static LectorLotesEnvios crearLectorLotesEnvios(final Path carpetaEnvios,
                                                            final Map<String, Aeropuerto> aeropuertos) {
@@ -209,22 +170,6 @@ public final class CargadorEnvios {
         return matcher.group(1);
     }
 
-    private static void agregarMaletas(final Pedido pedido, final int cantidadMaletas,
-                                       final LocalDateTime fechaRegistro, final ArrayList<Maleta> maletas) {
-        for (int i = 1; i <= cantidadMaletas; i++) {
-            final String idMaleta = "MAL-" + pedido.getIdPedido() + "-" + String.format("%03d", i);
-            maletas.add(new Maleta(idMaleta, pedido, fechaRegistro, null, ESTADO_MALETA_PENDIENTE));
-        }
-    }
-
-    private static void ordenarPorFecha(final ArrayList<Maleta> maletas) {
-        maletas.sort(Comparator.comparing(Maleta::getFechaRegistro));
-    }
-
-    private static void ordenarPedidosPorFecha(final ArrayList<Pedido> pedidos) {
-        pedidos.sort(Comparator.comparing(Pedido::getFechaRegistro));
-    }
-
     private static void registrarLineaInvalida(final String tipo, final String linea, final String motivo) {
         System.err.println("[CargaDatos] Linea de " + tipo + " ignorada: " + motivo + " | " + linea);
     }
@@ -251,18 +196,25 @@ public final class CargadorEnvios {
             inicializarFuentes(carpetaEnvios);
         }
 
-        public DatosEntrada siguienteLote(final int cantidadPedidos) {
+        public DatosEntrada siguienteLoteHasta(final LocalDateTime maxFecha) {
             final ArrayList<Pedido> pedidos = new ArrayList<>();
             final ArrayList<Maleta> maletas = new ArrayList<>();
-            while (pedidos.size() < cantidadPedidos && !pendientes.isEmpty()) {
-                final RegistroEnvio registro = pendientes.poll();
+            while (!pendientes.isEmpty()) {
+                final RegistroEnvio registro = pendientes.peek();
+                if (registro.getFechaRegistro().isAfter(maxFecha)) {
+                    break;
+                }
+                pendientes.poll();
                 final Pedido pedido = registro.crearPedido();
                 pedidos.add(pedido);
-                agregarMaletas(pedido, pedido.getCantidadMaletas(), pedido.getFechaRegistro(), maletas);
+                for (int i = 1; i <= pedido.getCantidadMaletas(); i++) {
+                    final String idMaleta = "MAL-" + pedido.getIdPedido() + "-"
+                            + String.format("%03d", i);
+                    maletas.add(new Maleta(idMaleta, pedido, pedido.getFechaRegistro(),
+                            null, EstadoMaleta.EN_ALMACEN));
+                }
                 registro.getFuente().leerSiguiente(aeropuertos, pendientes);
             }
-            ordenarPedidosPorFecha(pedidos);
-            ordenarPorFecha(maletas);
             return new DatosEntrada(pedidos, maletas);
         }
 

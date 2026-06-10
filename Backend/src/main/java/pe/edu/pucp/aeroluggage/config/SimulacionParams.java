@@ -14,6 +14,8 @@ public class SimulacionParams {
     private long tickIntervalMs = 1000L;
     private long maxDiasVuelosInstancias = 30L;
     private long retencionVentanas = 2L;
+    private long retencionPedidosMinutos = 120L;
+    private long retencionVuelosMinutos = 120L;
 
     public long getDuracionDiaSimuladoMs() {
         return duracionDiaSimuladoMs;
@@ -53,6 +55,22 @@ public class SimulacionParams {
 
     public void setRetencionVentanas(final long retencionVentanas) {
         this.retencionVentanas = retencionVentanas;
+    }
+
+    public long getRetencionPedidosMinutos() {
+        return retencionPedidosMinutos;
+    }
+
+    public void setRetencionPedidosMinutos(final long retencionPedidosMinutos) {
+        this.retencionPedidosMinutos = retencionPedidosMinutos;
+    }
+
+    public long getRetencionVuelosMinutos() {
+        return retencionVuelosMinutos;
+    }
+
+    public void setRetencionVuelosMinutos(final long retencionVuelosMinutos) {
+        this.retencionVuelosMinutos = retencionVuelosMinutos;
     }
 
     public static class Ventana {

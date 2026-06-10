@@ -39,15 +39,16 @@ public class SimulacionPeriodoService {
         final boolean ventanaCambio = ventanaAnterior == null
                 || !ventanaAnterior.getWindowId().equals(ventana.getWindowId());
         if (ventanaCambio) {
-            final LocalDateTime cutoff = ventana.getStartUtc()
-                    .minusMinutes(sesion.getWindowSpacingMinutes() * simulacionParams.getRetencionVentanas());
-            sesion.podarEntidadesAnteriores(cutoff);
-            sesion.podarEventosPasados(cutoff);
+            sesion.podarEventosPasados(simTimeUtc.minusMinutes(
+                    sesion.getWindowSpacingMinutes() * simulacionParams.getRetencionVentanas()));
         }
         snapshotService.recalcularEstadoSesion(sesion);
-        sesion.podarEntidadesAnteriores(simTimeUtc);
 
         final SimulacionSesion.TickSnapshot snap = sesion.consolidar(simTimeUtc);
+
+        sesion.podarEntidadesAnteriores(simTimeUtc,
+                Duration.ofMinutes(simulacionParams.getRetencionPedidosMinutos()),
+                Duration.ofMinutes(simulacionParams.getRetencionVuelosMinutos()));
 
         final Set<String> idsEntregadas = sesion.consumirIdsEntregadasEnTick();
         final Map<String, String> idsCompletadas = sesion.consumirIdsCompletadasEnTick();
