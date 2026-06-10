@@ -84,15 +84,17 @@ jobs:
       - name: Instalar sshpass
         run: sudo apt-get update && sudo apt-get install -y sshpass
 
-      - name: Desplegar en servidor
-        env:
-          SERVER_USER: ${{ secrets.SERVER_USER }}
-          SERVER_HOST: ${{ secrets.SERVER_HOST }}
-          SERVER_PASS: ${{ secrets.SERVER_PASSWORD }}
-          BACKEND_IMAGE: ${{ env.REGISTRY }}/${{ env.LOWER_OWNER }}/aeroluggage-backend:latest
-          FRONTEND_IMAGE: ${{ env.REGISTRY }}/${{ env.LOWER_OWNER }}/aeroluggage-frontend:latest
+      - name: Setup SSH
         run: |
-          sshpass -p "$SERVER_PASS" ssh -o StrictHostKeyChecking=no "$SERVER_USER@$SERVER_HOST" "
+          mkdir -p ~/.ssh
+          echo "${{ secrets.SSH_PRIVATE_KEY }}" > ~/.ssh/id_rsa
+          chmod 600 ~/.ssh/id_rsa
+          ssh-keyscan -H ${{ secrets.SERVER_HOST }} >> ~/.ssh/known_hosts
+
+      - name: Desplegar en servidor
+        run: |
+          ssh -o ConnectTimeout=10 \
+            "${{ secrets.SERVER_USER }}@${{ secrets.SERVER_HOST }}" "
             cd /opt/aeroluggage && \
             git pull origin deployment && \
             export BACKEND_IMAGE='$BACKEND_IMAGE' && \
