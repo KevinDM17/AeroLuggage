@@ -4,6 +4,7 @@ import java.time.Duration;
 import java.time.LocalDateTime;
 import java.util.ArrayList;
 import java.util.List;
+import java.util.Map;
 
 import pe.edu.pucp.aeroluggage.dominio.enums.EstadoRuta;
 
@@ -15,26 +16,24 @@ public class Ruta {
     private List<String> subrutaIds;
     private EstadoRuta estado;
     private LocalDateTime fechaEntrega;
-    private List<VueloInstancia> subrutasCache;
 
     public Ruta() {
         this.subrutaIds = new ArrayList<>();
-        this.subrutasCache = new ArrayList<>();
     }
 
     public Ruta(final String idRuta, final String idMaleta, final double plazoMaximoDias,
-                final double duracion, final List<VueloInstancia> subrutas, final EstadoRuta estado) {
-        this(idRuta, idMaleta, plazoMaximoDias, duracion, subrutas, estado, null);
+                final double duracion, final List<String> subrutaIds, final EstadoRuta estado) {
+        this(idRuta, idMaleta, plazoMaximoDias, duracion, subrutaIds, estado, null);
     }
 
     public Ruta(final String idRuta, final String idMaleta, final double plazoMaximoDias,
-                final double duracion, final List<VueloInstancia> subrutas, final EstadoRuta estado,
+                final double duracion, final List<String> subrutaIds, final EstadoRuta estado,
                 final LocalDateTime fechaEntrega) {
         this.idRuta = idRuta;
         this.idMaleta = idMaleta;
         this.plazoMaximoDias = plazoMaximoDias;
         this.duracion = duracion;
-        setSubrutas(subrutas);
+        setSubrutaIds(subrutaIds);
         this.estado = estado;
         this.fechaEntrega = fechaEntrega;
     }
@@ -47,7 +46,6 @@ public class Ruta {
         this.subrutaIds = other.subrutaIds == null ? null : new ArrayList<>(other.subrutaIds);
         this.estado = other.estado;
         this.fechaEntrega = other.fechaEntrega;
-        this.subrutasCache = null;
     }
 
     public String getIdRuta() {
@@ -90,22 +88,12 @@ public class Ruta {
         this.fechaEntrega = fechaEntrega;
     }
 
-    public List<VueloInstancia> getSubrutas() {
-        return subrutasCache == null ? List.of() : subrutasCache;
+    public List<String> getSubrutas() {
+        return subrutaIds == null ? List.of() : subrutaIds;
     }
 
-    public void setSubrutas(final List<VueloInstancia> subrutas) {
-        if (subrutas == null) {
-            this.subrutaIds = new ArrayList<>();
-            this.subrutasCache = new ArrayList<>();
-            return;
-        }
-        final ArrayList<String> ids = new ArrayList<>(subrutas.size());
-        for (final VueloInstancia v : subrutas) {
-            ids.add(v == null ? null : v.getIdVueloInstancia());
-        }
-        this.subrutaIds = ids;
-        this.subrutasCache = new ArrayList<>(subrutas);
+    public void setSubrutaIds(final List<String> ids) {
+        this.subrutaIds = ids == null ? new ArrayList<>() : new ArrayList<>(ids);
     }
 
     public List<String> getSubrutaIds() {
@@ -124,16 +112,17 @@ public class Ruta {
         this.estado = convertirEstado(estado);
     }
 
-    public double calcularPlazo() {
-        final List<VueloInstancia> subrutas = getSubrutas();
-        if (subrutas == null || subrutas.isEmpty()) {
+    public double calcularPlazo(final Map<String, VueloInstancia> vueloIndex) {
+        final List<String> ids = getSubrutas();
+        if (ids == null || ids.isEmpty() || vueloIndex == null) {
             duracion = 0D;
             return duracion;
         }
 
         LocalDateTime salidaMasTemprana = null;
         LocalDateTime llegadaMasTardia = null;
-        for (final VueloInstancia subruta : subrutas) {
+        for (final String id : ids) {
+            final VueloInstancia subruta = vueloIndex.get(id);
             if (subruta == null) {
                 continue;
             }
@@ -158,14 +147,14 @@ public class Ruta {
         return duracion;
     }
 
-    public void replanificar() {
-        final List<VueloInstancia> subrutas = getSubrutas();
-        if (subrutas == null || subrutas.isEmpty()) {
+    public void replanificar(final Map<String, VueloInstancia> vueloIndex) {
+        final List<String> ids = getSubrutas();
+        if (ids == null || ids.isEmpty()) {
             duracion = 0D;
             estado = EstadoRuta.REPLANIFICADA;
             return;
         }
-        calcularPlazo();
+        calcularPlazo(vueloIndex);
         estado = EstadoRuta.REPLANIFICADA;
     }
 

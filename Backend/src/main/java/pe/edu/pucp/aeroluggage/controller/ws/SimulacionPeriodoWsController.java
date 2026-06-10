@@ -51,4 +51,21 @@ public class SimulacionPeriodoWsController {
         sesionManager.registrarWsSession(wsSessionId, comando.getSessionId());
         sesionManager.cancelarVuelo(comando.getSessionId(), comando.getIdVueloInstancia(), idsMaletas, broker);
     }
+
+    @MessageMapping("/simulacion/periodo/iniciar-tick")
+    public void iniciarTick(final SimulacionComandoDTO comando, final SimpMessageHeaderAccessor accessor) {
+        final String wsSessionId = accessor.getSessionId();
+        log.info("[AeroLuggage/Simulacion] - WS/iniciar-tick: sessionId: {}, wsSession: {}",
+                comando.getSessionId(), wsSessionId);
+        sesionManager.registrarWsSession(wsSessionId, comando.getSessionId());
+        sesionManager.iniciarTicks(comando.getSessionId(), broker);
+    }
+
+    @MessageMapping("/simulacion/periodo/ventana-lista")
+    public void ventanaLista(final SimulacionComandoDTO comando, final SimpMessageHeaderAccessor accessor) {
+        final String wsSessionId = accessor.getSessionId();
+        log.info("[AeroLuggage/Simulacion] - WS/ventana-lista: sessionId: {}, wsSession: {}",
+                comando.getSessionId(), wsSessionId);
+        sesionManager.reconciliarEstado(comando.getSessionId(), broker);
+    }
 }

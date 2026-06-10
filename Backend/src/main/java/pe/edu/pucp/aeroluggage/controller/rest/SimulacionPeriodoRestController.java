@@ -23,6 +23,7 @@ import pe.edu.pucp.aeroluggage.dto.simulacion.rest.SimulacionResultadoFinalRespo
 import pe.edu.pucp.aeroluggage.dto.simulacion.rest.VueloInstanciaResponse;
 import pe.edu.pucp.aeroluggage.dto.simulacion.ws.SimulacionEstadoDTO;
 import pe.edu.pucp.aeroluggage.dto.simulacion.ws.SimulacionVentanaDTO;
+import pe.edu.pucp.aeroluggage.dominio.entidades.VueloInstancia;
 import pe.edu.pucp.aeroluggage.servicios.query.SimulacionInicioQueryService;
 import pe.edu.pucp.aeroluggage.simulacion.SimulacionSesion;
 import pe.edu.pucp.aeroluggage.simulacion.SimulacionSesionManager;
@@ -31,6 +32,7 @@ import java.time.format.DateTimeFormatter;
 import java.util.ArrayList;
 import java.util.Collection;
 import java.util.List;
+import java.util.Map;
 import java.util.Objects;
 
 import static org.springframework.http.HttpStatus.NOT_FOUND;
@@ -209,10 +211,12 @@ public class SimulacionPeriodoRestController {
                         .filter(Objects::nonNull).collect(java.util.stream.Collectors.toSet())
                 : java.util.Set.of();
         final var rutas = sesion.getRutas();
+        final Map<String, VueloInstancia> vueloIndex = sesion.getVueloIndex();
         for (final var r : rutas) {
             if (r == null || r.getIdMaleta() == null || !idMaletasVentana.contains(r.getIdMaleta())) continue;
-            final List<RutaVueloResponse> vuelosRuta = r.getSubrutas() == null ? List.of()
-                    : r.getSubrutas().stream()
+            final List<String> ids = r.getSubrutas();
+            final List<RutaVueloResponse> vuelosRuta = ids.stream()
+                    .map(vueloIndex::get)
                     .filter(Objects::nonNull)
                     .map(v -> RutaVueloResponse.builder()
                             .withIdVueloInstancia(v.getIdVueloInstancia())

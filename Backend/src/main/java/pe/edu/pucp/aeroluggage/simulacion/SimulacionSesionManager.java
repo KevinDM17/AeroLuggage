@@ -115,12 +115,7 @@ public class SimulacionSesionManager {
         sesion.construirIndiceEventos(sistemaConfiguracion.getUmbralConfirmacionMinutos());
         snapshotService.recalcularEstadoSesion(sesion);
 
-        planificarSync(sesion, primeraVentana, broker);
-
-        final String segundaVentana = "W" + String.format("%04d", bucketInicial + 1L);
-        planificarSync(sesion, segundaVentana, broker);
-
-        programarTarea(sesion, broker);
+        planificarInicial(sesion, primeraVentana, broker, bucketInicial);
 
         log.info("[AeroLuggage/Simulacion] - INICIAR: sessionId: {}, ventanaInicial: {}", sessionId, primeraVentana);
 
@@ -289,6 +284,54 @@ public class SimulacionSesionManager {
         sesion.marcarVentanaPlanificada(siguienteVentana);
 
         planningPool.submit(() -> ejecutarPlanificacion(sesion, siguienteVentana, broker));
+    }
+
+    private void planificarInicial(final SimulacionSesion sesion,
+                                   final String primeraVentana,
+                                   final SimpMessagingTemplate broker,
+                                   final long bucketInicial) {
+        final String segundaVentana = "W" + String.format("%04d", bucketInicial + 1L);
+        sesion.iniciarPlanificacion();
+        sesion.marcarVentanaPlanificada(primeraVentana);
+        sesion.marcarVentanaPlanificada(segundaVentana);
+        planningPool.submit(() -> {
+            ejecutarPlanificacion(sesion, primeraVentana, broker);
+            ejecutarPlanificacion(sesion, segundaVentana, broker);
+        });
+    }
+
+    public void iniciarTicks(final String sessionId, final SimpMessagingTemplate broker) {
+        final SimulacionSesion sesion = sesionesActivas.get(sessionId);
+        if (sesion == null || sesion.getTareaScheduled() != null) {
+            return;
+        }
+        programarTarea(sesion, broker);
+    }
+
+    public void reconciliarEstado(final String sessionId, final SimpMessagingTemplate broker) {
+        final SimulacionSesion sesion = sesionesActivas.get(sessionId);
+        if (sesion == null) {
+            return;
+        }
+        final LocalDateTime simTimeUtc = sesion.getCurrentSimTimeUtc().get();
+        final SimulacionSesion.TickSnapshot snap = sesion.consolidar(simTimeUtc);
+        final SimulacionTickLigeroDTO dto = SimulacionTickLigeroDTO.builder()
+                .withType("RECONCILIAR")
+                .withTick(sesion.getTickActual().get())
+                .withSimTime(simTimeUtc.format(FORMATO_FECHA_HORA))
+                .withStateVersion(sesion.getStateVersion().get())
+                .withMaletasEnTransito(snap.enTransito())
+                .withMaletasEntregadas(snap.entregadas())
+                .withMaletasRetrasadas(0)
+                .withMaletasNoAsignadas(snap.sinRuta())
+                .withVuelosActivos(snap.vuelosActivos())
+                .withCapacidadLibrePct(snap.capacidadLibrePct())
+                .withEstadosMaletas(snap.estadosMaletas())
+                .withEstadosRutas(snap.estadosRutas())
+                .withEstadosVuelos(snap.estadosVuelos())
+                .withAeropuertos(snap.aeropuertos())
+                .build();
+        broker.convertAndSend(TOPIC_TICKS + sesion.getSessionId(), dto);
     }
 
     private void ejecutarPlanificacion(final SimulacionSesion sesion,
@@ -579,7 +622,8 @@ public class SimulacionSesionManager {
                     continue;
                 }
                 final String origenActual = determinarUbicacionActual(ruta, idVuelo, simTime,
-                        maleta.getPedido().getAeropuertoOrigen().getIdAeropuerto());
+                        maleta.getPedido().getAeropuertoOrigen().getIdAeropuerto(),
+                        sesion.getVueloIndex());
                 if (origenActual == null) {
                     continue;
                 }
@@ -612,7 +656,8 @@ public class SimulacionSesionManager {
                 }
                 final String origenActual = determinarUbicacionActual(
                         ruta, null, simTime,
-                        maleta.getPedido().getAeropuertoOrigen().getIdAeropuerto());
+                        maleta.getPedido().getAeropuertoOrigen().getIdAeropuerto(),
+                        sesion.getVueloIndex());
                 if (origenActual == null) {
                     continue;
                 }
@@ -657,30 +702,33 @@ public class SimulacionSesionManager {
     }
 
     private static boolean contieneVuelo(final Ruta ruta, final String idVuelo) {
-        if (ruta.getSubrutas() == null) {
-            return false;
+        final List<String> ids = ruta.getSubrutaIds();
+        for (final String id : ids) {
+            if (idVuelo.equals(id)) {
+                return true;
+            }
         }
-        return ruta.getSubrutas().stream()
-                .anyMatch(v -> v != null && idVuelo.equals(v.getIdVueloInstancia()));
+        return false;
     }
 
     private static String determinarUbicacionActual(final Ruta ruta, final String idVueloCancelado,
-                                                    final LocalDateTime simTime, final String origenIcao) {
-        final List<VueloInstancia> subrutas = ruta.getSubrutas();
-        if (subrutas == null) {
+                                                    final LocalDateTime simTime, final String origenIcao,
+                                                    final Map<String, VueloInstancia> vueloIndex) {
+        final List<String> ids = ruta.getSubrutaIds();
+        if (ids.isEmpty()) {
             return null;
         }
         if (idVueloCancelado != null) {
-            for (int i = 0; i < subrutas.size(); i++) {
-                if (!idVueloCancelado.equals(subrutas.get(i).getIdVueloInstancia())) {
+            for (int i = 0; i < ids.size(); i++) {
+                if (!idVueloCancelado.equals(ids.get(i))) {
                     continue;
                 }
                 if (i == 0) {
                     return origenIcao;
                 }
                 for (int j = i - 1; j >= 0; j--) {
-                    final VueloInstancia anterior = subrutas.get(j);
-                    if (anterior.getFechaLlegada() != null
+                    final VueloInstancia anterior = vueloIndex.get(ids.get(j));
+                    if (anterior != null && anterior.getFechaLlegada() != null
                             && !anterior.getFechaLlegada().isAfter(simTime)) {
                         return anterior.getAeropuertoDestino().getIdAeropuerto();
                     }
@@ -690,7 +738,8 @@ public class SimulacionSesionManager {
             return null;
         }
         String ultimaUbicacion = origenIcao;
-        for (final VueloInstancia v : subrutas) {
+        for (final String id : ids) {
+            final VueloInstancia v = vueloIndex.get(id);
             if (v == null) {
                 continue;
             }
@@ -792,16 +841,10 @@ public class SimulacionSesionManager {
         final ArrayList<Ruta> rutasComprometidas = sesion.getRutas().stream()
                 .filter(ruta -> ruta != null
                         && ruta.getEstado() != EstadoRuta.REPLANIFICADA)
-                .map(ruta -> {
-                    final List<VueloInstancia> subrutasResueltas = ruta.getSubrutaIds().stream()
-                            .map(idxVuelos::get)
-                            .filter(Objects::nonNull)
-                            .collect(Collectors.toList());
-                    return new Ruta(
-                            ruta.getIdRuta(), ruta.getIdMaleta(),
-                            ruta.getPlazoMaximoDias(), ruta.getDuracion(),
-                            subrutasResueltas, ruta.getEstado(), ruta.getFechaEntrega());
-                })
+                .map(ruta -> new Ruta(
+                        ruta.getIdRuta(), ruta.getIdMaleta(),
+                        ruta.getPlazoMaximoDias(), ruta.getDuracion(),
+                        ruta.getSubrutaIds(), ruta.getEstado(), ruta.getFechaEntrega()))
                 .collect(Collectors.toCollection(ArrayList::new));
 
         final Set<String> maletasConRuta = rutasComprometidas.stream()

@@ -37,11 +37,12 @@ final class ALNSFitness {
                 continue;
             }
             final Ruta ruta = estado.obtenerRuta(maleta.getIdMaleta());
-            if (ruta == null || ruta.getSubrutas() == null || ruta.getSubrutas().isEmpty()) {
+            final List<String> idsRuta = ruta != null ? ruta.getSubrutaIds() : List.of();
+            if (ruta == null || idsRuta.isEmpty()) {
                 noEnrutadas++;
                 continue;
             }
-            final LocalDateTime llegadaFinal = ALNSUtil.llegadaFinal(ruta);
+            final LocalDateTime llegadaFinal = ALNSUtil.llegadaFinal(ruta, instancia.getVuelosPorId());
             final LocalDateTime fechaLimite = maleta.getPedido() != null ? maleta.getPedido().getFechaHoraPlazo() : null;
             if (llegadaFinal == null || fechaLimite == null || llegadaFinal.isAfter(fechaLimite)) {
                 fueraDePlazo++;

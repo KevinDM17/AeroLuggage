@@ -4,7 +4,6 @@ import org.springframework.jdbc.core.JdbcTemplate;
 import org.springframework.jdbc.core.RowMapper;
 import org.springframework.stereotype.Repository;
 import pe.edu.pucp.aeroluggage.dominio.entidades.Ruta;
-import pe.edu.pucp.aeroluggage.dominio.entidades.VueloInstancia;
 import pe.edu.pucp.aeroluggage.dominio.enums.EstadoRuta;
 
 import java.sql.ResultSet;
@@ -32,7 +31,7 @@ public class RutaRepositorio {
                 ruta.getDuracion(),
                 ruta.getEstado() != null ? ruta.getEstado().name() : null);
 
-        insertarSubrutas(ruta.getIdRuta(), ruta.getSubrutas());
+        insertarSubrutas(ruta.getIdRuta(), ruta.getSubrutaIds());
         return filas;
     }
 
@@ -44,7 +43,7 @@ public class RutaRepositorio {
             return Optional.empty();
         }
         Ruta ruta = resultado.get(0);
-        ruta.setSubrutas(cargarSubrutas(id));
+        ruta.setSubrutaIds(cargarSubrutas(id));
         return Optional.of(ruta);
     }
 
@@ -52,7 +51,7 @@ public class RutaRepositorio {
         String sql = "SELECT id_ruta, id_maleta, plazo_maximo_dias, duracion, estado FROM ruta";
         List<Ruta> rutas = jdbcTemplate.query(sql, new RutaRowMapper());
         for (Ruta ruta : rutas) {
-            ruta.setSubrutas(cargarSubrutas(ruta.getIdRuta()));
+            ruta.setSubrutaIds(cargarSubrutas(ruta.getIdRuta()));
         }
         return rutas;
     }
@@ -68,7 +67,7 @@ public class RutaRepositorio {
                 ruta.getIdRuta());
 
         eliminarSubrutasPorRuta(ruta.getIdRuta());
-        insertarSubrutas(ruta.getIdRuta(), ruta.getSubrutas());
+        insertarSubrutas(ruta.getIdRuta(), ruta.getSubrutaIds());
         return filas;
     }
 
@@ -92,27 +91,20 @@ public class RutaRepositorio {
         return jdbcTemplate.query(sql, (rs, rowNum) -> rs.getString("id_vuelo_instancia"), idRuta);
     }
 
-    private void insertarSubrutas(String idRuta, List<VueloInstancia> subrutas) {
-        if (subrutas == null || subrutas.isEmpty()) {
+    private void insertarSubrutas(String idRuta, List<String> ids) {
+        if (ids == null || ids.isEmpty()) {
             return;
         }
         int orden = 1;
-        for (VueloInstancia vi : subrutas) {
-            if (vi != null && vi.getIdVueloInstancia() != null) {
-                insertarSubruta(idRuta, vi.getIdVueloInstancia(), orden++);
+        for (String idVi : ids) {
+            if (idVi != null) {
+                insertarSubruta(idRuta, idVi, orden++);
             }
         }
     }
 
-    private List<VueloInstancia> cargarSubrutas(String idRuta) {
-        List<String> ids = obtenerIdsVuelosPorRuta(idRuta);
-        List<VueloInstancia> subrutas = new ArrayList<>();
-        for (String idVi : ids) {
-            VueloInstancia vi = new VueloInstancia();
-            vi.setIdVueloInstancia(idVi);
-            subrutas.add(vi);
-        }
-        return subrutas;
+    private List<String> cargarSubrutas(String idRuta) {
+        return obtenerIdsVuelosPorRuta(idRuta);
     }
 
     private static final class RutaRowMapper implements RowMapper<Ruta> {

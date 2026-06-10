@@ -26,10 +26,19 @@ public final class ALNSUtil {
     static List<IntervaloAeropuerto> construirIntervalosRuta(final Ruta ruta,
                                                              final InstanciaProblema instancia,
                                                              final Map<String, Maleta> maletasPorId) {
-        if (ruta == null || maletasPorId == null) {
+        if (ruta == null || instancia == null || maletasPorId == null) {
             return List.of();
         }
-        return construirIntervalosRuta(ruta.getIdMaleta(), ruta.getSubrutas(), instancia, maletasPorId);
+        final List<String> ids = ruta.getSubrutas();
+        if (ids.isEmpty()) {
+            return List.of();
+        }
+        final Map<String, VueloInstancia> vueloIndex = instancia.getVuelosPorId();
+        final List<VueloInstancia> camino = resolver(ids, vueloIndex);
+        if (camino.isEmpty()) {
+            return List.of();
+        }
+        return construirIntervalosRuta(ruta.getIdMaleta(), camino, instancia, maletasPorId);
     }
 
     static List<IntervaloAeropuerto> construirIntervalosRuta(final String idMaleta,
@@ -113,11 +122,16 @@ public final class ALNSUtil {
         return eventos;
     }
 
-    static LocalDateTime llegadaFinal(final Ruta ruta) {
-        if (ruta == null || ruta.getSubrutas() == null || ruta.getSubrutas().isEmpty()) {
+    static LocalDateTime llegadaFinal(final Ruta ruta, final Map<String, VueloInstancia> vueloIndex) {
+        if (ruta == null || vueloIndex == null) {
             return null;
         }
-        return ruta.getSubrutas().get(ruta.getSubrutas().size() - 1).getFechaLlegada();
+        final List<String> ids = ruta.getSubrutas();
+        if (ids.isEmpty()) {
+            return null;
+        }
+        final VueloInstancia ultimo = vueloIndex.get(ids.get(ids.size() - 1));
+        return ultimo != null ? ultimo.getFechaLlegada() : null;
     }
 
     static double duracionDias(final List<VueloInstancia> camino) {
@@ -137,14 +151,18 @@ public final class ALNSUtil {
         if (camino == null || camino.isEmpty()) {
             return null;
         }
+        final List<String> ids = new ArrayList<>(camino.size());
+        for (final VueloInstancia v : camino) {
+            ids.add(v != null ? v.getIdVueloInstancia() : null);
+        }
         final Ruta ruta = new Ruta();
         ruta.setIdRuta(idRuta);
         ruta.setIdMaleta(maleta == null ? null : maleta.getIdMaleta());
-        ruta.setSubrutas(new ArrayList<>(camino));
+        ruta.setSubrutaIds(ids);
         if (maleta != null && maleta.getPedido() != null) {
             ruta.setPlazoMaximoDias(maleta.getPedido().getPlazoDias());
         }
-        ruta.setDuracion(duracionDias(ruta.getSubrutas()));
+        ruta.setDuracion(duracionDias(camino));
         ruta.setEstado(estado);
         return ruta;
     }
@@ -211,5 +229,19 @@ public final class ALNSUtil {
     }
 
     record IntervaloAeropuerto(String idAeropuerto, LocalDateTime inicio, LocalDateTime fin) {
+    }
+
+    static List<VueloInstancia> resolver(final List<String> ids, final Map<String, VueloInstancia> vueloIndex) {
+        if (ids == null || ids.isEmpty() || vueloIndex == null) {
+            return List.of();
+        }
+        final List<VueloInstancia> resueltos = new ArrayList<>(ids.size());
+        for (final String id : ids) {
+            final VueloInstancia v = vueloIndex.get(id);
+            if (v != null) {
+                resueltos.add(v);
+            }
+        }
+        return resueltos;
     }
 }

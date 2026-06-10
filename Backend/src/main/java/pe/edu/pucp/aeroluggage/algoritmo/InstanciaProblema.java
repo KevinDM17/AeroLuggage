@@ -347,7 +347,7 @@ public class InstanciaProblema {
             final Ruta copiaRuta = new Ruta(
                     r.getIdRuta(), r.getIdMaleta(),
                     r.getPlazoMaximoDias(), r.getDuracion(),
-                    subrutasResueltas, r.getEstado(), r.getFechaEntrega());
+                    r.getSubrutaIds(), r.getEstado(), r.getFechaEntrega());
             rutasCopias.add(copiaRuta);
         }
 

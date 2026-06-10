@@ -5,6 +5,7 @@ import MapDashboard from "../components/simulator/MapDashboard";
 import { usePolling } from "../hooks/usePolling";
 import { useElapsedTimer } from "../hooks/useElapsedTimer";
 import { useStompPublish, useStompSubscribe } from "../hooks/useStomp";
+import { whenConnected } from "../api/stomp";
 import { useToast } from "../components/ui/Toast";
 import {
   iniciarSimulacionPeriodo,
@@ -99,6 +100,9 @@ export default function PeriodSimulatorPage() {
   const ventanasCargadasRef = useRef(new Set());
   const lastMapFlightsRef = useRef([]);
   const completionTimesRef = useRef(new Map());
+  const iniciarTickWatchdogRef = useRef(null);
+  const iniciarTickRetriesRef = useRef(0);
+  const tickReceivedRef = useRef(false);
 
   const clearSimulationData = () => {
     ventanasCargadasRef.current.clear();
@@ -147,6 +151,7 @@ export default function PeriodSimulatorPage() {
       if (sid) {
         publish("/app/simulacion/periodo/detener", { sessionId: sid });
       }
+      cancelarWatchdogIniciarTick();
     };
   }, []);
 
@@ -218,6 +223,11 @@ export default function PeriodSimulatorPage() {
     if (simStatus === "idle") return;
     if (!tick?.type) return;
 
+    if (tick.type === "TICK" && !tickReceivedRef.current) {
+      tickReceivedRef.current = true;
+      cancelarWatchdogIniciarTick();
+    }
+
     if (tick.type === "VENTANA_READY") {
       const windowId = tick.ventana;
       if (ventanasCargadasRef.current.has(windowId)) return;
@@ -265,18 +275,23 @@ export default function PeriodSimulatorPage() {
             }
           }
         }
-      })();
+      })()
+        .then(() => publish("/app/simulacion/periodo/ventana-lista", { sessionId }));
       return;
     }
 
-    if (tick.type !== "TICK") return;
+    const esReconciliacion = tick.type === "RECONCILIAR";
+    const esTick = tick.type === "TICK";
+    if (!esTick && !esReconciliacion) return;
 
-    if (startSimMsRef.current == null) {
+    if (esTick && startSimMsRef.current == null) {
       const ms = Date.parse(`${tick.simTime}Z`);
       if (Number.isFinite(ms)) startSimMsRef.current = ms;
     }
 
-    setCurrentSimTimeUtc(tick.simTime);
+    if (esTick) {
+      setCurrentSimTimeUtc(tick.simTime);
+    }
 
     const occMap = {};
     if (Array.isArray(tick.aeropuertos)) {
@@ -451,6 +466,42 @@ export default function PeriodSimulatorPage() {
     };
   }, [tick, mockState, hasActiveRun]);
 
+  const MAX_INICIAR_TICK_RETRIES = 3;
+  const INICIAR_TICK_WATCHDOG_MS = 2000;
+
+  const cancelarWatchdogIniciarTick = () => {
+    if (iniciarTickWatchdogRef.current) {
+      clearTimeout(iniciarTickWatchdogRef.current);
+      iniciarTickWatchdogRef.current = null;
+    }
+  };
+
+  const enviarIniciarTick = async (targetSessionId) => {
+    cancelarWatchdogIniciarTick();
+    try {
+      await publish("/app/simulacion/periodo/iniciar-tick", {
+        sessionId: targetSessionId,
+      });
+    } catch (err) {
+      // fall through to retry logic
+    }
+    iniciarTickWatchdogRef.current = setTimeout(async () => {
+      if (tickReceivedRef.current) return;
+      if (iniciarTickRetriesRef.current < MAX_INICIAR_TICK_RETRIES) {
+        iniciarTickRetriesRef.current += 1;
+        enviarIniciarTick(targetSessionId);
+      } else {
+        cancelarWatchdogIniciarTick();
+        toast.push({
+          type: "error",
+          title: "No se pudo iniciar la simulación",
+          message:
+            "El backend no respondió después de varios intentos. Intente de nuevo.",
+        });
+      }
+    }, INICIAR_TICK_WATCHDOG_MS);
+  };
+
   const handleStart = async () => {
     const startDateTime = `${startDate}T${startTime || "00:00"}:00`;
     setSimStatus("starting");
@@ -524,6 +575,10 @@ export default function PeriodSimulatorPage() {
         loaded: true,
       });
       setSimStatus("running");
+
+      tickReceivedRef.current = false;
+      iniciarTickRetriesRef.current = 0;
+      enviarIniciarTick(newSessionId);
 
       toast.push({
         type: "info",

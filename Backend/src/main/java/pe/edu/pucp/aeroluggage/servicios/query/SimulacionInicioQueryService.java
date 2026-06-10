@@ -167,8 +167,7 @@ public class SimulacionInicioQueryService {
         final Map<String, Boolean> rutaValidaPorMaleta = new HashMap<>();
         for (final var ruta : sesion.getRutas()) {
             if (ruta != null && ruta.getIdMaleta() != null) {
-                final boolean rutaValida = ruta.getSubrutas() != null
-                        && !ruta.getSubrutas().isEmpty()
+                final boolean rutaValida = !ruta.getSubrutas().isEmpty()
                         && ruta.getEstado() != null
                         && ruta.getEstado() != pe.edu.pucp.aeroluggage.dominio.enums.EstadoRuta.REPLANIFICADA;
                 rutaValidaPorMaleta.putIfAbsent(ruta.getIdMaleta(), rutaValida);
@@ -205,8 +204,7 @@ public class SimulacionInicioQueryService {
         final Map<String, Boolean> rutaValidaPorMaleta = new HashMap<>();
         for (final var ruta : sesion.getRutas()) {
             if (ruta != null && ruta.getIdMaleta() != null) {
-                final boolean rutaValida = ruta.getSubrutas() != null
-                        && !ruta.getSubrutas().isEmpty()
+                final boolean rutaValida = !ruta.getSubrutas().isEmpty()
                         && ruta.getEstado() != null
                         && ruta.getEstado() != pe.edu.pucp.aeroluggage.dominio.enums.EstadoRuta.REPLANIFICADA;
                 rutaValidaPorMaleta.putIfAbsent(ruta.getIdMaleta(), rutaValida);

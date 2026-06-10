@@ -66,7 +66,7 @@ class SimulacionSesionPodaPedidoTest {
                 destino,
                 EstadoVuelo.PROGRAMADO
         );
-        final Ruta ruta = new Ruta("R-1", "M-1", 1D, 0D, List.of(vuelo), EstadoRuta.PLANIFICADA);
+        final Ruta ruta = new Ruta("R-1", "M-1", 1D, 0D, List.of("V-1"), EstadoRuta.PLANIFICADA);
 
         sesion.setSnapshotData(
                 List.of(origen, destino),

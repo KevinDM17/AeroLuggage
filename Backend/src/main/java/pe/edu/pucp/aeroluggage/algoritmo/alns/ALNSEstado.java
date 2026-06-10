@@ -262,29 +262,31 @@ final class ALNSEstado {
     }
 
     void registrarUsoRuta(final Ruta ruta) {
-        if (ruta == null || ruta.getSubrutas() == null) {
+        if (ruta == null) {
             return;
         }
-        for (final VueloInstancia vuelo : ruta.getSubrutas()) {
-            if (vuelo != null && vuelo.getIdVueloInstancia() != null) {
-                usoPorVuelo.merge(vuelo.getIdVueloInstancia(), 1, Integer::sum);
+        final List<String> ids = ruta.getSubrutaIds();
+        for (final String idVuelo : ids) {
+            if (idVuelo != null) {
+                usoPorVuelo.merge(idVuelo, 1, Integer::sum);
             }
         }
     }
 
     void liberarUsoRuta(final Ruta ruta) {
-        if (ruta == null || ruta.getSubrutas() == null) {
+        if (ruta == null) {
             return;
         }
-        for (final VueloInstancia vuelo : ruta.getSubrutas()) {
-            if (vuelo == null || vuelo.getIdVueloInstancia() == null) {
+        final List<String> ids = ruta.getSubrutaIds();
+        for (final String idVuelo : ids) {
+            if (idVuelo == null) {
                 continue;
             }
-            final int nuevo = usoPorVuelo.getOrDefault(vuelo.getIdVueloInstancia(), 0) - 1;
+            final int nuevo = usoPorVuelo.getOrDefault(idVuelo, 0) - 1;
             if (nuevo <= 0) {
-                usoPorVuelo.remove(vuelo.getIdVueloInstancia());
+                usoPorVuelo.remove(idVuelo);
             } else {
-                usoPorVuelo.put(vuelo.getIdVueloInstancia(), nuevo);
+                usoPorVuelo.put(idVuelo, nuevo);
             }
         }
     }

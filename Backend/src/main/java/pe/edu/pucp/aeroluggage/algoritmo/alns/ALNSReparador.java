@@ -338,17 +338,21 @@ final class ALNSReparador {
                                                      final ParametrosALNS parametros,
                                                      final String idRuta) {
         final Ruta r1 = encontrarMejorInsercion(estado, maleta, parametros, idRuta);
-        if (r1 == null || r1.getSubrutas().isEmpty()) {
+        final List<String> idsR1 = r1 != null ? r1.getSubrutaIds() : List.of();
+        if (r1 == null || idsR1.isEmpty()) {
             return new EvaluacionInsercion(null, Double.MAX_VALUE);
         }
         final Set<String> bloqueados = new HashSet<>();
-        bloqueados.add(r1.getSubrutas().get(0).getIdVueloInstancia());
+        if (!idsR1.isEmpty()) {
+            bloqueados.add(idsR1.get(0));
+        }
         final Ruta r2 = encontrarAlternativa(estado, maleta, parametros, idRuta, bloqueados);
-        if (r2 == null || r2.getSubrutas().isEmpty()) {
+        final List<String> idsR2 = r2 != null ? r2.getSubrutaIds() : List.of();
+        if (r2 == null || idsR2.isEmpty()) {
             return new EvaluacionInsercion(r1, Double.MAX_VALUE);
         }
-        final LocalDateTime llegada1 = ALNSUtil.llegadaFinal(r1);
-        final LocalDateTime llegada2 = ALNSUtil.llegadaFinal(r2);
+        final LocalDateTime llegada1 = ALNSUtil.llegadaFinal(r1, estado.getInstancia().getVuelosPorId());
+        final LocalDateTime llegada2 = ALNSUtil.llegadaFinal(r2, estado.getInstancia().getVuelosPorId());
         final double costo1 = llegada1 == null ? Double.MAX_VALUE : llegada1.atZone(java.time.ZoneOffset.UTC).toEpochSecond();
         final double costo2 = llegada2 == null ? Double.MAX_VALUE : llegada2.atZone(java.time.ZoneOffset.UTC).toEpochSecond();
         return new EvaluacionInsercion(r1, costo2 - costo1);

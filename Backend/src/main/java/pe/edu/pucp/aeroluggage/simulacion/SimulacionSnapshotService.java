@@ -32,6 +32,7 @@ import java.util.HashSet;
 import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Map;
+import java.util.Objects;
 import java.util.Set;
 
 import lombok.extern.slf4j.Slf4j;
@@ -93,7 +94,6 @@ public class SimulacionSnapshotService {
             final Ruta r = sesion.getRutaPorMaleta(m.getIdMaleta());
             if (r == null
                     || r.getEstado() == EstadoRuta.REPLANIFICADA
-                    || r.getSubrutas() == null
                     || r.getSubrutas().isEmpty()) {
                 sinRuta++;
             }
@@ -220,7 +220,8 @@ public class SimulacionSnapshotService {
     public EntidadesVisibles mapearEntidadesVisibles(
             final Collection<Ruta> rutas,
             final Collection<Maleta> maletas,
-            final LocalDateTime simTimeUtc) {
+            final LocalDateTime simTimeUtc,
+            final Map<String, VueloInstancia> vueloIndex) {
         final Map<String, Ruta> rutaPorMaleta = new HashMap<>();
         for (final Ruta ruta : rutas) {
             if (ruta != null && ruta.getIdMaleta() != null) {
@@ -249,7 +250,7 @@ public class SimulacionSnapshotService {
             }
             final Ruta ruta = rutaPorMaleta.get(maleta.getIdMaleta());
             if (ruta != null) {
-                rutasMapeadas.add(mapearRuta(ruta));
+                rutasMapeadas.add(mapearRuta(ruta, vueloIndex));
             }
         }
 
@@ -267,10 +268,13 @@ public class SimulacionSnapshotService {
         return new EntidadesVisibles(rutasMapeadas, maletasOrdenadas, pedidosOrdenados);
     }
 
-    private RutaSimulacionResponse mapearRuta(final Ruta ruta) {
-        final List<RutaVueloResponse> vuelos = ruta.getSubrutas() == null
-                ? List.of()
-                : ruta.getSubrutas().stream().map(this::mapearRutaVuelo).toList();
+    private RutaSimulacionResponse mapearRuta(final Ruta ruta, final Map<String, VueloInstancia> vueloIndex) {
+        final List<String> ids = ruta.getSubrutas();
+        final List<RutaVueloResponse> vuelos = ids.stream()
+                .map(vueloIndex::get)
+                .filter(Objects::nonNull)
+                .map(this::mapearRutaVuelo)
+                .toList();
         return RutaSimulacionResponse.builder()
                 .withIdRuta(ruta.getIdRuta())
                 .withIdMaleta(ruta.getIdMaleta())

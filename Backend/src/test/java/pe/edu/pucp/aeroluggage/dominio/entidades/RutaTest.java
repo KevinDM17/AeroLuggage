@@ -4,6 +4,9 @@ import static org.junit.jupiter.api.Assertions.assertEquals;
 
 import java.time.LocalDateTime;
 import java.util.ArrayList;
+import java.util.HashMap;
+import java.util.List;
+import java.util.Map;
 
 import org.junit.jupiter.api.Test;
 
@@ -18,8 +21,7 @@ class RutaTest {
         final Aeropuerto origen = crearAeropuerto("LIM", Continente.AMERICA_DEL_SUR);
         final Aeropuerto escala = crearAeropuerto("BOG", Continente.AMERICA_DEL_SUR);
         final Aeropuerto destino = crearAeropuerto("MEX", Continente.AMERICA_DEL_NORTE);
-        final ArrayList<VueloInstancia> subrutas = new ArrayList<>();
-        subrutas.add(new VueloInstancia(
+        final VueloInstancia v1 = new VueloInstancia(
                 "VI-1",
                 "V1",
                 LocalDateTime.of(2026, 4, 20, 8, 0),
@@ -29,8 +31,8 @@ class RutaTest {
                 origen,
                 escala,
                 EstadoVuelo.PROGRAMADO
-        ));
-        subrutas.add(new VueloInstancia(
+        );
+        final VueloInstancia v2 = new VueloInstancia(
                 "VI-2",
                 "V2",
                 LocalDateTime.of(2026, 4, 20, 18, 0),
@@ -40,10 +42,14 @@ class RutaTest {
                 escala,
                 destino,
                 EstadoVuelo.PROGRAMADO
-        ));
-        final Ruta ruta = new Ruta("R-1", "M-1", 2, 0, subrutas, EstadoRuta.PLANIFICADA);
+        );
+        final List<String> ids = List.of(v1.getIdVueloInstancia(), v2.getIdVueloInstancia());
+        final Ruta ruta = new Ruta("R-1", "M-1", 2, 0, ids, EstadoRuta.PLANIFICADA);
 
-        final double duracion = ruta.calcularPlazo();
+        final Map<String, VueloInstancia> vueloIndex = new HashMap<>();
+        vueloIndex.put(v1.getIdVueloInstancia(), v1);
+        vueloIndex.put(v2.getIdVueloInstancia(), v2);
+        final double duracion = ruta.calcularPlazo(vueloIndex);
 
         assertEquals(1.5D, duracion, 0.0001D);
         assertEquals(1.5D, ruta.getDuracion(), 0.0001D);
@@ -51,8 +57,7 @@ class RutaTest {
 
     @Test
     void replanificar_ok_actualiza_estado() {
-        final ArrayList<VueloInstancia> subrutas = new ArrayList<>();
-        subrutas.add(new VueloInstancia(
+        final VueloInstancia v = new VueloInstancia(
                 "VI-3",
                 "V3",
                 LocalDateTime.of(2026, 4, 20, 8, 0),
@@ -62,10 +67,13 @@ class RutaTest {
                 crearAeropuerto("LIM", Continente.AMERICA_DEL_SUR),
                 crearAeropuerto("SCL", Continente.AMERICA_DEL_SUR),
                 EstadoVuelo.PROGRAMADO
-        ));
-        final Ruta ruta = new Ruta("R-2", "M-2", 1, 0, subrutas, EstadoRuta.REPLANIFICADA);
+        );
+        final List<String> ids = List.of(v.getIdVueloInstancia());
+        final Ruta ruta = new Ruta("R-2", "M-2", 1, 0, ids, EstadoRuta.REPLANIFICADA);
 
-        ruta.replanificar();
+        final Map<String, VueloInstancia> vueloIndex = new HashMap<>();
+        vueloIndex.put(v.getIdVueloInstancia(), v);
+        ruta.replanificar(vueloIndex);
 
         assertEquals("REPLANIFICADA", ruta.getEstado());
         assertEquals((2D / 24D), ruta.getDuracion(), 0.0001D);
@@ -75,7 +83,7 @@ class RutaTest {
     void replanificar_ok_sin_subrutas() {
         final Ruta ruta = new Ruta("R-3", "M-3", 1, 5, null, EstadoRuta.PLANIFICADA);
 
-        ruta.replanificar();
+        ruta.replanificar(null);
 
         assertEquals("PENDIENTE_REPLANIFICACION", ruta.getEstado());
         assertEquals(0D, ruta.getDuracion(), 0.0001D);

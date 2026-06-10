@@ -141,13 +141,14 @@ public class SimulacionSesion {
             }
         }
 
+        final Map<String, VueloInstancia> vueloIndex = getVueloIndex();
         for (final Ruta r : rutasPorMaleta.values()) {
             if (r == null) continue;
             final Maleta m = maletasPorId.get(r.getIdMaleta());
             if (m == null || m.getFechaRegistro() == null) continue;
 
-            final List<VueloInstancia> subs = r.getSubrutas();
-            if (subs == null || subs.isEmpty()) continue;
+            final List<String> ids = r.getSubrutas();
+            if (ids.isEmpty()) continue;
 
             agregarEvento(m.getFechaRegistro(), TipoEventoSim.MALETA_APARECE,
                     r.getIdMaleta(),
@@ -155,14 +156,14 @@ public class SimulacionSesion {
                             ? m.getPedido().getAeropuertoOrigen().getIdAeropuerto() : null,
                     -1);
 
-            for (int i = 0; i < subs.size(); i++) {
-                final VueloInstancia v = subs.get(i);
+            for (int i = 0; i < ids.size(); i++) {
+                final VueloInstancia v = vueloIndex.get(ids.get(i));
                 if (v == null) continue;
                 final String idAeroOrig = v.getAeropuertoOrigen() != null
                         ? v.getAeropuertoOrigen().getIdAeropuerto() : null;
                 final String idAeroDest = v.getAeropuertoDestino() != null
                         ? v.getAeropuertoDestino().getIdAeropuerto() : null;
-                final boolean ultimo = (i == subs.size() - 1);
+                final boolean ultimo = (i == ids.size() - 1);
 
                 if (v.getFechaSalida() != null && idAeroOrig != null) {
                     agregarEvento(v.getFechaSalida(), TipoEventoSim.MALETA_SALE_AEROP,
@@ -178,14 +179,14 @@ public class SimulacionSesion {
                 }
             }
 
-            if (!subs.isEmpty()) {
-                final VueloInstancia primero = subs.getFirst();
-                final VueloInstancia ultimoSub = subs.getLast();
-                if (primero.getFechaSalida() != null) {
+            if (!ids.isEmpty()) {
+                final VueloInstancia primero = vueloIndex.get(ids.getFirst());
+                final VueloInstancia ultimoSub = vueloIndex.get(ids.getLast());
+                if (primero != null && primero.getFechaSalida() != null) {
                     agregarEvento(primero.getFechaSalida(), TipoEventoSim.RUTA_ACTIVA,
                             r.getIdRuta(), null, 0);
                 }
-                if (ultimoSub.getFechaLlegada() != null) {
+                if (ultimoSub != null && ultimoSub.getFechaLlegada() != null) {
                     agregarEvento(ultimoSub.getFechaLlegada(), TipoEventoSim.RUTA_COMPLETA,
                             r.getIdRuta(), null, 0);
                 }
@@ -216,9 +217,16 @@ public class SimulacionSesion {
                 m.setEstado(EstadoMaleta.EN_ALMACEN);
                 m.setAeropuertoActual(idAeropuerto);
                 final Ruta r = rutasPorMaleta.get(m.getIdMaleta());
-                if (r != null && !r.getSubrutas().isEmpty() && r.getSubrutas().getFirst() != null) {
-                    r.getSubrutas().getFirst().setCapacidadDisponible(
-                            Math.max(0, r.getSubrutas().getFirst().getCapacidadDisponible() - 1));
+                if (r != null) {
+                    final List<String> idsRuta = r.getSubrutas();
+                    if (!idsRuta.isEmpty()) {
+                        final Map<String, VueloInstancia> idx = getVueloIndex();
+                        final VueloInstancia primerVuelo = idx.get(idsRuta.getFirst());
+                        if (primerVuelo != null) {
+                            primerVuelo.setCapacidadDisponible(
+                                    Math.max(0, primerVuelo.getCapacidadDisponible() - 1));
+                        }
+                    }
                 }
                 if (idAeropuerto != null) {
                     for (final Aeropuerto a : aeropuertos) {
@@ -363,8 +371,10 @@ public class SimulacionSesion {
         if (ruta == null || ruta.getIdMaleta() == null) return;
         final Maleta m = maletasPorId.get(ruta.getIdMaleta());
         if (m == null || m.getFechaRegistro() == null) return;
-        final List<VueloInstancia> subs = ruta.getSubrutas();
-        if (subs == null || subs.isEmpty()) return;
+        final List<String> ids = ruta.getSubrutas();
+        if (ids.isEmpty()) return;
+
+        final Map<String, VueloInstancia> vueloIndex = getVueloIndex();
 
         agregarEvento(m.getFechaRegistro(), TipoEventoSim.MALETA_APARECE,
                 ruta.getIdMaleta(),
@@ -372,14 +382,14 @@ public class SimulacionSesion {
                         ? m.getPedido().getAeropuertoOrigen().getIdAeropuerto() : null,
                 -1);
 
-        for (int i = 0; i < subs.size(); i++) {
-            final VueloInstancia v = subs.get(i);
+        for (int i = 0; i < ids.size(); i++) {
+            final VueloInstancia v = vueloIndex.get(ids.get(i));
             if (v == null) continue;
             final String idAeroOrig = v.getAeropuertoOrigen() != null
                     ? v.getAeropuertoOrigen().getIdAeropuerto() : null;
             final String idAeroDest = v.getAeropuertoDestino() != null
                     ? v.getAeropuertoDestino().getIdAeropuerto() : null;
-            final boolean ultimo = (i == subs.size() - 1);
+            final boolean ultimo = (i == ids.size() - 1);
 
             if (v.getFechaSalida() != null && idAeroOrig != null) {
                 agregarEvento(v.getFechaSalida(), TipoEventoSim.MALETA_SALE_AEROP,
@@ -395,23 +405,25 @@ public class SimulacionSesion {
             }
         }
 
-        if (!subs.isEmpty()) {
-            final VueloInstancia primero = subs.getFirst();
-            final VueloInstancia ultimoSub = subs.getLast();
-            if (primero.getFechaSalida() != null) {
+        if (!ids.isEmpty()) {
+            final VueloInstancia primero = vueloIndex.get(ids.getFirst());
+            final VueloInstancia ultimoSub = vueloIndex.get(ids.getLast());
+            if (primero != null && primero.getFechaSalida() != null) {
                 agregarEvento(primero.getFechaSalida(), TipoEventoSim.RUTA_ACTIVA,
                         ruta.getIdRuta(), null, 0);
             }
-            if (ultimoSub.getFechaLlegada() != null) {
+            if (ultimoSub != null && ultimoSub.getFechaLlegada() != null) {
                 agregarEvento(ultimoSub.getFechaLlegada(), TipoEventoSim.RUTA_COMPLETA,
                         ruta.getIdRuta(), null, 0);
             }
         }
 
         if (m.getFechaRegistro() != null && !m.getFechaRegistro().isAfter(currentSimTimeUtc.get())) {
-            if (!subs.isEmpty() && subs.getFirst() != null) {
-                subs.getFirst().setCapacidadDisponible(
-                        Math.max(0, subs.getFirst().getCapacidadDisponible() - 1));
+            final VueloInstancia primerVuelo = !ids.isEmpty()
+                    ? vueloIndex.get(ids.getFirst()) : null;
+            if (primerVuelo != null) {
+                primerVuelo.setCapacidadDisponible(
+                        Math.max(0, primerVuelo.getCapacidadDisponible() - 1));
             }
             if (m.getPedido() != null && m.getPedido().getAeropuertoOrigen() != null) {
                 final String idAero = m.getPedido().getAeropuertoOrigen().getIdAeropuerto();
@@ -431,7 +443,9 @@ public class SimulacionSesion {
         final Maleta m = maletasPorId.get(rutaAntigua.getIdMaleta());
         if (m == null) return;
         if (m.getFechaRegistro() != null && !m.getFechaRegistro().isAfter(currentSimTimeUtc.get())) {
-            for (final VueloInstancia v : rutaAntigua.getSubrutas()) {
+            final Map<String, VueloInstancia> idx = getVueloIndex();
+            for (final String idVuelo : rutaAntigua.getSubrutas()) {
+                final VueloInstancia v = idx.get(idVuelo);
                 if (v != null) {
                     v.setCapacidadDisponible(v.getCapacidadDisponible() + 1);
                 }
@@ -472,9 +486,14 @@ public class SimulacionSesion {
                         final String idRuta = rutaPorMaleta.get(e.idEntidad());
                         if (idRuta != null) {
                             final Ruta r = rutasIndex.get(idRuta);
-                            if (r != null && !r.getSubrutas().isEmpty() && r.getSubrutas().getFirst() != null) {
-                                final VueloInstancia v1 = r.getSubrutas().getFirst();
-                                v1.setCapacidadDisponible(Math.max(0, v1.getCapacidadDisponible() - 1));
+                            if (r != null) {
+                                final List<String> idsRuta = r.getSubrutas();
+                                if (!idsRuta.isEmpty()) {
+                                    final VueloInstancia v1 = vuelosIndex.get(idsRuta.getFirst());
+                                    if (v1 != null) {
+                                        v1.setCapacidadDisponible(Math.max(0, v1.getCapacidadDisponible() - 1));
+                                    }
+                                }
                             }
                         }
                         if (e.idAeropuerto() != null) {
@@ -500,9 +519,12 @@ public class SimulacionSesion {
                             final Ruta r = rutasIndex.get(idRuta);
                             if (r != null) {
                                 r.setEstado(EstadoRuta.COMPLETADA);
-                                if (!r.getSubrutas().isEmpty() && r.getSubrutas().getLast() != null
-                                        && r.getSubrutas().getLast().getFechaLlegada() != null) {
-                                    r.setFechaEntrega(r.getSubrutas().getLast().getFechaLlegada().plusMinutes(10));
+                                final List<String> idsRuta = r.getSubrutas();
+                                if (!idsRuta.isEmpty()) {
+                                    final VueloInstancia lastVuelo = vuelosIndex.get(idsRuta.getLast());
+                                    if (lastVuelo != null && lastVuelo.getFechaLlegada() != null) {
+                                        r.setFechaEntrega(lastVuelo.getFechaLlegada().plusMinutes(10));
+                                    }
                                 }
                             }
                         }
@@ -537,8 +559,12 @@ public class SimulacionSesion {
                         final Ruta r = rutasIndex.get(e.idEntidad());
                         if (r != null && r.getEstado() == EstadoRuta.ACTIVA) {
                             r.setEstado(EstadoRuta.COMPLETADA);
-                            if (!r.getSubrutas().isEmpty() && r.getSubrutas().getLast() != null) {
-                                r.setFechaEntrega(r.getSubrutas().getLast().getFechaLlegada());
+                            final List<String> idsRuta = r.getSubrutas();
+                            if (!idsRuta.isEmpty()) {
+                                final VueloInstancia lastVuelo = vuelosIndex.get(idsRuta.getLast());
+                                if (lastVuelo != null) {
+                                    r.setFechaEntrega(lastVuelo.getFechaLlegada());
+                                }
                             }
                         }
                     }
@@ -584,6 +610,10 @@ public class SimulacionSesion {
 
     public void setTareaScheduled(final ScheduledFuture<?> tarea) {
         this.tareaScheduled = tarea;
+    }
+
+    public ScheduledFuture<?> getTareaScheduled() {
+        return tareaScheduled;
     }
 
     public void limpiarDatos() {
@@ -741,20 +771,19 @@ public class SimulacionSesion {
 
         final Set<String> vuelosEnUso = new HashSet<>();
         for (final Ruta ruta : rutasPorMaleta.values()) {
-            if (ruta.getSubrutas() == null) {
-                continue;
-            }
-            for (final VueloInstancia vuelo : ruta.getSubrutas()) {
-                if (vuelo != null && vuelo.getIdVueloInstancia() != null) {
-                    vuelosEnUso.add(vuelo.getIdVueloInstancia());
+            final List<String> ids = ruta.getSubrutaIds();
+            for (final String idVuelo : ids) {
+                if (idVuelo != null) {
+                    vuelosEnUso.add(idVuelo);
                 }
             }
         }
         for (final ColdEntry entry : maletasFrias.values()) {
-            if (entry.ruta() != null && entry.ruta().getSubrutas() != null) {
-                for (final VueloInstancia vuelo : entry.ruta().getSubrutas()) {
-                    if (vuelo != null && vuelo.getIdVueloInstancia() != null) {
-                        vuelosEnUso.add(vuelo.getIdVueloInstancia());
+            if (entry.ruta() != null) {
+                final List<String> ids = entry.ruta().getSubrutaIds();
+                for (final String idVuelo : ids) {
+                    if (idVuelo != null) {
+                        vuelosEnUso.add(idVuelo);
                     }
                 }
             }
@@ -901,14 +930,8 @@ public class SimulacionSesion {
         if (nuevasRutas == null || nuevasRutas.isEmpty()) {
             return;
         }
-        final Map<String, VueloInstancia> index = getVueloIndex();
         for (final Ruta ruta : nuevasRutas) {
             if (ruta != null && ruta.getIdMaleta() != null) {
-                final List<VueloInstancia> subrutasResueltas = ruta.getSubrutaIds().stream()
-                        .map(index::get)
-                        .filter(Objects::nonNull)
-                        .collect(Collectors.toList());
-                ruta.setSubrutas(subrutasResueltas);
                 rutasPorMaleta.put(ruta.getIdMaleta(), ruta);
             }
         }
@@ -973,14 +996,8 @@ public class SimulacionSesion {
             }
         }
         if (rutas != null) {
-            final Map<String, VueloInstancia> index = getVueloIndex();
             for (final Ruta r : rutas) {
                 if (r != null && r.getIdMaleta() != null) {
-                    final List<VueloInstancia> subrutasResueltas = r.getSubrutaIds().stream()
-                            .map(index::get)
-                            .filter(Objects::nonNull)
-                            .collect(Collectors.toList());
-                    r.setSubrutas(subrutasResueltas);
                     this.rutasPorMaleta.put(r.getIdMaleta(), r);
                 }
             }
@@ -1086,7 +1103,7 @@ public class SimulacionSesion {
             if (estado == EstadoMaleta.EN_ALMACEN || estado == EstadoMaleta.EN_TRANSITO) {
                 final Ruta r = rutasPorMaleta.get(m.getIdMaleta());
                 if (r == null || r.getEstado() == EstadoRuta.REPLANIFICADA
-                        || r.getSubrutas() == null || r.getSubrutas().isEmpty()) {
+                        || r.getSubrutas().isEmpty()) {
                     sinRuta++;
                 }
             }

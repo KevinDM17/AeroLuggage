@@ -116,21 +116,20 @@ final class ALNSDestruidor {
             return Double.POSITIVE_INFINITY;
         }
         double puntaje = 0.0D;
-        final var llegada = ALNSUtil.llegadaFinal(ruta);
+        final var llegada = ALNSUtil.llegadaFinal(ruta, estado.getInstancia().getVuelosPorId());
         if (llegada != null && maleta.getPedido().getFechaHoraPlazo() != null) {
             puntaje += Math.max(0L, java.time.Duration.between(maleta.getPedido().getFechaHoraPlazo(), llegada).toMinutes()) * 10.0D;
             puntaje -= java.time.Duration.between(llegada, maleta.getPedido().getFechaHoraPlazo()).toMinutes() / 100.0D;
         }
-        if (ruta.getSubrutas() != null) {
-            for (final VueloInstancia vuelo : ruta.getSubrutas()) {
-                if (vuelo == null || vuelo.getIdVueloInstancia() == null) {
-                    continue;
-                }
-                final int uso = estado.getUsoPorVuelo().getOrDefault(vuelo.getIdVueloInstancia(), 0);
-                puntaje += uso;
+        final List<String> ids = ruta.getSubrutaIds();
+        for (final String idVuelo : ids) {
+            if (idVuelo == null) {
+                continue;
             }
+            final int uso = estado.getUsoPorVuelo().getOrDefault(idVuelo, 0);
+            puntaje += uso;
         }
-        puntaje += Math.max(0, ruta.getSubrutas() == null ? 0 : ruta.getSubrutas().size() - 1) * 2.0D;
+        puntaje += Math.max(0, ids.size() - 1) * 2.0D;
         return puntaje;
     }
 }

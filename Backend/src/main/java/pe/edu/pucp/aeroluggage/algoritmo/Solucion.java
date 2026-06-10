@@ -4,7 +4,6 @@ import java.util.ArrayList;
 import java.util.List;
 
 import pe.edu.pucp.aeroluggage.dominio.entidades.Ruta;
-import pe.edu.pucp.aeroluggage.dominio.entidades.VueloInstancia;
 import pe.edu.pucp.aeroluggage.dominio.enums.EstadoRuta;
 import pe.edu.pucp.aeroluggage.dominio.enums.Semaforo;
 
@@ -39,8 +38,6 @@ public class Solucion {
 
         int entregadasATiempo = 0;
         int incumplidas = 0;
-        double sumaOcupacion = 0D;
-        int totalVuelos = 0;
 
         for (final Ruta ruta : solucion) {
             if (ruta == null) {
@@ -53,24 +50,11 @@ public class Solucion {
             } else {
                 incumplidas++;
             }
-
-            final List<VueloInstancia> vuelos = ruta.getSubrutas();
-            if (vuelos == null) {
-                continue;
-            }
-            for (final VueloInstancia vuelo : vuelos) {
-                if (vuelo == null || vuelo.getCapacidadMaxima() <= 0) {
-                    continue;
-                }
-                final double ocupadas = vuelo.getCapacidadMaxima() - vuelo.getCapacidadDisponible();
-                sumaOcupacion += ocupadas / (double) vuelo.getCapacidadMaxima();
-                totalVuelos++;
-            }
         }
 
         maletasEntregadasATiempo = entregadasATiempo;
         maletasIncumplidas = incumplidas;
-        ocupacionPromedioVuelos = totalVuelos > 0 ? sumaOcupacion / totalVuelos : 0D;
+        ocupacionPromedioVuelos = 0D;
         factible = incumplidas == 0;
     }
 
@@ -89,16 +73,16 @@ public class Solucion {
                 copia.add(null);
                 continue;
             }
-            final List<VueloInstancia> subrutasOriginales = ruta.getSubrutas();
-            final List<VueloInstancia> subrutasCopia = subrutasOriginales == null
+            final List<String> idsOriginales = ruta.getSubrutas();
+            final List<String> idsCopia = idsOriginales == null
                     ? new ArrayList<>()
-                    : new ArrayList<>(subrutasOriginales);
+                    : new ArrayList<>(idsOriginales);
             copia.add(new Ruta(
                     ruta.getIdRuta(),
                     ruta.getIdMaleta(),
                     ruta.getPlazoMaximoDias(),
                     ruta.getDuracion(),
-                    subrutasCopia,
+                    idsCopia,
                     ruta.getEstado(),
                     ruta.getFechaEntrega()
             ));
