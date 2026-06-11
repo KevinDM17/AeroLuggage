@@ -91,6 +91,18 @@ jobs:
           chmod 600 ~/.ssh/id_rsa
           ssh-keyscan -H ${{ secrets.SERVER_HOST }} >> ~/.ssh/known_hosts
 
+      - name: Cleanup contenedores y puertos
+        run: |
+          ssh -o ConnectTimeout=10 \
+            "${{ secrets.SERVER_USER }}@${{ secrets.SERVER_HOST }}" "
+            sudo systemctl stop nginx 2>/dev/null || true
+            sudo pkill -x nginx 2>/dev/null || true
+            cd /opt/aeroluggage
+            docker compose -f docker-compose.yml -f docker-compose.prod.yml down 2>/dev/null || true
+            docker rm -f \$(docker ps -aq --filter name=aeroluggage) 2>/dev/null || true
+            sleep 3
+          "
+
       - name: Desplegar en servidor
         run: |
           ssh -o ConnectTimeout=10 \
@@ -102,6 +114,7 @@ jobs:
             docker login ghcr.io -u '${{ github.actor }}' -p '${{ secrets.GITHUB_TOKEN }}' && \
             docker compose -f docker-compose.yml -f docker-compose.prod.yml pull && \
             docker compose -f docker-compose.yml -f docker-compose.prod.yml down && \
+            sleep 5 && \
             docker compose -f docker-compose.yml -f docker-compose.prod.yml up -d && \
             sleep 25 && \
             curl -X POST "http://localhost:8082/api/seed?clean=true" && \
