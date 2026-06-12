@@ -111,7 +111,7 @@ export default function MapDashboard({
           </div>}
 
           {mapOverlay && (
-            <div className="absolute left-1/2 bottom-4 z-[1000] w-[min(92%,28rem)] -translate-x-1/2">
+            <div className="absolute left-1/2 bottom-4 z-[1000] -translate-x-1/2">
               {mapOverlay}
             </div>
           )}

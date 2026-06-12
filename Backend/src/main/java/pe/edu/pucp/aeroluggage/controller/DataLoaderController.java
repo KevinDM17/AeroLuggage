@@ -1,7 +1,9 @@
 package pe.edu.pucp.aeroluggage.controller;
 
+import lombok.extern.slf4j.Slf4j;
 import org.springframework.jdbc.core.JdbcTemplate;
 import org.springframework.stereotype.Service;
+import org.springframework.transaction.annotation.Propagation;
 import org.springframework.transaction.annotation.Transactional;
 
 import pe.edu.pucp.aeroluggage.servicios.ServicioAeropuerto;
@@ -9,6 +11,7 @@ import pe.edu.pucp.aeroluggage.servicios.ServicioVueloProgramado;
 
 import java.io.IOException;
 
+@Slf4j
 @Service
 public class DataLoaderController {
 
@@ -25,23 +28,29 @@ public class DataLoaderController {
     }
 
     @Transactional
-    public void seed(boolean limpiar) throws IOException {
-        if  (limpiar) {
-            jdbcTemplate.update("DELETE FROM ruta_vuelo_instancia");
-            jdbcTemplate.update("DELETE FROM ruta");
-            jdbcTemplate.update("DELETE FROM maleta");
-            jdbcTemplate.update("DELETE FROM pedido");
-            jdbcTemplate.update("DELETE FROM vuelo_instancia");
-            jdbcTemplate.update("DELETE FROM vuelo_programado");
-            jdbcTemplate.update("DELETE FROM aeropuerto");
-            jdbcTemplate.update("DELETE FROM ciudad");
-        }
-        cargarDatosIniciales();
+    public void limpiarDatos() {
+        log.info("[AeroLuggage/Seed] - LIMPIANDO BASE DE DATOS...");
+        jdbcTemplate.update("DELETE FROM ruta_vuelo_instancia");
+        jdbcTemplate.update("DELETE FROM ruta");
+        jdbcTemplate.update("DELETE FROM maleta");
+        jdbcTemplate.update("DELETE FROM pedido");
+        jdbcTemplate.update("DELETE FROM vuelo_instancia");
+        jdbcTemplate.update("DELETE FROM vuelo_programado");
+        jdbcTemplate.update("DELETE FROM aeropuerto");
+        jdbcTemplate.update("DELETE FROM ciudad");
+        log.info("[AeroLuggage/Seed] - BASE DE DATOS LIMPIADA");
     }
 
-    @Transactional
+    @Transactional(propagation = Propagation.REQUIRES_NEW)
     public void cargarDatosIniciales() throws IOException {
         servicioAeropuerto.cargarDesdeRecursos();
         servicioVueloProgramado.cargarDesdeRecursos();
+    }
+
+    public void seed(boolean limpiar) throws IOException {
+        if (limpiar) {
+            limpiarDatos();
+        }
+        cargarDatosIniciales();
     }
 }

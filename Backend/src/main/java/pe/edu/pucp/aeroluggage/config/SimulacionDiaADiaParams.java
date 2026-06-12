@@ -1,0 +1,39 @@
+package pe.edu.pucp.aeroluggage.config;
+
+import org.springframework.boot.context.properties.ConfigurationProperties;
+import org.springframework.context.annotation.PropertySource;
+import org.springframework.stereotype.Component;
+
+@Component
+@ConfigurationProperties(prefix = "simulacion-dia-a-dia")
+@PropertySource(value = "classpath:system_params.yml", factory = YamlPropertySourceFactory.class)
+public class SimulacionDiaADiaParams {
+
+    private long tickIntervalMs = 1000L;
+    private long heartbeatMs = 10000L;
+    private long timeoutMs = 90000L;
+
+    public long getTickIntervalMs() {
+        return tickIntervalMs;
+    }
+
+    public void setTickIntervalMs(final long tickIntervalMs) {
+        this.tickIntervalMs = tickIntervalMs;
+    }
+
+    public long getHeartbeatMs() {
+        return heartbeatMs;
+    }
+
+    public void setHeartbeatMs(final long heartbeatMs) {
+        this.heartbeatMs = heartbeatMs;
+    }
+
+    public long getTimeoutMs() {
+        return timeoutMs;
+    }
+
+    public void setTimeoutMs(final long timeoutMs) {
+        this.timeoutMs = timeoutMs;
+    }
+}

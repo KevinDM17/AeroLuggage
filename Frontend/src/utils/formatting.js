@@ -36,7 +36,7 @@ export const formatDateTimeDisplay = (value) => {
     date: date.toLocaleDateString("es-PE", {
       day: "2-digit",
       month: "2-digit",
-      year: "2-digit",
+      year: "numeric",
     }),
     time: date.toLocaleTimeString("es-PE", {
       hour: "2-digit",
@@ -54,7 +54,7 @@ export const formatUtcDateTimeDisplay = (value) => {
   if (Number.isNaN(date.getTime())) return { date: "--", time: "--:--:--", timeZone: "UTC" };
 
   return {
-    date: `${date.getUTCFullYear()}-${padDatePart(date.getUTCMonth() + 1)}-${padDatePart(date.getUTCDate())}`,
+    date: `${padDatePart(date.getUTCDate())}/${padDatePart(date.getUTCMonth() + 1)}/${date.getUTCFullYear()}`,
     time: `${padDatePart(date.getUTCHours())}:${padDatePart(date.getUTCMinutes())}`,
     timeZone: "UTC",
   };

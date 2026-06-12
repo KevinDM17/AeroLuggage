@@ -9,7 +9,7 @@ import { listOrders } from "../../api/orders";
 import { listAirports } from "../../api/airports";
 import { listMaletas } from "../../api/maletas";
 import { listRutas } from "../../api/rutas";
-import { obtenerManifiestoVuelo, obtenerContenidoAlmacen, obtenerEnviosPanel, obtenerRutaMaleta, obtenerRutasEnvio } from "../../api/simulator";
+import { obtenerManifiestoVuelo, obtenerManifiestoVueloDiaADia, obtenerPedidosDiaADia, obtenerContenidoAlmacen, obtenerEnviosPanel, obtenerRutaMaleta, obtenerRutasEnvio } from "../../api/simulator";
 import { USE_MOCK } from "../../api/client";
 import { useMapFocus } from "../../context/MapFocusContext";
 import { LoadingState, EmptyState, ErrorState } from "../ui/States";
@@ -888,7 +888,7 @@ export default function RightPanel({
   const [airportSortDir, setAirportSortDir] = useState("desc");
   const [envioOriginFilter, setEnvioOriginFilter] = useState("ALL");
   const [envioDestFilter, setEnvioDestFilter] = useState("ALL");
-  const [enviosData, setEnviosData] = useState({ planificados: [], enVuelos: [], entregados: [] });
+  const [enviosData, setEnviosData] = useState({ planificados: [], enVuelos: [] });
   const [enviosStatus, setEnviosStatus] = useState("idle");
   const [airportSemaforo, setAirportSemaforo] = useState("ALL");
   const [flightSemaforo, setFlightSemaforo] = useState("ALL");
@@ -897,6 +897,8 @@ export default function RightPanel({
   const sessionId = simulationPanelData?.sessionId ?? null;
   const { mapHighlight, setMapHighlight, selected, setSelected, setMapFocus, panelFocus, setMapDim } = useMapFocus();
   const location = useLocation();
+  const isDiaADia = location.pathname === "/";
+  const isPeriodo = location.pathname === "/simulator/period";
   const isSimulator = location.pathname === "/" || location.pathname.startsWith("/simulator");
   const simulationLoaded = !isSimulator || simulationPanelData?.loaded === true;
   const activeTabLabel = PANEL_TABS.find((tab) => tab.id === activeTab)?.label ?? "";
@@ -1241,34 +1243,61 @@ export default function RightPanel({
   // tick, para no recargar (la data se mantiene hasta que el usuario refresca).
   const fetchEnvios = useCallback(() => {
     if (USE_MOCK || !sessionId) {
-      setEnviosData({ planificados: [], enVuelos: [], entregados: [] });
+      setEnviosData({ planificados: [], enVuelos: [] });
       setEnviosStatus("ready");
       return Promise.resolve();
     }
     setEnviosStatus("loading");
+
+    if (isDiaADia) {
+      return obtenerPedidosDiaADia()
+        .then((data) => {
+          const pedidos = Array.isArray(data) ? data : [];
+          setEnviosData({
+            planificados: pedidos.map((p) => ({
+              id: p.id,
+              origin: p.origin,
+              dest: p.dest,
+              uts: [],
+              origenesRuta: [p.origin],
+              destinosRuta: [p.dest],
+              bags: p.bags,
+              envioFecha: p.date,
+              envioHora: p.time,
+              status: p.status,
+            })),
+            enVuelos: [],
+          });
+          setEnviosStatus("ready");
+        })
+        .catch(() => {
+          setEnviosData({ planificados: [], enVuelos: [] });
+          setEnviosStatus("error");
+        });
+    }
+
     return obtenerEnviosPanel(sessionId)
       .then((data) => {
         setEnviosData({
           planificados: data?.planificados ?? [],
           enVuelos: data?.enVuelos ?? [],
-          entregados: data?.entregadosUltimas4h ?? [],
         });
         setEnviosStatus("ready");
       })
       .catch(() => {
-        setEnviosData({ planificados: [], enVuelos: [], entregados: [] });
+        setEnviosData({ planificados: [], enVuelos: [] });
         setEnviosStatus("error");
       });
-  }, [sessionId]);
+  }, [sessionId, isDiaADia, isPeriodo]);
 
   useEffect(() => {
-    if (isSimulator && activeTab === "orders") fetchEnvios();
-  }, [isSimulator, activeTab, fetchEnvios]);
+    if ((isPeriodo || isDiaADia) && activeTab === "orders") fetchEnvios();
+  }, [isPeriodo, isDiaADia, activeTab, fetchEnvios]);
 
   const enviosAirportOptions = useMemo(() => {
     const origins = new Set();
     const dests = new Set();
-    for (const e of [...enviosData.planificados, ...enviosData.enVuelos, ...enviosData.entregados]) {
+    for (const e of [...enviosData.planificados, ...enviosData.enVuelos]) {
       for (const a of e.origenesRuta ?? []) origins.add(a);
       for (const a of e.destinosRuta ?? []) dests.add(a);
     }
@@ -1311,9 +1340,11 @@ export default function RightPanel({
       if (USE_MOCK || !sessionId || !flightKey) {
         return Promise.resolve({ maletas: [], pedidos: [] });
       }
-      return obtenerManifiestoVuelo(sessionId, flightKey);
+      return isDiaADia
+        ? obtenerManifiestoVueloDiaADia(flightKey)
+        : obtenerManifiestoVuelo(sessionId, flightKey);
     },
-    [sessionId]
+    [sessionId, isDiaADia]
   );
 
   // Contenido de un almacen (envios/maletas presentes), pedido al back al
@@ -1512,11 +1543,6 @@ export default function RightPanel({
             envios={filterEnvios(enviosData.enVuelos)}
             onShowRoute={showEnvioRoutes}
             defaultOpen
-          />
-          <EnvioSeccion
-            title="Entregados (ultimas 4 h)"
-            envios={filterEnvios(enviosData.entregados)}
-            onShowRoute={showEnvioRoutes}
           />
         </div>
       )

@@ -19,7 +19,7 @@ import java.util.Optional;
 public class PedidoRepositorio {
 
     private static final String SELECT_CON_JOINS =
-            "SELECT p.id_pedido, p.fecha_registro, p.fecha_hora_plazo, p.cantidad_maletas, p.estado, " +
+            "SELECT p.id_pedido, p.fecha_registro, p.fecha_hora_plazo, p.fecha_entrega, p.cantidad_maletas, p.estado, " +
             "ao.id_aeropuerto AS ao_id, ao.capacidad_almacen AS ao_cap, ao.maletas_actuales AS ao_mal, " +
             "ao.longitud AS ao_lon, ao.latitud AS ao_lat, ao.huso_gmt AS ao_huso, " +
             "co.id_ciudad AS co_id, co.nombre AS co_nombre, co.continente AS co_continente, " +
@@ -41,14 +41,15 @@ public class PedidoRepositorio {
     public int insertar(Pedido pedido) {
         String sql = "INSERT INTO pedido " +
                 "(id_pedido, id_aeropuerto_origen, id_aeropuerto_destino, " +
-                "fecha_registro, fecha_hora_plazo, cantidad_maletas, estado) " +
-                "VALUES (?, ?, ?, ?, ?, ?, ?)";
+                "fecha_registro, fecha_hora_plazo, fecha_entrega, cantidad_maletas, estado) " +
+                "VALUES (?, ?, ?, ?, ?, ?, ?, ?)";
         return jdbcTemplate.update(sql,
                 pedido.getIdPedido(),
                 pedido.getAeropuertoOrigen() != null ? pedido.getAeropuertoOrigen().getIdAeropuerto() : null,
                 pedido.getAeropuertoDestino() != null ? pedido.getAeropuertoDestino().getIdAeropuerto() : null,
                 pedido.getFechaRegistro() != null ? pedido.getFechaRegistro().toString() : null,
                 pedido.getFechaHoraPlazo() != null ? pedido.getFechaHoraPlazo().toString() : null,
+                pedido.getFechaEntrega() != null ? pedido.getFechaEntrega().toString() : null,
                 pedido.getCantidadMaletas(),
                 pedido.getEstado() != null ? pedido.getEstado().name() : null);
     }
@@ -63,15 +64,21 @@ public class PedidoRepositorio {
         return jdbcTemplate.query(SELECT_CON_JOINS, new PedidoRowMapper());
     }
 
+    public List<Pedido> obtenerNoEntregados() {
+        String sql = SELECT_CON_JOINS + " WHERE p.estado != ? ORDER BY p.fecha_registro DESC";
+        return jdbcTemplate.query(sql, new PedidoRowMapper(), EstadoPedido.ENTREGADO.name());
+    }
+
     public int actualizar(Pedido pedido) {
         String sql = "UPDATE pedido SET id_aeropuerto_origen=?, id_aeropuerto_destino=?, " +
-                "fecha_registro=?, fecha_hora_plazo=?, cantidad_maletas=?, estado=? " +
+                "fecha_registro=?, fecha_hora_plazo=?, fecha_entrega=?, cantidad_maletas=?, estado=? " +
                 "WHERE id_pedido=?";
         return jdbcTemplate.update(sql,
                 pedido.getAeropuertoOrigen() != null ? pedido.getAeropuertoOrigen().getIdAeropuerto() : null,
                 pedido.getAeropuertoDestino() != null ? pedido.getAeropuertoDestino().getIdAeropuerto() : null,
                 pedido.getFechaRegistro() != null ? pedido.getFechaRegistro().toString() : null,
                 pedido.getFechaHoraPlazo() != null ? pedido.getFechaHoraPlazo().toString() : null,
+                pedido.getFechaEntrega() != null ? pedido.getFechaEntrega().toString() : null,
                 pedido.getCantidadMaletas(),
                 pedido.getEstado() != null ? pedido.getEstado().name() : null,
                 pedido.getIdPedido());
@@ -107,9 +114,10 @@ public class PedidoRepositorio {
 
             String fechaRegistroStr = rs.getString("fecha_registro");
             String fechaPlazoStr = rs.getString("fecha_hora_plazo");
+            String fechaEntregaStr = rs.getString("fecha_entrega");
             String estadoStr = rs.getString("estado");
 
-            return new Pedido(
+            Pedido pedido = new Pedido(
                     rs.getString("id_pedido"),
                     origen,
                     destino,
@@ -118,6 +126,10 @@ public class PedidoRepositorio {
                     rs.getInt("cantidad_maletas"),
                     estadoStr != null ? EstadoPedido.valueOf(estadoStr) : null
             );
+            if (fechaEntregaStr != null) {
+                pedido.setFechaEntrega(LocalDateTime.parse(fechaEntregaStr));
+            }
+            return pedido;
         }
     }
 }

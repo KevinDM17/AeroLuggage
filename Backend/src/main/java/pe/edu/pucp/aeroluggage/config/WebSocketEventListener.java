@@ -7,6 +7,7 @@ import org.springframework.messaging.simp.SimpMessagingTemplate;
 import org.springframework.messaging.simp.stomp.StompHeaderAccessor;
 import org.springframework.stereotype.Component;
 import org.springframework.web.socket.messaging.SessionDisconnectEvent;
+import pe.edu.pucp.aeroluggage.simulacion.SimulacionDiaADiaService;
 import pe.edu.pucp.aeroluggage.simulacion.SimulacionSesionManager;
 
 @Slf4j
@@ -16,6 +17,7 @@ public class WebSocketEventListener {
 
     private final SimulacionSesionManager sesionManager;
     private final SimpMessagingTemplate broker;
+    private final SimulacionDiaADiaService diaADiaService;
 
     @EventListener
     public void manejarDesconexion(final SessionDisconnectEvent event) {
@@ -23,5 +25,6 @@ public class WebSocketEventListener {
         final String wsSessionId = accessor.getSessionId();
         log.info("[AeroLuggage/WebSocket] - DESCONEXION: wsSessionId: {}", wsSessionId);
         sesionManager.limpiarPorWsSession(wsSessionId, broker);
+        diaADiaService.desregistrarCliente(wsSessionId);
     }
 }

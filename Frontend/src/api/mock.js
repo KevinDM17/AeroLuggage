@@ -192,3 +192,35 @@ export async function mockGetCollapseSimState() {
   }
   return { ..._sim.collapse };
 }
+
+// ---------- DIA A DIA ----------
+const _simDiaADia = {
+  status: "idle",
+  sessionId: null,
+  startedAt: null,
+};
+
+export async function mockIniciarDiaADia() {
+  await delay();
+  _simDiaADia.status = "running";
+  _simDiaADia.sessionId = "mock-dia-a-dia-" + Date.now();
+  _simDiaADia.startedAt = Date.now();
+  return { sessionId: _simDiaADia.sessionId, estado: "INICIADA", mensaje: "Simulacion dia a dia iniciada" };
+}
+
+export async function mockDetenerDiaADia() {
+  await delay();
+  _simDiaADia.status = "idle";
+  _simDiaADia.sessionId = null;
+  _simDiaADia.startedAt = null;
+  return { estado: "DETENIDA", mensaje: "Simulacion dia a dia detenida" };
+}
+
+export async function mockProcesarPedidoDiaADia(pedido) {
+  await delay();
+  return { estado: "PEDIDO_PROCESADO", mensaje: "Pedido " + pedido.idPedido + " procesado" };
+}
+
+export function getMockDiaADiaState() {
+  return { ..._simDiaADia };
+}

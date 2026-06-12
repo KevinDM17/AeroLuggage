@@ -47,8 +47,30 @@ public class RutaRepositorio {
         return Optional.of(ruta);
     }
 
+    public Optional<Ruta> obtenerPorIdMaleta(String idMaleta) {
+        String sql = "SELECT id_ruta, id_maleta, plazo_maximo_dias, duracion, estado " +
+                "FROM ruta WHERE id_maleta = ?";
+        List<Ruta> resultado = jdbcTemplate.query(sql, new RutaRowMapper(), idMaleta);
+        if (resultado.isEmpty()) {
+            return Optional.empty();
+        }
+        Ruta ruta = resultado.get(0);
+        ruta.setSubrutaIds(cargarSubrutas(ruta.getIdRuta()));
+        return Optional.of(ruta);
+    }
+
     public List<Ruta> obtenerTodos() {
         String sql = "SELECT id_ruta, id_maleta, plazo_maximo_dias, duracion, estado FROM ruta";
+        List<Ruta> rutas = jdbcTemplate.query(sql, new RutaRowMapper());
+        for (Ruta ruta : rutas) {
+            ruta.setSubrutaIds(cargarSubrutas(ruta.getIdRuta()));
+        }
+        return rutas;
+    }
+
+    public List<Ruta> obtenerActivasPlanificadas() {
+        String sql = "SELECT id_ruta, id_maleta, plazo_maximo_dias, duracion, estado " +
+                "FROM ruta WHERE estado IN ('PLANIFICADA', 'ACTIVA')";
         List<Ruta> rutas = jdbcTemplate.query(sql, new RutaRowMapper());
         for (Ruta ruta : rutas) {
             ruta.setSubrutaIds(cargarSubrutas(ruta.getIdRuta()));

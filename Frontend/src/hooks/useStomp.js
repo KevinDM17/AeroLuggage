@@ -1,18 +1,15 @@
 import { useCallback, useEffect, useState } from "react";
-import { getStompClient, isStompEnabled, whenConnected } from "../api/stomp";
+import { isStompEnabled, whenConnected, subscribeToReconnects } from "../api/stomp";
 
-/**
- * Se suscribe a un topic STOMP y devuelve el ultimo mensaje recibido (parseado a JSON).
- *
- *   const { data, error, connected } = useStompSubscribe("/topic/simulacion/abc-123");
- *
- * Si `topic` es null/undefined o `enabled=false`, no se suscribe.
- * Si VITE_USE_MOCK=true, no hace nada (devuelve data=null).
- */
 export function useStompSubscribe(topic, { enabled = true } = {}) {
   const [data, setData] = useState(null);
   const [error, setError] = useState(null);
   const [connected, setConnected] = useState(false);
+  const [reconnectToken, setReconnectToken] = useState(0);
+
+  useEffect(() => {
+    return subscribeToReconnects(() => setReconnectToken((c) => c + 1));
+  }, []);
 
   useEffect(() => {
     if (!enabled || !topic || !isStompEnabled()) {
@@ -46,17 +43,11 @@ export function useStompSubscribe(topic, { enabled = true } = {}) {
       cancelled = true;
       if (subscription) subscription.unsubscribe();
     };
-  }, [topic, enabled]);
+  }, [topic, enabled, reconnectToken]);
 
   return { data, error, connected };
 }
 
-/**
- * Devuelve una funcion para publicar mensajes a destinos /app/...
- *
- *   const publish = useStompPublish();
- *   publish("/app/simulacion/periodo/detener", { sessionId });
- */
 export function useStompPublish() {
   return useCallback(async (destination, body) => {
     if (!isStompEnabled()) {

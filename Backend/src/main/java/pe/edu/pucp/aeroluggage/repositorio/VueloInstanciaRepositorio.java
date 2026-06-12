@@ -10,6 +10,7 @@ import pe.edu.pucp.aeroluggage.dominio.enums.EstadoVuelo;
 import java.sql.ResultSet;
 import java.sql.SQLException;
 import java.time.LocalDateTime;
+import java.util.Collections;
 import java.util.List;
 import java.util.Optional;
 
@@ -39,6 +40,35 @@ public class VueloInstanciaRepositorio {
                 vi.getAeropuertoOrigen() != null ? vi.getAeropuertoOrigen().getIdAeropuerto() : null,
                 vi.getAeropuertoDestino() != null ? vi.getAeropuertoDestino().getIdAeropuerto() : null,
                 vi.getEstado() != null ? vi.getEstado().name() : null);
+    }
+
+    public int insertarOActualizar(VueloInstancia vi, String idVueloProgramado) {
+        String sql = "INSERT OR REPLACE INTO vuelo_instancia " +
+                "(id_vuelo_instancia, id_vuelo_programado, codigo, " +
+                "fecha_salida, fecha_llegada, capacidad_maxima, capacidad_disponible, " +
+                "id_aeropuerto_origen, id_aeropuerto_destino, estado) " +
+                "VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)";
+        return jdbcTemplate.update(sql,
+                vi.getIdVueloInstancia(),
+                idVueloProgramado,
+                vi.getCodigo(),
+                vi.getFechaSalida() != null ? vi.getFechaSalida().toString() : null,
+                vi.getFechaLlegada() != null ? vi.getFechaLlegada().toString() : null,
+                vi.getCapacidadMaxima(),
+                vi.getCapacidadDisponible(),
+                vi.getAeropuertoOrigen() != null ? vi.getAeropuertoOrigen().getIdAeropuerto() : null,
+                vi.getAeropuertoDestino() != null ? vi.getAeropuertoDestino().getIdAeropuerto() : null,
+                vi.getEstado() != null ? vi.getEstado().name() : null);
+    }
+
+    public List<VueloInstancia> obtenerPorIds(List<String> ids) {
+        if (ids.isEmpty()) return List.of();
+        String placeholders = String.join(",", Collections.nCopies(ids.size(), "?"));
+        String sql = "SELECT id_vuelo_instancia, codigo, fecha_salida, fecha_llegada, " +
+                "capacidad_maxima, capacidad_disponible, id_aeropuerto_origen, " +
+                "id_aeropuerto_destino, estado FROM vuelo_instancia " +
+                "WHERE id_vuelo_instancia IN (" + placeholders + ")";
+        return jdbcTemplate.query(sql, new VueloInstanciaRowMapper(), ids.toArray());
     }
 
     public Optional<VueloInstancia> obtenerPorId(String id) {

@@ -59,6 +59,7 @@ CREATE TABLE IF NOT EXISTS pedido (
     id_aeropuerto_destino TEXT    NOT NULL,
     fecha_registro        TEXT    NOT NULL,
     fecha_hora_plazo      TEXT,
+    fecha_entrega         TEXT,
     cantidad_maletas      INTEGER NOT NULL,
     estado                TEXT    NOT NULL,
     PRIMARY KEY (id_pedido),

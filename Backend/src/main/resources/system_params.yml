@@ -14,6 +14,11 @@ simulacion:
   retencion-pedidos-minutos: 120
   retencion-vuelos-minutos: 120
 
+simulacion-dia-a-dia:
+  tick-interval-ms: 1000
+  heartbeat-ms: 10000
+  timeout-ms: 90000
+
 algoritmos:
   alns:
     max-iteraciones: 150

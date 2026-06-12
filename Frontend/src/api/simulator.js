@@ -1,4 +1,4 @@
-import { apiGet, apiPost, USE_MOCK } from "./client";
+import { apiGet, apiPost, USE_MOCK, ApiError } from "./client";
 import {
   mockStartPeriodSim,
   mockStopPeriodSim,
@@ -6,6 +6,9 @@ import {
   mockStartCollapseSim,
   mockStopCollapseSim,
   mockGetCollapseSimState,
+  mockIniciarDiaADia,
+  mockDetenerDiaADia,
+  mockProcesarPedidoDiaADia,
 } from "./mock";
 
 /* =========================================================================
@@ -81,6 +84,147 @@ export const stopPeriodSim = () =>
 
 export const getPeriodSimState = () =>
   USE_MOCK ? mockGetPeriodSimState() : Promise.reject(new Error("Usar WS /topic/simulacion/{sessionId}/estado"));
+
+/* =========================================================================
+ * SIMULACION DIA A DIA
+ * Back: SimulacionDiaADiaService + SimulacionDiaADiaRestController
+ * =========================================================================
+ *
+ * REST:
+ *   POST   /api/operations/iniciar
+ *   POST   /api/operations/{sessionId}/detener
+ *   POST   /api/operations/{sessionId}/pedido     Body: PedidoRequest
+ *   GET    /api/operations/{sessionId}/estado
+ *   GET    /api/operations/{sessionId}/vuelos
+ *   GET    /api/operations/{sessionId}/vuelo/{id}/manifiesto
+ *   GET    /api/operations/{sessionId}/maleta/{id}/ruta
+ *   GET    /api/operations/{sessionId}/aeropuertos
+ *   GET    /api/operations/{sessionId}/pedidos
+ *   GET    /api/operations/{sessionId}/maletas
+ *
+ * WebSocket (STOMP):
+ *   SUB   /topic/operations/{sessionId}            -> SimulacionTickLigeroDTO
+ *   SUB   /topic/operations/{sessionId}/estado     -> SimulacionEstadoDTO
+ *
+ * Session management:
+ *   The backend expires the session after 20s of inactivity.
+ *   Internally we auto-detect 404 (session expired) and re-create
+ *   the session transparently via withReconnect().
+ */
+
+let currentSessionId = null;
+let creatingSession = null;
+const sessionChangeListeners = new Set();
+
+export function onSessionChange(callback) {
+  sessionChangeListeners.add(callback);
+  return () => sessionChangeListeners.delete(callback);
+}
+
+function notifySessionChange(sessionId) {
+  for (const cb of sessionChangeListeners) {
+    try { cb(sessionId); } catch {}
+  }
+}
+
+async function checkActiveSession() {
+  try {
+    const result = await apiGet("/operations/estado-actual");
+    return result;
+  } catch (err) {
+    if (err instanceof ApiError && err.status === 404) {
+      return null;
+    }
+    throw err;
+  }
+}
+
+async function getOrCreateSession() {
+  if (currentSessionId) return currentSessionId;
+  if (creatingSession) return creatingSession;
+  creatingSession = (async () => {
+    const activeSession = await checkActiveSession();
+    if (activeSession && activeSession.activa) {
+      currentSessionId = activeSession.sessionId;
+      notifySessionChange(currentSessionId);
+      return currentSessionId;
+    }
+    const result = USE_MOCK
+      ? await mockIniciarDiaADia()
+      : await apiPost("/operations/iniciar");
+    currentSessionId = result.sessionId;
+    notifySessionChange(currentSessionId);
+    return currentSessionId;
+  })();
+  try {
+    return await creatingSession;
+  } finally {
+    creatingSession = null;
+  }
+}
+
+async function withReconnect(apiFn) {
+  const sid = await getOrCreateSession();
+  try {
+    return await apiFn(sid);
+  } catch (err) {
+    if (err instanceof ApiError && err.status === 404) {
+      creatingSession = null;
+      currentSessionId = null;
+      const newSid = await getOrCreateSession();
+      return await apiFn(newSid);
+    }
+    throw err;
+  }
+}
+
+export const iniciarSimulacionDiaADia = async () => {
+  const sid = await getOrCreateSession();
+  return { sessionId: sid };
+};
+
+export const detenerSimulacionDiaADia = (sessionId) =>
+  USE_MOCK
+    ? mockDetenerDiaADia()
+    : apiPost(`/operations/${sessionId}/detener`);
+
+export const procesarPedidoDiaADia = (pedido) =>
+  USE_MOCK
+    ? mockProcesarPedidoDiaADia(pedido)
+    : withReconnect((sid) => apiPost(`/operations/${sid}/pedido`, pedido));
+
+export const obtenerEstadoDiaADia = () =>
+  withReconnect((sid) => apiGet(`/operations/${sid}/estado`));
+
+export const obtenerVuelosDiaADia = () =>
+  withReconnect((sid) => apiGet(`/operations/${sid}/vuelos`));
+
+export const obtenerAeropuertosDiaADia = () =>
+  withReconnect((sid) => apiGet(`/operations/${sid}/aeropuertos`));
+
+export const obtenerPedidosDiaADia = () =>
+  withReconnect((sid) => apiGet(`/operations/${sid}/pedidos`));
+
+export const obtenerMaletasDiaADia = () =>
+  withReconnect((sid) => apiGet(`/operations/${sid}/maletas`));
+
+export const obtenerManifiestoVueloDiaADia = (idVuelo) =>
+  withReconnect((sid) => apiGet(`/operations/${sid}/vuelo/${encodeURIComponent(idVuelo)}/manifiesto`));
+
+export const obtenerRutaMaletaDiaADia = (idMaleta) =>
+  withReconnect((sid) => apiGet(`/operations/${sid}/maleta/${encodeURIComponent(idMaleta)}/ruta`));
+
+export const obtenerRutasDiaADia = () =>
+  withReconnect((sid) => apiGet(`/operations/${sid}/rutas`));
+
+export const confirmarConexionDiaADia = () =>
+  withReconnect((sid) => apiPost(`/operations/${sid}/confirmar-conexion`));
+
+export const obtenerVuelosNuevosDiaADia = () =>
+  withReconnect((sid) => apiGet(`/operations/${sid}/vuelos-nuevos`));
+
+export const obtenerEstadoActualDiaADia = () =>
+  apiGet("/operations/estado-actual");
 
 /* =========================================================================
  * SIMULACION HASTA COLAPSO

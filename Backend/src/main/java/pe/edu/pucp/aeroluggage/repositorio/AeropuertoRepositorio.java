@@ -24,7 +24,7 @@ public class AeropuertoRepositorio {
     }
 
     public int insertar(Aeropuerto aeropuerto) {
-        String sql = "INSERT INTO aeropuerto " +
+        String sql = "INSERT OR REPLACE INTO aeropuerto " +
                 "(id_aeropuerto, id_ciudad, capacidad_almacen, maletas_actuales, longitud, latitud, huso_gmt) " +
                 "VALUES (?, ?, ?, ?, ?, ?, ?)";
         String idCiudad = aeropuerto.getCiudad() != null ? aeropuerto.getCiudad().getIdCiudad() : null;

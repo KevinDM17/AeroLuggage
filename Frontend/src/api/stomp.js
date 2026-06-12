@@ -1,18 +1,3 @@
-/**
- * Cliente STOMP/SockJS singleton para hablar con el back de AeroLuggage.
- *
- * Convencion del back (definida en WebSocketConfig.java):
- * - Endpoint:          ${BACKEND_WS_BASE_URL}/ws  (SockJS handshake)
- * - App prefix (send): /app/...     -> el front publica acá
- * - Topic prefix (sub): /topic/...  -> el front se suscribe acá
- *
- * Topics implementados hoy en el back:
- * - POST  /api/simulacion/periodo/iniciar             (REST, devuelve sessionId)
- * - SEND  /app/simulacion/periodo/{pausar|reanudar|detener}  con { sessionId }
- * - SUB   /topic/simulacion/{sessionId}               -> PeriodoTickDTO
- * - SUB   /topic/simulacion/{sessionId}/estado        -> SimulacionEstadoDTO
- */
-
 import { Client } from "@stomp/stompjs";
 import SockJS from "sockjs-client";
 import { USE_MOCK } from "./client";
@@ -23,6 +8,8 @@ const WS_ENDPOINT = `${WS_BASE_URL}/ws`;
 let _client = null;
 let _connected = false;
 const _waiters = new Set();
+let _connectionVersion = 0;
+const _reconnectListeners = new Set();
 
 function notifyWaiters() {
   _waiters.forEach((cb) => cb());
@@ -31,8 +18,6 @@ function notifyWaiters() {
 
 export function getStompClient() {
   if (USE_MOCK) {
-    // En modo mock no conectamos. Los componentes que dependen de WS deben
-    // chequear `isStompEnabled()` antes de suscribirse.
     return null;
   }
   if (_client) return _client;
@@ -45,6 +30,8 @@ export function getStompClient() {
     debug: () => {},
     onConnect: () => {
       _connected = true;
+      _connectionVersion++;
+      _reconnectListeners.forEach((fn) => fn());
       notifyWaiters();
     },
     onWebSocketClose: () => { _connected = false; },
@@ -52,6 +39,15 @@ export function getStompClient() {
   });
   _client.activate();
   return _client;
+}
+
+export function subscribeToReconnects(fn) {
+  _reconnectListeners.add(fn);
+  return () => _reconnectListeners.delete(fn);
+}
+
+export function getConnectionVersion() {
+  return _connectionVersion;
 }
 
 export function isStompEnabled() {
@@ -62,7 +58,6 @@ export function isStompConnected() {
   return _connected;
 }
 
-/** Devuelve una promesa que se resuelve cuando el client este conectado. */
 export function whenConnected() {
   const client = getStompClient();
   if (!client) return Promise.reject(new Error("STOMP deshabilitado (USE_MOCK)"));

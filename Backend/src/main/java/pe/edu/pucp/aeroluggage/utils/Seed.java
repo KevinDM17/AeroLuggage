@@ -38,7 +38,7 @@ public class Seed {
         try {
             DataLoaderController cargador = context.getBean(DataLoaderController.class);
 
-            cargador.seed(args.length > 0 && args[0].equals("clean"));
+            cargador.seed(Boolean.parseBoolean(System.getProperty("clean")));
             System.out.println("Seed completado con éxito.");
 
         } catch (Exception e) {

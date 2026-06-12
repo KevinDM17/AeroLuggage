@@ -92,6 +92,11 @@ public class MaletaRepositorio {
         return jdbcTemplate.update("DELETE FROM maleta WHERE id_maleta=?", id);
     }
 
+    public List<Maleta> obtenerNoEntregadas() {
+        String sql = SELECT_CON_JOINS + " WHERE m.estado != ?";
+        return jdbcTemplate.query(sql, new MaletaRowMapper(), EstadoMaleta.ENTREGADA.name());
+    }
+
     public int contarPorEstado(final EstadoMaleta estado) {
         final Integer count = jdbcTemplate.queryForObject(
                 "SELECT COUNT(*) FROM maleta WHERE estado = ?",

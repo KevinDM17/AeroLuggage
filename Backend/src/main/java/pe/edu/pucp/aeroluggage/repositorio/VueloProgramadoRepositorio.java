@@ -38,7 +38,7 @@ public class VueloProgramadoRepositorio {
     }
 
     public int insertar(VueloProgramado vueloProgramado) {
-        String sql = "INSERT INTO vuelo_programado " +
+        String sql = "INSERT OR REPLACE INTO vuelo_programado " +
                 "(id_vuelo_programado, codigo, hora_salida, hora_llegada, capacidad_maxima, " +
                 "id_aeropuerto_origen, id_aeropuerto_destino) VALUES (?, ?, ?, ?, ?, ?, ?)";
         return jdbcTemplate.update(sql,

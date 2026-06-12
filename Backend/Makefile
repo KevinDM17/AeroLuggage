@@ -18,7 +18,7 @@ seed: ## Ejecuta el seed sin limpiar
 	MAVEN_OPTS="$(MVN_OPTS)" $(MVN) exec:java@seed
 
 seed-clean: ## Ejecuta el seed con limpieza previa
-	MAVEN_OPTS="$(MVN_OPTS)" $(MVN) exec:java@seed -Dargs="clean"
+	MAVEN_OPTS="$(MVN_OPTS)" $(MVN) exec:java@seed -Dclean=true
 
 reload-dep: ## Recargar dependencias
 	$(MVN) dependency:resolve
