@@ -10,7 +10,7 @@ import { listAirports } from "../../api/airports";
 import { listMaletas } from "../../api/maletas";
 import { listRutas } from "../../api/rutas";
 import { obtenerManifiestoVuelo, obtenerManifiestoVueloDiaADia, obtenerPedidosDiaADia, obtenerContenidoAlmacen, obtenerEnviosPanel, obtenerRutaMaleta, obtenerRutasEnvio } from "../../api/simulator";
-import { USE_MOCK } from "../../api/client";
+import { apiGet, USE_MOCK } from "../../api/client";
 import { useMapFocus } from "../../context/MapFocusContext";
 import { LoadingState, EmptyState, ErrorState } from "../ui/States";
 import { useToast } from "../ui/Toast";
@@ -1361,6 +1361,17 @@ export default function RightPanel({
           maletasEntran: [], maletasSalen: [],
           totalMaletasEntran: 0, totalMaletasSalen: 0,
         });
+      }
+      if (isDiaADia) {
+        return apiGet(`/operations/${sessionId}/almacen/${encodeURIComponent(idAeropuerto)}/contenido`)
+          .catch(() => ({
+            pedidosDestinoFinal: [], pedidosEnTransito: [],
+            maletasDestinoFinal: [], maletasEnTransito: [],
+            totalMaletasDestinoFinal: 0, totalMaletasEnTransito: 0,
+            pedidosEntran: [], pedidosSalen: [],
+            maletasEntran: [], maletasSalen: [],
+            totalMaletasEntran: 0, totalMaletasSalen: 0,
+          }));
       }
       return obtenerContenidoAlmacen(sessionId, idAeropuerto);
     },

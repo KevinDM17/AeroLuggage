@@ -17,6 +17,7 @@ import pe.edu.pucp.aeroluggage.dominio.entidades.Ruta;
 import pe.edu.pucp.aeroluggage.dominio.entidades.VueloInstancia;
 import pe.edu.pucp.aeroluggage.dominio.enums.EstadoRuta;
 import pe.edu.pucp.aeroluggage.dto.simulacion.rest.AeropuertoResponse;
+import pe.edu.pucp.aeroluggage.dto.simulacion.rest.AlmacenContenidoResponse;
 import pe.edu.pucp.aeroluggage.dto.simulacion.rest.MaletaSimulacionResponse;
 import pe.edu.pucp.aeroluggage.dto.simulacion.rest.PedidoRequest;
 import pe.edu.pucp.aeroluggage.dto.simulacion.rest.PedidoSimulacionResponse;
@@ -260,6 +261,55 @@ public class SimulacionDiaADiaRestController {
                     .build());
         }
         return result;
+    }
+
+    @GetMapping("/{sessionId}/almacen/{idAeropuerto}/contenido")
+    public AlmacenContenidoResponse contenidoAlmacen(
+            @PathVariable final String sessionId,
+            @PathVariable final String idAeropuerto) {
+        if (!sessionId.equals(service.getSessionId())) {
+            throw new ResponseStatusException(HttpStatus.NOT_FOUND,
+                    "Sesion expirada o no encontrada: " + sessionId);
+        }
+        final List<MaletaSimulacionResponse> finales = new ArrayList<>();
+        final List<MaletaSimulacionResponse> transito = new ArrayList<>();
+        int totalFinales = 0;
+        int totalTransito = 0;
+        for (final Maleta m : service.getMaletas()) {
+            if (m == null) continue;
+            if (!idAeropuerto.equals(m.getAeropuertoActual())) continue;
+            final Pedido p = m.getPedido();
+            final boolean destinoFinal = p != null && p.getAeropuertoDestino() != null
+                    && idAeropuerto.equals(p.getAeropuertoDestino().getIdAeropuerto());
+            final MaletaSimulacionResponse dto = MaletaSimulacionResponse.builder()
+                    .withIdMaleta(m.getIdMaleta())
+                    .withIdPedido(p != null ? p.getIdPedido() : null)
+                    .withEstado(m.getEstado() != null ? m.getEstado().name() : null)
+                    .withUbicacionActual(m.getAeropuertoActual())
+                    .build();
+            if (destinoFinal) {
+                totalFinales++;
+                finales.add(dto);
+            } else {
+                totalTransito++;
+                transito.add(dto);
+            }
+        }
+        return AlmacenContenidoResponse.builder()
+                .withIdAeropuerto(idAeropuerto)
+                .withTotalMaletasDestinoFinal(totalFinales)
+                .withTotalMaletasEnTransito(totalTransito)
+                .withMaletasDestinoFinal(finales)
+                .withMaletasEnTransito(transito)
+                .withPedidosDestinoFinal(List.of())
+                .withPedidosEnTransito(List.of())
+                .withTotalMaletasEntran(0)
+                .withTotalMaletasSalen(0)
+                .withPedidosEntran(List.of())
+                .withPedidosSalen(List.of())
+                .withMaletasEntran(List.of())
+                .withMaletasSalen(List.of())
+                .build();
     }
 
     @GetMapping("/{sessionId}/aeropuertos")

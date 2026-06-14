@@ -22,14 +22,25 @@ public class Ruta {
     }
 
     public Ruta(final String idRuta, final String idMaleta, final double plazoMaximoDias,
-                final double duracion, final List<String> subrutaIds, final EstadoRuta estado) {
-        this(idRuta, idMaleta, plazoMaximoDias, duracion, subrutaIds, estado, null);
-    }
-
-    public Ruta(final String idRuta, final String idMaleta, final double plazoMaximoDias,
                 final double duracion, final List<String> subrutaIds, final EstadoRuta estado,
                 final LocalDateTime fechaEntrega) {
         this.idRuta = idRuta;
+        this.idMaleta = idMaleta;
+        this.plazoMaximoDias = plazoMaximoDias;
+        this.duracion = duracion;
+        setSubrutaIds(subrutaIds);
+        this.estado = estado;
+        this.fechaEntrega = fechaEntrega;
+    }
+
+    public Ruta(final String idMaleta, final double plazoMaximoDias,
+                final double duracion, final List<String> subrutaIds, final EstadoRuta estado) {
+        this(idMaleta, plazoMaximoDias, duracion, subrutaIds, estado, null);
+    }
+
+    public Ruta(final String idMaleta, final double plazoMaximoDias,
+                final double duracion, final List<String> subrutaIds, final EstadoRuta estado,
+                final LocalDateTime fechaEntrega) {
         this.idMaleta = idMaleta;
         this.plazoMaximoDias = plazoMaximoDias;
         this.duracion = duracion;
@@ -49,7 +60,7 @@ public class Ruta {
     }
 
     public String getIdRuta() {
-        return idRuta;
+        return idRuta != null ? idRuta : idMaleta;
     }
 
     public void setIdRuta(final String idRuta) {

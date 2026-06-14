@@ -146,18 +146,18 @@ public final class ALNSUtil {
         return Duration.between(inicio, fin).toMinutes() / (24D * 60D);
     }
 
-    static Ruta crearRuta(final String idRuta, final Maleta maleta, final List<VueloInstancia> camino,
+    static Ruta crearRuta(final Maleta maleta, final List<VueloInstancia> camino,
                           final EstadoRuta estado) {
         if (camino == null || camino.isEmpty()) {
             return null;
         }
+        final String idMaleta = maleta == null ? null : maleta.getIdMaleta();
         final List<String> ids = new ArrayList<>(camino.size());
         for (final VueloInstancia v : camino) {
             ids.add(v != null ? v.getIdVueloInstancia() : null);
         }
         final Ruta ruta = new Ruta();
-        ruta.setIdRuta(idRuta);
-        ruta.setIdMaleta(maleta == null ? null : maleta.getIdMaleta());
+        ruta.setIdMaleta(idMaleta);
         ruta.setSubrutaIds(ids);
         if (maleta != null && maleta.getPedido() != null) {
             ruta.setPlazoMaximoDias(maleta.getPedido().getPlazoDias());

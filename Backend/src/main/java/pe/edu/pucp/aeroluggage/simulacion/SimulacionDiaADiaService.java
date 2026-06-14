@@ -18,6 +18,7 @@ import pe.edu.pucp.aeroluggage.dominio.entidades.VueloInstancia;
 import pe.edu.pucp.aeroluggage.dominio.entidades.VueloProgramado;
 import pe.edu.pucp.aeroluggage.dominio.enums.EstadoMaleta;
 import pe.edu.pucp.aeroluggage.dominio.enums.EstadoPedido;
+import pe.edu.pucp.aeroluggage.dominio.enums.EstadoPedido;
 import pe.edu.pucp.aeroluggage.dominio.enums.EstadoRuta;
 import pe.edu.pucp.aeroluggage.dominio.enums.EstadoVuelo;
 import pe.edu.pucp.aeroluggage.dto.simulacion.rest.PedidoRequest;
@@ -110,7 +111,6 @@ public class SimulacionDiaADiaService {
     private LocalDateTime ultimoTiempoProcesado;
     private final AtomicInteger tickActual = new AtomicInteger(0);
     private final AtomicLong stateVersion = new AtomicLong(1);
-    private final AtomicInteger contadorRutas = new AtomicInteger(0);
     private volatile boolean ticksActivos;
 
     enum TipoEventoSim {
@@ -168,8 +168,6 @@ public class SimulacionDiaADiaService {
             lastDepuraMs = System.currentTimeMillis();
             tickActual.set(0);
             stateVersion.set(1);
-            contadorRutas.set(0);
-            totalMaletasEntregadas.set(0);
             idsEntregadasEnTick.clear();
             idsCompletadasEnTick.clear();
             eventos = new TreeMap<>();
@@ -183,6 +181,9 @@ public class SimulacionDiaADiaService {
             }
             for (final Aeropuerto a : listaAeropuertos) {
                 aeropuertos.put(a.getIdAeropuerto(), a);
+            }
+            for (final Aeropuerto a : aeropuertos.values()) {
+                a.setMaletasActuales(0);
             }
             final List<VueloProgramado> listaVuelos = vueloProgramadoRepositorio.obtenerTodos();
             if (listaVuelos.isEmpty()) {
@@ -319,7 +320,7 @@ public class SimulacionDiaADiaService {
 
             final List<Maleta> nuevasMaletas = new ArrayList<>();
             for (int i = 0; i < request.getCantidadMaletas(); i++) {
-                final String idMaleta = pedido.getIdPedido() + "-B" + (i + 1);
+                final String idMaleta = pedido.getIdPedido().replaceFirst("^PED-", "MAL-") + "-B" + (i + 1);
                 final Maleta maleta = new Maleta(
                         idMaleta,
                         pedido,
@@ -895,10 +896,14 @@ public class SimulacionDiaADiaService {
                 primerVuelo.setCapacidadDisponible(
                         Math.max(0, primerVuelo.getCapacidadDisponible() - 1));
             }
-            if (m.getPedido() != null && m.getPedido().getAeropuertoOrigen() != null) {
-                final String idAero = m.getPedido().getAeropuertoOrigen().getIdAeropuerto();
-                final Aeropuerto a = aeropuertos.get(idAero);
-                if (a != null) a.setMaletasActuales(a.getMaletasActuales() + 1);
+        }
+        for (final String vid : ids) {
+            final VueloInstancia vi = vueloIndex.get(vid);
+            if (vi != null) {
+                vueloInstanciaRepositorio.insertarOActualizar(vi,
+                        vi.getVueloProgramado() != null
+                                ? vi.getVueloProgramado().getIdVueloProgramado()
+                                : null);
             }
         }
     }
@@ -923,10 +928,6 @@ public class SimulacionDiaADiaService {
         for (final Maleta m : maletasBD) {
             if (m == null) continue;
             maletasPorId.put(m.getIdMaleta(), m);
-            if (m.getAeropuertoActual() != null) {
-                final Aeropuerto a = aeropuertos.get(m.getAeropuertoActual());
-                if (a != null) a.setMaletasActuales(a.getMaletasActuales() + 1);
-            }
         }
         log.info("[AeroLuggage/DiaADia] - MALETAS DESDE BD: {}", maletasBD.size());
     }
@@ -1026,7 +1027,6 @@ public class SimulacionDiaADiaService {
         ultimoTiempoProcesado = null;
         tickActual.set(0);
         stateVersion.set(1);
-        contadorRutas.set(0);
     }
 
     public Map<String, VueloInstancia> getVueloIndex() {
@@ -1047,7 +1047,7 @@ public class SimulacionDiaADiaService {
         touchSession();
         final Ruta r = rutasPorMaleta.get(idMaleta);
         if (r != null) return r;
-        return rutaRepositorio.obtenerPorIdMaleta(idMaleta).orElse(null);
+        return rutaRepositorio.obtenerPorId(idMaleta).orElse(null);
     }
     public Maleta getMaleta(final String idMaleta) { touchSession(); return maletasPorId.get(idMaleta); }
     public int getTickActual() { touchSession(); return tickActual.get(); }

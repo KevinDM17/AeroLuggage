@@ -50,7 +50,7 @@ final class ALNSReparador {
                 maleta -> ALNSUtil.tiempoRestanteMinutos(maleta, estado.getInstancia().getFechaEvaluacion())));
         int secuencia = estado.siguienteSecuenciaRuta();
         for (final Maleta maleta : pendientes) {
-            final Ruta ruta = encontrarInsercionValida(estado, maleta, parametros, ALNSUtil.siguienteIdRuta(secuencia));
+            final Ruta ruta = encontrarInsercionValida(estado, maleta, parametros);
             if (ruta != null) {
                 estado.registrarFalloMaleta(maleta.getIdMaleta(), null);
                 estado.reemplazarRuta(ruta);
@@ -70,8 +70,7 @@ final class ALNSReparador {
             Ruta mejorRuta = null;
             double mejorRegret = Double.NEGATIVE_INFINITY;
             for (final Maleta maleta : restantes) {
-                final EvaluacionInsercion evaluacion = evaluarRegret(estado, maleta, parametros,
-                        ALNSUtil.siguienteIdRuta(secuencia));
+                final EvaluacionInsercion evaluacion = evaluarRegret(estado, maleta, parametros);
                 if (evaluacion == null) {
                     continue;
                 }
@@ -100,8 +99,7 @@ final class ALNSReparador {
 
     static Ruta encontrarMejorInsercion(final ALNSEstado estado,
                                         final Maleta maleta,
-                                        final ParametrosALNS parametros,
-                                        final String idRuta) {
+                                        final ParametrosALNS parametros) {
         final InstanciaProblema instancia = estado.getInstancia();
         final Pedido pedido = maleta == null ? null : maleta.getPedido();
         final String idMaleta = maleta == null ? null : maleta.getIdMaleta();
@@ -149,7 +147,7 @@ final class ALNSReparador {
                 break;
             }
             dijkstraExitoso = true;
-            final Ruta candidata = ALNSUtil.crearRuta(idRuta, maleta, camino, EstadoRuta.PLANIFICADA);
+            final Ruta candidata = ALNSUtil.crearRuta(maleta, camino, EstadoRuta.PLANIFICADA);
             final String conflictoVuelo = primerVueloSaturado(camino, estado.getUsoPorVuelo());
             if (conflictoVuelo != null) {
                 ultimaRazon = "vuelo_saturado";
@@ -189,8 +187,7 @@ final class ALNSReparador {
 
     static Ruta encontrarInsercionValida(final ALNSEstado estado,
                                          final Maleta maleta,
-                                         final ParametrosALNS parametros,
-                                         final String idRuta) {
+                                         final ParametrosALNS parametros) {
         final InstanciaProblema instancia = estado.getInstancia();
         final Pedido pedido = maleta == null ? null : maleta.getPedido();
         final String idMaleta = maleta == null ? null : maleta.getIdMaleta();
@@ -231,7 +228,7 @@ final class ALNSReparador {
             if (camino == null) {
                 break;
             }
-            final Ruta candidata = ALNSUtil.crearRuta(idRuta, maleta, camino, EstadoRuta.PLANIFICADA);
+            final Ruta candidata = ALNSUtil.crearRuta(maleta, camino, EstadoRuta.PLANIFICADA);
             final String conflictoVuelo = primerVueloSaturado(camino, estado.getUsoPorVuelo());
             if (conflictoVuelo != null) {
                 ultimaRazon = "vuelo_saturado";
@@ -335,9 +332,8 @@ final class ALNSReparador {
 
     private static EvaluacionInsercion evaluarRegret(final ALNSEstado estado,
                                                      final Maleta maleta,
-                                                     final ParametrosALNS parametros,
-                                                     final String idRuta) {
-        final Ruta r1 = encontrarMejorInsercion(estado, maleta, parametros, idRuta);
+                                                     final ParametrosALNS parametros) {
+        final Ruta r1 = encontrarMejorInsercion(estado, maleta, parametros);
         final List<String> idsR1 = r1 != null ? r1.getSubrutaIds() : List.of();
         if (r1 == null || idsR1.isEmpty()) {
             return new EvaluacionInsercion(null, Double.MAX_VALUE);
@@ -346,7 +342,7 @@ final class ALNSReparador {
         if (!idsR1.isEmpty()) {
             bloqueados.add(idsR1.get(0));
         }
-        final Ruta r2 = encontrarAlternativa(estado, maleta, parametros, idRuta, bloqueados);
+        final Ruta r2 = encontrarAlternativa(estado, maleta, parametros, bloqueados);
         final List<String> idsR2 = r2 != null ? r2.getSubrutaIds() : List.of();
         if (r2 == null || idsR2.isEmpty()) {
             return new EvaluacionInsercion(r1, Double.MAX_VALUE);
@@ -361,7 +357,6 @@ final class ALNSReparador {
     private static Ruta encontrarAlternativa(final ALNSEstado estado,
                                              final Maleta maleta,
                                              final ParametrosALNS parametros,
-                                             final String idRuta,
                                              final Set<String> bloqueadosIniciales) {
         final InstanciaProblema instancia = estado.getInstancia();
         final Pedido pedido = maleta == null ? null : maleta.getPedido();
@@ -383,7 +378,7 @@ final class ALNSReparador {
             if (camino == null) {
                 return null;
             }
-            final Ruta ruta = ALNSUtil.crearRuta(idRuta, maleta, camino, EstadoRuta.PLANIFICADA);
+            final Ruta ruta = ALNSUtil.crearRuta(maleta, camino, EstadoRuta.PLANIFICADA);
             if (primerVueloSaturado(camino, estado.getUsoPorVuelo()) == null && validarAeropuertos(ruta, estado)) {
                 return ruta;
             }

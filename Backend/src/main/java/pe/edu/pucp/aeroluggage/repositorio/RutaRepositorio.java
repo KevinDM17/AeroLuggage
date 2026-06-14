@@ -22,111 +22,98 @@ public class RutaRepositorio {
     }
 
     public int insertar(Ruta ruta) {
-        String sql = "INSERT INTO ruta (id_ruta, id_maleta, plazo_maximo_dias, duracion, estado) " +
-                "VALUES (?, ?, ?, ?, ?)";
+        eliminarSubrutasPorRuta(ruta.getIdMaleta());
+        String sql = "INSERT OR REPLACE INTO ruta (id_maleta, plazo_maximo_dias, duracion, estado) " +
+                "VALUES (?, ?, ?, ?)";
         int filas = jdbcTemplate.update(sql,
-                ruta.getIdRuta(),
                 ruta.getIdMaleta(),
                 ruta.getPlazoMaximoDias(),
                 ruta.getDuracion(),
                 ruta.getEstado() != null ? ruta.getEstado().name() : null);
 
-        insertarSubrutas(ruta.getIdRuta(), ruta.getSubrutaIds());
+        insertarSubrutas(ruta.getIdMaleta(), ruta.getSubrutaIds());
         return filas;
     }
 
-    public Optional<Ruta> obtenerPorId(String id) {
-        String sql = "SELECT id_ruta, id_maleta, plazo_maximo_dias, duracion, estado " +
-                "FROM ruta WHERE id_ruta = ?";
-        List<Ruta> resultado = jdbcTemplate.query(sql, new RutaRowMapper(), id);
-        if (resultado.isEmpty()) {
-            return Optional.empty();
-        }
-        Ruta ruta = resultado.get(0);
-        ruta.setSubrutaIds(cargarSubrutas(id));
-        return Optional.of(ruta);
-    }
-
-    public Optional<Ruta> obtenerPorIdMaleta(String idMaleta) {
-        String sql = "SELECT id_ruta, id_maleta, plazo_maximo_dias, duracion, estado " +
+    public Optional<Ruta> obtenerPorId(String idMaleta) {
+        String sql = "SELECT id_maleta, plazo_maximo_dias, duracion, estado " +
                 "FROM ruta WHERE id_maleta = ?";
         List<Ruta> resultado = jdbcTemplate.query(sql, new RutaRowMapper(), idMaleta);
         if (resultado.isEmpty()) {
             return Optional.empty();
         }
         Ruta ruta = resultado.get(0);
-        ruta.setSubrutaIds(cargarSubrutas(ruta.getIdRuta()));
+        ruta.setSubrutaIds(cargarSubrutas(idMaleta));
         return Optional.of(ruta);
     }
 
     public List<Ruta> obtenerTodos() {
-        String sql = "SELECT id_ruta, id_maleta, plazo_maximo_dias, duracion, estado FROM ruta";
+        String sql = "SELECT id_maleta, plazo_maximo_dias, duracion, estado FROM ruta";
         List<Ruta> rutas = jdbcTemplate.query(sql, new RutaRowMapper());
         for (Ruta ruta : rutas) {
-            ruta.setSubrutaIds(cargarSubrutas(ruta.getIdRuta()));
+            ruta.setSubrutaIds(cargarSubrutas(ruta.getIdMaleta()));
         }
         return rutas;
     }
 
     public List<Ruta> obtenerActivasPlanificadas() {
-        String sql = "SELECT id_ruta, id_maleta, plazo_maximo_dias, duracion, estado " +
+        String sql = "SELECT id_maleta, plazo_maximo_dias, duracion, estado " +
                 "FROM ruta WHERE estado IN ('PLANIFICADA', 'ACTIVA')";
         List<Ruta> rutas = jdbcTemplate.query(sql, new RutaRowMapper());
         for (Ruta ruta : rutas) {
-            ruta.setSubrutaIds(cargarSubrutas(ruta.getIdRuta()));
+            ruta.setSubrutaIds(cargarSubrutas(ruta.getIdMaleta()));
         }
         return rutas;
     }
 
     public int actualizar(Ruta ruta) {
-        String sql = "UPDATE ruta SET id_maleta=?, plazo_maximo_dias=?, duracion=?, estado=? " +
-                "WHERE id_ruta=?";
+        String sql = "UPDATE ruta SET plazo_maximo_dias=?, duracion=?, estado=? " +
+                "WHERE id_maleta=?";
         int filas = jdbcTemplate.update(sql,
-                ruta.getIdMaleta(),
                 ruta.getPlazoMaximoDias(),
                 ruta.getDuracion(),
                 ruta.getEstado() != null ? ruta.getEstado().name() : null,
-                ruta.getIdRuta());
+                ruta.getIdMaleta());
 
-        eliminarSubrutasPorRuta(ruta.getIdRuta());
-        insertarSubrutas(ruta.getIdRuta(), ruta.getSubrutaIds());
+        eliminarSubrutasPorRuta(ruta.getIdMaleta());
+        insertarSubrutas(ruta.getIdMaleta(), ruta.getSubrutaIds());
         return filas;
     }
 
-    public int eliminar(String id) {
-        eliminarSubrutasPorRuta(id);
-        return jdbcTemplate.update("DELETE FROM ruta WHERE id_ruta=?", id);
+    public int eliminar(String idMaleta) {
+        eliminarSubrutasPorRuta(idMaleta);
+        return jdbcTemplate.update("DELETE FROM ruta WHERE id_maleta=?", idMaleta);
     }
 
-    public int insertarSubruta(String idRuta, String idVueloInstancia, int orden) {
-        String sql = "INSERT INTO ruta_vuelo_instancia (id_ruta, id_vuelo_instancia, orden) VALUES (?, ?, ?)";
-        return jdbcTemplate.update(sql, idRuta, idVueloInstancia, orden);
+    public int insertarSubruta(String idMaleta, String idVueloInstancia, int orden) {
+        String sql = "INSERT OR REPLACE INTO ruta_vuelo_instancia (id_maleta, id_vuelo_instancia, orden) VALUES (?, ?, ?)";
+        return jdbcTemplate.update(sql, idMaleta, idVueloInstancia, orden);
     }
 
-    public int eliminarSubrutasPorRuta(String idRuta) {
-        return jdbcTemplate.update("DELETE FROM ruta_vuelo_instancia WHERE id_ruta=?", idRuta);
+    public int eliminarSubrutasPorRuta(String idMaleta) {
+        return jdbcTemplate.update("DELETE FROM ruta_vuelo_instancia WHERE id_maleta=?", idMaleta);
     }
 
-    public List<String> obtenerIdsVuelosPorRuta(String idRuta) {
+    public List<String> obtenerIdsVuelosPorRuta(String idMaleta) {
         String sql = "SELECT id_vuelo_instancia FROM ruta_vuelo_instancia " +
-                "WHERE id_ruta = ? ORDER BY orden";
-        return jdbcTemplate.query(sql, (rs, rowNum) -> rs.getString("id_vuelo_instancia"), idRuta);
+                "WHERE id_maleta = ? ORDER BY orden";
+        return jdbcTemplate.query(sql, (rs, rowNum) -> rs.getString("id_vuelo_instancia"), idMaleta);
     }
 
-    private void insertarSubrutas(String idRuta, List<String> ids) {
+    private void insertarSubrutas(String idMaleta, List<String> ids) {
         if (ids == null || ids.isEmpty()) {
             return;
         }
         int orden = 1;
         for (String idVi : ids) {
             if (idVi != null) {
-                insertarSubruta(idRuta, idVi, orden++);
+                insertarSubruta(idMaleta, idVi, orden++);
             }
         }
     }
 
-    private List<String> cargarSubrutas(String idRuta) {
-        return obtenerIdsVuelosPorRuta(idRuta);
+    private List<String> cargarSubrutas(String idMaleta) {
+        return obtenerIdsVuelosPorRuta(idMaleta);
     }
 
     private static final class RutaRowMapper implements RowMapper<Ruta> {
@@ -134,7 +121,6 @@ public class RutaRepositorio {
         public Ruta mapRow(ResultSet rs, int rowNum) throws SQLException {
             String estadoStr = rs.getString("estado");
             return new Ruta(
-                    rs.getString("id_ruta"),
                     rs.getString("id_maleta"),
                     rs.getDouble("plazo_maximo_dias"),
                     rs.getDouble("duracion"),

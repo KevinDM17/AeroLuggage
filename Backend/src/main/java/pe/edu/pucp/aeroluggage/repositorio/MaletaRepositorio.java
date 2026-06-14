@@ -22,7 +22,7 @@ import java.util.Optional;
 public class MaletaRepositorio {
 
     private static final String SELECT_CON_PEDIDO =
-            "SELECT m.id_maleta, m.fecha_registro, m.fecha_llegada, m.estado, " +
+            "SELECT m.id_maleta, m.fecha_registro, m.fecha_llegada, m.estado, m.aeropuerto_actual, " +
             "p.id_pedido, p.fecha_registro AS p_fecha_registro, p.fecha_hora_plazo, " +
             "p.cantidad_maletas, p.estado AS p_estado, " +
             "p.id_aeropuerto_origen, p.id_aeropuerto_destino " +
@@ -30,7 +30,7 @@ public class MaletaRepositorio {
             "JOIN pedido p ON m.id_pedido = p.id_pedido";
 
     private static final String SELECT_CON_JOINS =
-            "SELECT m.id_maleta, m.fecha_registro, m.fecha_llegada, m.estado, " +
+            "SELECT m.id_maleta, m.fecha_registro, m.fecha_llegada, m.estado, m.aeropuerto_actual, " +
             "p.id_pedido, p.fecha_registro AS p_fecha_registro, p.fecha_hora_plazo, " +
             "p.cantidad_maletas, p.estado AS p_estado, " +
             "ao.id_aeropuerto AS ao_id, ao.capacidad_almacen AS ao_cap, ao.maletas_actuales AS ao_mal, " +
@@ -53,14 +53,15 @@ public class MaletaRepositorio {
     }
 
     public int insertar(Maleta maleta) {
-        String sql = "INSERT INTO maleta (id_maleta, id_pedido, fecha_registro, fecha_llegada, estado) " +
-                "VALUES (?, ?, ?, ?, ?)";
+        String sql = "INSERT INTO maleta (id_maleta, id_pedido, fecha_registro, fecha_llegada, estado, aeropuerto_actual) " +
+                "VALUES (?, ?, ?, ?, ?, ?)";
         return jdbcTemplate.update(sql,
                 maleta.getIdMaleta(),
                 maleta.getPedido() != null ? maleta.getPedido().getIdPedido() : null,
                 maleta.getFechaRegistro() != null ? maleta.getFechaRegistro().toString() : null,
                 maleta.getFechaLlegada() != null ? maleta.getFechaLlegada().toString() : null,
-                maleta.getEstado() != null ? maleta.getEstado().name() : null);
+                maleta.getEstado() != null ? maleta.getEstado().name() : null,
+                maleta.getAeropuertoActual());
     }
 
     public Optional<Maleta> obtenerPorId(String id) {
@@ -78,13 +79,14 @@ public class MaletaRepositorio {
     }
 
     public int actualizar(Maleta maleta) {
-        String sql = "UPDATE maleta SET id_pedido=?, fecha_registro=?, fecha_llegada=?, estado=? " +
+        String sql = "UPDATE maleta SET id_pedido=?, fecha_registro=?, fecha_llegada=?, estado=?, aeropuerto_actual=? " +
                 "WHERE id_maleta=?";
         return jdbcTemplate.update(sql,
                 maleta.getPedido() != null ? maleta.getPedido().getIdPedido() : null,
                 maleta.getFechaRegistro() != null ? maleta.getFechaRegistro().toString() : null,
                 maleta.getFechaLlegada() != null ? maleta.getFechaLlegada().toString() : null,
                 maleta.getEstado() != null ? maleta.getEstado().name() : null,
+                maleta.getAeropuertoActual(),
                 maleta.getIdMaleta());
     }
 
@@ -95,6 +97,11 @@ public class MaletaRepositorio {
     public List<Maleta> obtenerNoEntregadas() {
         String sql = SELECT_CON_JOINS + " WHERE m.estado != ?";
         return jdbcTemplate.query(sql, new MaletaRowMapper(), EstadoMaleta.ENTREGADA.name());
+    }
+
+    public List<Maleta> obtenerEnAeropuerto(final String idAeropuerto) {
+        String sql = SELECT_CON_JOINS + " WHERE m.aeropuerto_actual = ? AND m.estado != ?";
+        return jdbcTemplate.query(sql, new MaletaRowMapper(), idAeropuerto, EstadoMaleta.ENTREGADA.name());
     }
 
     public int contarPorEstado(final EstadoMaleta estado) {
@@ -147,14 +154,17 @@ public class MaletaRepositorio {
             String fechaRegistroStr = rs.getString("fecha_registro");
             String fechaLlegadaStr = rs.getString("fecha_llegada");
             String estadoStr = rs.getString("estado");
+            String aeroActualStr = rs.getString("aeropuerto_actual");
 
-            return new Maleta(
+            Maleta maleta = new Maleta(
                     rs.getString("id_maleta"),
                     pedido,
                     fechaRegistroStr != null ? LocalDateTime.parse(fechaRegistroStr) : null,
                     fechaLlegadaStr != null ? LocalDateTime.parse(fechaLlegadaStr) : null,
                     estadoStr != null ? EstadoMaleta.valueOf(estadoStr) : null
             );
+            maleta.setAeropuertoActual(aeroActualStr);
+            return maleta;
         }
     }
 
@@ -187,14 +197,17 @@ public class MaletaRepositorio {
             String fechaRegistroStr = rs.getString("fecha_registro");
             String fechaLlegadaStr  = rs.getString("fecha_llegada");
             String estadoStr        = rs.getString("estado");
+            String aeroActualStr    = rs.getString("aeropuerto_actual");
 
-            return new Maleta(
+            Maleta maleta = new Maleta(
                     rs.getString("id_maleta"),
                     pedido,
                     fechaRegistroStr != null ? LocalDateTime.parse(fechaRegistroStr) : null,
                     fechaLlegadaStr  != null ? LocalDateTime.parse(fechaLlegadaStr)  : null,
                     estadoStr        != null ? EstadoMaleta.valueOf(estadoStr)        : null
             );
+            maleta.setAeropuertoActual(aeroActualStr);
+            return maleta;
         }
     }
 }

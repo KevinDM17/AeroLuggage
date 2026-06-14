@@ -22,10 +22,8 @@ final class ALNSInicializador {
         final List<Maleta> maletas = new ArrayList<>(estado.getMaletasNoComprometidas());
         maletas.sort(ALNSUtil.comparadorUrgenciaInicial(instancia.getFechaEvaluacion()));
 
-        int secuencia = 1;
         for (final Maleta maleta : maletas) {
-            final String idRuta = ALNSUtil.siguienteIdRuta(secuencia++);
-            final var ruta = ALNSReparador.encontrarInsercionValida(estado, maleta, parametros, idRuta);
+            final var ruta = ALNSReparador.encontrarInsercionValida(estado, maleta, parametros);
             if (ruta != null) {
                 estado.reemplazarRuta(ruta);
             }

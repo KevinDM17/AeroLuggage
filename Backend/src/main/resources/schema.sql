@@ -68,31 +68,30 @@ CREATE TABLE IF NOT EXISTS pedido (
 );
 
 CREATE TABLE IF NOT EXISTS maleta (
-    id_maleta      TEXT NOT NULL,
-    id_pedido      TEXT NOT NULL,
-    fecha_registro TEXT NOT NULL,
-    fecha_llegada  TEXT,
-    estado         TEXT NOT NULL,
+    id_maleta         TEXT NOT NULL,
+    id_pedido         TEXT NOT NULL,
+    fecha_registro    TEXT NOT NULL,
+    fecha_llegada     TEXT,
+    estado            TEXT NOT NULL,
+    aeropuerto_actual TEXT,
     PRIMARY KEY (id_maleta),
     FOREIGN KEY (id_pedido) REFERENCES pedido (id_pedido)
 );
 
 CREATE TABLE IF NOT EXISTS ruta (
-    id_ruta           TEXT    NOT NULL,
     id_maleta         TEXT    NOT NULL,
     plazo_maximo_dias REAL    NOT NULL,
     duracion          REAL    NOT NULL DEFAULT 0,
     estado            TEXT    NOT NULL,
-    PRIMARY KEY (id_ruta),
-    FOREIGN KEY (id_maleta) REFERENCES maleta (id_maleta),
-    UNIQUE (id_maleta)
+    PRIMARY KEY (id_maleta),
+    FOREIGN KEY (id_maleta) REFERENCES maleta (id_maleta)
 );
 
 CREATE TABLE IF NOT EXISTS ruta_vuelo_instancia (
-    id_ruta            TEXT    NOT NULL,
+    id_maleta          TEXT    NOT NULL,
     id_vuelo_instancia TEXT    NOT NULL,
     orden              INTEGER NOT NULL,
-    PRIMARY KEY (id_ruta, id_vuelo_instancia),
-    FOREIGN KEY (id_ruta)            REFERENCES ruta (id_ruta),
+    PRIMARY KEY (id_maleta, id_vuelo_instancia),
+    FOREIGN KEY (id_maleta)          REFERENCES ruta (id_maleta),
     FOREIGN KEY (id_vuelo_instancia) REFERENCES vuelo_instancia (id_vuelo_instancia)
 );
