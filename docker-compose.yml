@@ -2,8 +2,6 @@ services:
   backend:
     image: ghcr.io/kevindm17/aeroluggage-backend:latest
     build: ./Backend
-    ports:
-      - "8082:8080"
     volumes:
       - aeroluggage-db:/app/database
       - ./Backend/.env:/app/.env:ro
@@ -27,8 +25,6 @@ services:
       args:
         BACKEND_API_BASE_URL: http://backend:8080/api
         BACKEND_WS_BASE_URL: http://backend:8080
-    ports:
-      - "3000:80"
     depends_on:
       - backend
     restart: unless-stopped

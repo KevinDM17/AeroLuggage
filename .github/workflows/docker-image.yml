@@ -97,12 +97,12 @@ jobs:
         run: |
           ssh -o ConnectTimeout=10 \
             "${{ secrets.SERVER_USER }}@${{ secrets.SERVER_HOST }}" "
-            sudo systemctl stop nginx 2>/dev/null || true
-            sudo pkill -x nginx 2>/dev/null || true
             cd /opt/aeroluggage
-            docker compose -f docker-compose.yml -f docker-compose.prod.yml down 2>/dev/null || true
+            docker compose -f docker-compose.yml -f docker-compose.prod.yml down --remove-orphans 2>/dev/null || true
             docker rm -f \$(docker ps -aq --filter name=aeroluggage) 2>/dev/null || true
-            sleep 3
+            docker network prune -f 2>/dev/null || true
+            sudo systemctl restart docker
+            sleep 5
           "
 
       - name: Desplegar en servidor

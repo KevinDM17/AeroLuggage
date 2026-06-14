@@ -1,9 +1,0 @@
-[2026-05-28 02:39:16] [PLANIFICADOR-LOTE] sessionId=8710ee61-ae22-4a2a-9b07-f81389e43df9, ventana=W0001, total=57, nuevas=57, fallidas=0, reasignables=0
-[2026-05-28 02:39:28] [PLANIFICADOR-DIAGNOSTICO] sessionId=8710ee61-ae22-4a2a-9b07-f81389e43df9, ventana=W0001, maletasLote=57, rutas=57, planificadas=57, fallidas=0, diagTotal=0, diagPorFase={}, topMotivos=[]
-[2026-05-28 02:39:28] [PLANIFICADOR-LOTE] sessionId=8710ee61-ae22-4a2a-9b07-f81389e43df9, ventana=W0002, total=1200, nuevas=1192, fallidas=0, reasignables=8
-[2026-05-28 02:48:18] [PLANIFICADOR-LOTE] sessionId=918d9ec7-4044-4eed-b3c4-b82c0009da8a, ventana=W0001, total=160, nuevas=160, fallidas=0, reasignables=0
-[2026-05-28 02:48:18] [PLANIFICADOR-INICIO] sessionId=918d9ec7-4044-4eed-b3c4-b82c0009da8a, ventana=W0001, maletas=160
-[2026-05-28 02:49:04] [PLANIFICADOR-DIAGNOSTICO] sessionId=918d9ec7-4044-4eed-b3c4-b82c0009da8a, ventana=W0001, maletasLote=160, rutas=160, planificadas=160, fallidas=0, diagTotal=0, diagPorFase={}, topMotivos=[]
-[2026-05-28 02:49:04] [PLANIFICADOR-FIN] sessionId=918d9ec7-4044-4eed-b3c4-b82c0009da8a, ventana=W0001, rutasNuevas=160, ms=46050
-[2026-05-28 02:49:05] [PLANIFICADOR-LOTE] sessionId=918d9ec7-4044-4eed-b3c4-b82c0009da8a, ventana=W0007, total=3486, nuevas=3486, fallidas=0, reasignables=0
-[2026-05-28 02:49:05] [PLANIFICADOR-INICIO] sessionId=918d9ec7-4044-4eed-b3c4-b82c0009da8a, ventana=W0007, maletas=3486
