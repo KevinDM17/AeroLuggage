@@ -5,6 +5,7 @@ services:
     environment:
       SPRING_PROFILES_ACTIVE: prod
       FRONTEND_URL: "http://1inf54-983-6f.inf.pucp.edu.pe"
+      JAVA_OPTS: "-Xmx512m -Xms256m"
 
   frontend:
     image: ghcr.io/kevindm17/aeroluggage-frontend:latest
