@@ -485,16 +485,18 @@ export default function SimulatorPage() {
   const limaTime = formatLimaTime(currentSimTimeUtc);
 
   const mapOverlay = hasActiveRun ? (
-    <div className="flex bg-surface-2/85 backdrop-blur border border-slate-700 shadow-[0_12px_35px_rgba(0,0,0,0.45)] rounded-xl px-4 py-3 items-center justify-between gap-6 p-2">
+    <div className="bg-surface-2/85 backdrop-blur border border-slate-700 shadow-[0_12px_35px_rgba(0,0,0,0.45)] rounded-xl px-4 py-3 flex items-center justify-center gap-5">
       <div>
         <div className="text-[10px] text-slate-400 font-medium uppercase tracking-wider">Fecha Lima, Perú (GMT-5)</div>
         <div className="text-lg font-bold text-info tabular-nums">{limaTime.date}</div>
       </div>
-      <div className="border-x-1 px-6">
+      <div className="h-9 w-px bg-slate-700 shrink-0" />
+      <div>
         <div className="text-[10px] text-slate-400 font-medium uppercase tracking-wider">Hora Lima, Perú (GMT-5)</div>
         <div className="text-lg font-bold text-info tabular-nums">{limaTime.time}</div>
       </div>
-      <button type="button" onClick={() => setPedidoOpen(true)} className="bg-blue-600 hover:bg-blue-500 text-white px-4 py-2 rounded-lg flex items-center gap-2 font-medium text-sm transition-colors shrink-0">
+      <div className="h-9 w-px bg-slate-700 shrink-0" />
+      <button type="button" onClick={() => setPedidoOpen(true)} className="self-center bg-blue-600 hover:bg-blue-500 text-white px-5 py-2.5 rounded-lg flex items-center gap-2 font-medium text-sm leading-none transition-colors shrink-0">
         <Plus className="w-4 h-4" /> Agregar Pedido
       </button>
     </div>
