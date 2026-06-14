@@ -479,26 +479,18 @@ public class SimulacionSesionManager {
             }
 
             final long bucketPlan = SimulacionSesion.parseBucket(windowId);
-            final long horizontePlan = bucketPlan + 24L;
             final long enviadoPlan = sesion.getUltimoIndiceVuelosEnviado().get();
-            String vuelosDesde = null;
-            String vuelosHasta = null;
-            if (horizontePlan > enviadoPlan) {
-                vuelosDesde = "W" + String.format("%04d", Math.max(enviadoPlan + 1L, 1L));
-                vuelosHasta = "W" + String.format("%04d", horizontePlan);
-                sesion.getUltimoIndiceVuelosEnviado().set(horizontePlan);
-            }
             java.util.Map<String, Object> readyMsg = new java.util.HashMap<>();
             readyMsg.put("type", "VENTANA_READY");
             readyMsg.put("ventana", windowId);
-            if (vuelosDesde != null) {
-                readyMsg.put("vuelosDesde", vuelosDesde);
-                readyMsg.put("vuelosHasta", vuelosHasta);
+            if (bucketPlan > enviadoPlan) {
+                readyMsg.put("vuelosVentana", windowId);
+                sesion.getUltimoIndiceVuelosEnviado().set(bucketPlan);
             }
-            log.info("[AeroLuggage/Simulacion] - VENTANA_READY: sessionId={}, ventana={}, vuelosDesde={}, vuelosHasta={}, "
+            log.info("[AeroLuggage/Simulacion] - VENTANA_READY: sessionId={}, ventana={}, vuelosVentana={}, "
                     + "totalVuelosInstancia={}, maletasCalientes={}, rutas={}, aeropuertos={}, "
                     + "vuelosFiltrados={}",
-                    sesion.getSessionId(), windowId, vuelosDesde, vuelosHasta,
+                    sesion.getSessionId(), windowId, bucketPlan > enviadoPlan ? windowId : "N/A",
                     sesion.getVuelosInstancia().size(),
                     sesion.getMaletasCalientes().size(),
                     sesion.getRutas().size(),

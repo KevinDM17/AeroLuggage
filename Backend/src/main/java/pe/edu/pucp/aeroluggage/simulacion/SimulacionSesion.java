@@ -1277,6 +1277,7 @@ public class SimulacionSesion {
         for (final VueloInstancia v : getVuelosInstancia()) {
             if (v == null) continue;
             final EstadoVuelo estado = v.getEstado();
+            if (estado == EstadoVuelo.PROGRAMADO) continue;
             if (estado == EstadoVuelo.EN_PROGRESO) vuelosActivos++;
             capacidadTotal += Math.max(0, v.getCapacidadMaxima());
             capacidadDisponible += Math.max(0, v.getCapacidadDisponible());

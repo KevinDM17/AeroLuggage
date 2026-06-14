@@ -28,7 +28,6 @@ import {
 const ENUM_VUELO = ["PROGRAMADO", "CONFIRMADO", "EN_PROGRESO", "FINALIZADO", "CANCELADO"];
 const ENUM_MALETA = ["EN_ALMACEN", "EN_TRANSITO", "ENTREGADA"];
 const ENUM_RUTA = ["PLANIFICADA", "ACTIVA", "COMPLETADA", "REPLANIFICADA"];
-const SIMULATED_TWO_HOURS_MS = 7200000;
 
 
 
@@ -101,14 +100,14 @@ export default function PeriodSimulatorPage() {
   const startSimMsRef = useRef(null);
   const ventanasCargadasRef = useRef(new Set());
   const lastMapFlightsRef = useRef([]);
-  const completionTimesRef = useRef(new Map());
+  const flightMetadataRef = useRef(new Map());
   const iniciarTickWatchdogRef = useRef(null);
   const iniciarTickRetriesRef = useRef(0);
   const tickReceivedRef = useRef(false);
 
   const clearSimulationData = () => {
     ventanasCargadasRef.current.clear();
-    completionTimesRef.current.clear();
+    flightMetadataRef.current.clear();
     setMapAirports([]);
     setSimulationPanelData({
       airports: [],
@@ -143,9 +142,6 @@ export default function PeriodSimulatorPage() {
 
   const normalizeFlightStatus = (status) =>
     String(status ?? "").trim().toUpperCase().replace(/\s+/g, "_");
-
-  const hasOccupiedCapacity = (flight) =>
-    Number(flight?.used ?? flight?.capacidadUsada ?? 0) > 0;
 
   const getUpdatedFlightOccupancy = (st, flight) => {
     if (flight.capacity <= 0 || !Number.isFinite(Number(st.cap))) {
@@ -248,17 +244,25 @@ export default function PeriodSimulatorPage() {
       if (ventanasCargadasRef.current.has(windowId)) return;
       ventanasCargadasRef.current.add(windowId);
       (async () => {
-        const [ventanaData, vuelosData] = await Promise.all([
+        const vuelosDataRaw = tick.vuelosVentana
+          ? await obtenerVuelosSimulacion(sessionId, tick.vuelosVentana, tick.vuelosVentana)
+          : [];
+        const [ventanaData] = await Promise.all([
           obtenerVentanaSimulacion(sessionId, windowId),
-          tick.vuelosDesde
-            ? obtenerVuelosSimulacion(sessionId, tick.vuelosDesde, tick.vuelosHasta)
-            : Promise.resolve([]),
         ]);
-        const adaptedFlights = (vuelosData ?? []).map(adaptFlightInstance);
+        const adaptedFlights = (vuelosDataRaw ?? []).map(adaptFlightInstance);
+        const metadata = new Map(flightMetadataRef.current);
+        for (const f of adaptedFlights) {
+          metadata.set(f.idVueloInstancia ?? f.id, { ...f, ticksAusente: 0 });
+        }
+        flightMetadataRef.current = metadata;
         setSimulationPanelData((prev) => {
           const flights = new Map(prev.flights);
           for (const f of adaptedFlights) {
-            flights.set(f.idVueloInstancia ?? f.id, { ...f, ticksAusente: 0 });
+            const isActive = f.status === "EN_PROGRESO" || f.status === "CONFIRMADO";
+            if (isActive && !flights.has(f.idVueloInstancia ?? f.id)) {
+              flights.set(f.idVueloInstancia ?? f.id, { ...f, ticksAusente: 0 });
+            }
           }
           const bags = new Map(prev.bags);
           for (const b of ventanaData.maletas ?? []) {
@@ -274,22 +278,6 @@ export default function PeriodSimulatorPage() {
           }
           return { ...prev, flights, bags, routes, orders };
         });
-        const simTimeMs = currentSimTimeUtc
-            ? Date.parse(`${currentSimTimeUtc}Z`)
-            : null;
-        if (Number.isFinite(simTimeMs)) {
-          const completion = completionTimesRef.current;
-          for (const b of ventanaData.maletas ?? []) {
-            if (b.estado === "ENTREGADA" && !completion.has(b.idMaleta)) {
-              completion.set(b.idMaleta, simTimeMs);
-            }
-          }
-          for (const r of ventanaData.rutas ?? []) {
-            if (r.estado === "COMPLETADA" && !completion.has(r.idRuta)) {
-              completion.set(r.idRuta, simTimeMs);
-            }
-          }
-        }
       })()
         .then(() => publish("/app/simulacion/periodo/ventana-lista", { sessionId }));
       return;
@@ -352,40 +340,51 @@ export default function PeriodSimulatorPage() {
     }
 
     setSimulationPanelData((prev) => {
-      const simTimeMs = Date.parse(`${tick.simTime}Z`);
-      const cutoffMs = Number.isFinite(simTimeMs) ? simTimeMs - SIMULATED_TWO_HOURS_MS : null;
-      const completion = completionTimesRef.current;
+      const updatedFlights = new Map(prev.flights);
+      const metadata = new Map(flightMetadataRef.current);
 
-      for (const st of tick.estadosMaletas ?? []) {
-        if (st.e === 2 && !completion.has(st.id)) {
-          completion.set(st.id, simTimeMs);
-        }
-      }
+      // FASE 1: Remover FINALIZADO y CANCELADO inmediatamente
       for (const st of tick.estadosVuelos ?? []) {
-        if ((st.e === 3 || st.e === 4) && !completion.has(st.id)) {
-          completion.set(st.id, simTimeMs);
+        if (st.e === 3 || st.e === 4) {
+          updatedFlights.delete(st.id);
+          metadata.delete(st.id);
         }
       }
 
-      const prunedIds = new Set();
-      if (cutoffMs != null) {
-        for (const [id, completedAt] of completion) {
-          if (completedAt < cutoffMs) {
-            prunedIds.add(id);
-            completion.delete(id);
+      // FASE 2: Actualizar estados de vuelos existentes
+      for (const [id, flight] of updatedFlights) {
+        const st = vueloStateMap[id];
+        if (st) {
+          updatedFlights.set(id, {
+            ...flight,
+            status: ENUM_VUELO[st.e],
+            used: getUpdatedFlightOccupancy(st, flight),
+          });
+        }
+      }
+
+      // FASE 3: Añadir nuevos CONFIRMADO (1) o EN_PROGRESO (2) desde metadata
+      for (const st of tick.estadosVuelos ?? []) {
+        if ((st.e === 1 || st.e === 2) && !updatedFlights.has(st.id)) {
+          const meta = metadata.get(st.id);
+          if (meta) {
+            updatedFlights.set(st.id, {
+              ...meta,
+              status: ENUM_VUELO[st.e],
+              used: Math.max(0, meta.capacity - Number(st.cap ?? meta.capacity)),
+              ticksAusente: 0,
+            });
           }
         }
       }
 
+      // Actualizar metadataRef
+      flightMetadataRef.current = metadata;
+
       const updatedBags = updateEstadosOnly(prev.bags, maletaStateMap, ENUM_MALETA, "estado",
         (st, bag) => (st.e === 2 ? { fechaLlegada: bag.fechaLlegada ?? tick.simTime } : {}));
-      for (const id of prunedIds) updatedBags.delete(id);
 
       const updatedRoutes = updateEstadosOnly(prev.routes, rutaStateMap, ENUM_RUTA, "estado");
-
-      const updatedFlights = updateEstadosOnly(prev.flights, vueloStateMap, ENUM_VUELO, "status",
-        (st, flight) => ({ used: getUpdatedFlightOccupancy(st, flight) }));
-      for (const id of prunedIds) updatedFlights.delete(id);
 
       return {
         ...prev,
@@ -425,17 +424,14 @@ export default function PeriodSimulatorPage() {
 
   const mapVisibleFlights = useMemo(() => {
     if (simStatus === "running") {
-      if (!simulationPanelData?.flights || !simulatedNowMs) return [];
-      const nowMs = simulatedNowMs;
+      if (!simulationPanelData?.flights) return [];
       const out = [];
       for (const flight of simulationPanelData.flights.values()) {
         const status = flight.status ?? flight.estado;
-        if (normalizeFlightStatus(status) === "CANCELADO") continue;
-        if (!hasOccupiedCapacity(flight)) continue;
+        if (normalizeFlightStatus(status) !== "EN_PROGRESO") continue;
         const salidaMs = Date.parse(`${flight.depTime}Z`);
         const llegadaMs = Date.parse(`${flight.arrTime}Z`);
         if (!Number.isFinite(salidaMs) || !Number.isFinite(llegadaMs)) continue;
-        if (!(nowMs >= salidaMs && nowMs < llegadaMs)) continue;
         out.push({
           id: flight.idVueloInstancia ?? flight.id,
           origin: flight.origin,
@@ -555,31 +551,33 @@ export default function PeriodSimulatorPage() {
       setWindowSpacingMinutes(base.windowSpacingMinutes);
 
       const primeraVentana = base.primeraVentana ?? "W0001";
-      const bucketActual = parseInt(primeraVentana.substring(1), 10);
-      const segundaVentana = "W" + String(bucketActual + 1).padStart(4, "0");
-      const ultimaVentana = "W" + String(bucketActual + 24).padStart(4, "0");
-      const [ventana1, ventana2, vuelosData] = await Promise.all([
+      const [ventana1, vuelosData] = await Promise.all([
         obtenerVentanaSimulacion(newSessionId, primeraVentana),
-        obtenerVentanaSimulacion(newSessionId, segundaVentana),
-        obtenerVuelosSimulacion(newSessionId, primeraVentana, ultimaVentana),
+        obtenerVuelosSimulacion(newSessionId, primeraVentana, primeraVentana),
       ]);
       ventanasCargadasRef.current.add(primeraVentana);
-      ventanasCargadasRef.current.add(segundaVentana);
       const adaptedFlights = (vuelosData ?? []).map(adaptFlightInstance);
-      const initialFlights = new Map();
+      const metadata = new Map();
       for (const f of adaptedFlights) {
-        initialFlights.set(f.idVueloInstancia ?? f.id, { ...f, ticksAusente: 0 });
+        metadata.set(f.idVueloInstancia ?? f.id, { ...f, ticksAusente: 0 });
+      }
+      flightMetadataRef.current = metadata;
+      const statusFilter = (f) =>
+        f.status === "EN_PROGRESO" || f.status === "CONFIRMADO";
+      const initialFlights = new Map();
+      for (const [id, f] of metadata) {
+        if (statusFilter(f)) initialFlights.set(id, f);
       }
       const initialBags = new Map();
-      for (const b of [...(ventana1.maletas ?? []), ...(ventana2.maletas ?? [])]) {
+      for (const b of ventana1.maletas ?? []) {
         initialBags.set(b.idMaleta, { ...b, ticksAusente: 0 });
       }
       const initialRoutes = new Map();
-      for (const r of [...(ventana1.rutas ?? []), ...(ventana2.rutas ?? [])]) {
+      for (const r of ventana1.rutas ?? []) {
         initialRoutes.set(r.idRuta, { ...r, ticksAusente: 0 });
       }
       const initialOrders = new Map();
-      for (const o of [...(ventana1.pedidos ?? []), ...(ventana2.pedidos ?? [])]) {
+      for (const o of ventana1.pedidos ?? []) {
         initialOrders.set(o.id ?? o.idPedido, o);
       }
       setSimulationPanelData({
