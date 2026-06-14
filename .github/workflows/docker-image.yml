@@ -116,7 +116,14 @@ jobs:
             docker login ghcr.io -u '${{ github.actor }}' -p '${{ secrets.GITHUB_TOKEN }}' && \
             docker compose -f docker-compose.yml -f docker-compose.prod.yml pull && \
             docker compose -f docker-compose.yml -f docker-compose.prod.yml up -d --force-recreate && \
-            sleep 25 && \
-            curl -X POST "http://localhost:8082/api/seed?clean=true" && \
+            echo 'Esperando backend...' && \
+            for i in \$(seq 1 50); do
+              if curl -sf http://localhost:8082/ > /dev/null 2>&1; then
+                echo 'Backend listo'; break
+              fi
+              echo "Intento \$i de 50..."
+              sleep 3
+            done && \
+            curl -X POST 'http://localhost:8082/api/seed?clean=true' && \
             docker image prune -f
           "
