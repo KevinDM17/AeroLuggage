@@ -100,6 +100,7 @@ jobs:
             cd /opt/aeroluggage
             docker compose -f docker-compose.yml -f docker-compose.prod.yml down --remove-orphans 2>/dev/null || true
             docker rm -f \$(docker ps -aq --filter name=aeroluggage) 2>/dev/null || true
+            docker volume rm aeroluggage_aeroluggage-db 2>/dev/null || true
             docker network prune -f 2>/dev/null || true
             sudo systemctl restart docker
             sleep 5
@@ -118,7 +119,7 @@ jobs:
             docker compose -f docker-compose.yml -f docker-compose.prod.yml up -d --force-recreate && \
             echo 'Esperando backend...' && \
             for i in \$(seq 1 50); do
-              if curl -sf http://localhost:8082/ > /dev/null 2>&1; then
+              if curl -sf http://localhost:8082/actuator/health > /dev/null 2>&1; then
                 echo 'Backend listo'; break
               fi
               echo "Intento \$i de 50..."
