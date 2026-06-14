@@ -17,7 +17,7 @@ public class ALNSConfig {
     private int qMin = 1;
     private int qMax = 6;
     private int qCritical = 4;
-    private int maxReintentosRuteo = 20;
+    private int maxReintentosRuteo = 100;
     private long minutosConexion = 10L;
     private long tiempoRecojo = 10L;
     private double umbralCriticoAeropuerto = 0.25D;

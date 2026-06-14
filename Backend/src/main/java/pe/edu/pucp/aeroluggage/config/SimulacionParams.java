@@ -9,9 +9,9 @@ import org.springframework.stereotype.Component;
 @PropertySource(value = "classpath:system_params.yml", factory = YamlPropertySourceFactory.class)
 public class SimulacionParams {
 
-    private long duracionDiaSimuladoMs = 600000L;
+    private long duracionDiaSimuladoMs = 240000L;
     private Ventana ventana = new Ventana();
-    private long tickIntervalMs = 1000L;
+    private long tickIntervalMs = 500L;
     private long maxDiasVuelosInstancias = 30L;
     private long retencionVentanas = 2L;
     private long retencionPedidosMinutos = 120L;
