@@ -4,7 +4,7 @@ services:
       - "127.0.0.1:8082:8080"
     environment:
       SPRING_PROFILES_ACTIVE: prod
-      FRONTEND_URL: "http://1inf54-983-6f.inf.pucp.edu.pe"
+      FRONTEND_URL: "http://1inf54-983-6f.inf.pucp.edu.pe,https://1inf54-983-6f.inf.pucp.edu.pe"
       JAVA_OPTS: "-Xmx512m -Xms256m"
 
   frontend:
