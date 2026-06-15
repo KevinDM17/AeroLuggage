@@ -10,6 +10,7 @@ import java.util.NavigableMap;
 import java.util.Objects;
 import java.util.TreeMap;
 import java.util.stream.Collectors;
+import java.time.format.DateTimeFormatter;
 
 import pe.edu.pucp.aeroluggage.algoritmo.common.GrafoTiempoExpandido;
 import pe.edu.pucp.aeroluggage.dominio.entidades.Aeropuerto;
@@ -408,6 +409,8 @@ public class InstanciaProblema {
             return instancias;
         }
         final LocalDate fechaBase = LocalDate.of(2026, 4, 20);
+        final String fechaStr = fechaBase.format(DateTimeFormatter.ofPattern("yyyyMMdd"));
+        int seq = 1;
         for (final VueloProgramado vueloProgramado : vuelosProgramados) {
             if (vueloProgramado == null || vueloProgramado.getHoraSalida() == null
                     || vueloProgramado.getHoraLlegada() == null) {
@@ -418,8 +421,14 @@ public class InstanciaProblema {
             if (!llegada.isAfter(salida)) {
                 llegada = llegada.plusDays(1);
             }
+            final String orig = vueloProgramado.getAeropuertoOrigen() != null
+                    ? vueloProgramado.getAeropuertoOrigen().getIdAeropuerto() : "??";
+            final String dest = vueloProgramado.getAeropuertoDestino() != null
+                    ? vueloProgramado.getAeropuertoDestino().getIdAeropuerto() : "??";
+            final String id = String.format("VUE-%s-%s-%s-%06d",
+                    orig, dest, fechaStr, seq);
             instancias.add(new VueloInstancia(
-                    vueloProgramado.getIdVueloProgramado(),
+                    id,
                     vueloProgramado,
                     fechaBase,
                     salida,
@@ -428,7 +437,7 @@ public class InstanciaProblema {
                     vueloProgramado.getCapacidadBase(),
                     EstadoVuelo.PROGRAMADO
             ));
-        }
+            seq++;}
         return instancias;
     }
 }

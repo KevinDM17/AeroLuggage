@@ -79,8 +79,8 @@ public class SimulacionDiaADiaRestController {
     public SimulacionEstadoDTO procesarPedido(
             @PathVariable final String sessionId,
             @RequestBody final PedidoRequest request) {
-        log.info("[AeroLuggage/DiaADiaRest] - API-CALL/pedido: sessionId={}, idPedido={}",
-                sessionId, request.getIdPedido());
+        log.info("[AeroLuggage/DiaADiaRest] - API-CALL/pedido: sessionId={}, origen={}, destino={}",
+                sessionId, request.getIdAeropuertoOrigen(), request.getIdAeropuertoDestino());
         if (!sessionId.equals(service.getSessionId())) {
             throw new ResponseStatusException(HttpStatus.NOT_FOUND,
                     "Sesion expirada o no encontrada: " + sessionId);
@@ -90,8 +90,40 @@ public class SimulacionDiaADiaRestController {
             return SimulacionEstadoDTO.builder()
                     .withSessionId(sessionId)
                     .withEstado("PEDIDO_PROCESADO")
-                    .withMensaje("Pedido " + request.getIdPedido() + " procesado")
+                    .withMensaje("Pedido procesado correctamente")
                     .build();
+        } catch (final IllegalArgumentException exception) {
+            throw new ResponseStatusException(HttpStatus.BAD_REQUEST, exception.getMessage());
+        } catch (final IllegalStateException exception) {
+            throw new ResponseStatusException(HttpStatus.CONFLICT, exception.getMessage());
+        }
+    }
+
+    @PostMapping("/{sessionId}/pedidos-bulk")
+    public Map<String, Object> procesarPedidosBulk(
+            @PathVariable final String sessionId,
+            @RequestBody final Map<String, Object> body) {
+        final String icaoOrigen = (String) body.get("icaoOrigen");
+        final String content = (String) body.get("content");
+        if (icaoOrigen == null || icaoOrigen.isBlank()) {
+            throw new ResponseStatusException(HttpStatus.BAD_REQUEST, "icaoOrigen es requerido");
+        }
+        if (content == null || content.isBlank()) {
+            throw new ResponseStatusException(HttpStatus.BAD_REQUEST, "content es requerido");
+        }
+        log.info("[AeroLuggage/DiaADiaRest] - API-CALL/pedidos-bulk: sessionId={}, origen={}",
+                sessionId, icaoOrigen);
+        if (!sessionId.equals(service.getSessionId())) {
+            throw new ResponseStatusException(HttpStatus.NOT_FOUND,
+                    "Sesion expirada o no encontrada: " + sessionId);
+        }
+        final List<String> lineas = List.of(content.split("\\R"));
+        try {
+            service.procesarPedidosBulk(icaoOrigen, lineas);
+            final Map<String, Object> response = new HashMap<>();
+            response.put("accepted", lineas.stream().filter(l -> !l.trim().isEmpty()).count());
+            response.put("total", lineas.stream().filter(l -> !l.trim().isEmpty()).count());
+            return response;
         } catch (final IllegalArgumentException exception) {
             throw new ResponseStatusException(HttpStatus.BAD_REQUEST, exception.getMessage());
         } catch (final IllegalStateException exception) {

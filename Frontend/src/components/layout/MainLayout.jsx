@@ -4,6 +4,8 @@ import { PanelLeftOpen, PanelRightOpen } from "lucide-react";
 import Sidebar from "./Sidebar";
 import RightPanel from "./RightPanel";
 import { MapFocusContext } from "../../context/MapFocusContext";
+import { useOperationsSession } from "../../hooks/useOperationsSession";
+import { useToast } from "../ui/Toast";
 
 const DESKTOP_BREAKPOINT = 1024;
 const EMPTY_SIMULATION_PANEL_DATA = {
@@ -34,8 +36,33 @@ export default function MainLayout() {
   const [mapDim, setMapDim] = useState({ airports: null, flights: null });
   const location = useLocation();
   const previousIsSimulatorRef = useRef(null);
+  const toast = useToast();
 
-  const isSimulator = location.pathname === "/" || location.pathname.startsWith("/simulator");
+  const isOperations =
+    location.pathname === "/" ||
+    location.pathname === "/airports" ||
+    location.pathname === "/flights" ||
+    location.pathname === "/orders";
+
+  const showRightPanel = location.pathname === "/" || location.pathname.startsWith("/simulator");
+
+  const resetSimulationPanelData = useCallback(() => {
+    setSimulationPanelData({ ...EMPTY_SIMULATION_PANEL_DATA });
+    setCancelledFlightIds(new Set());
+    setPanelResetVersion((current) => current + 1);
+    setMapHighlight(null);
+    setSelected(null);
+    setMapFocus(null);
+    setPanelFocus(null);
+    setMapDim({ airports: null, flights: null });
+  }, []);
+
+  const ops = useOperationsSession({
+    enabled: isOperations,
+    setSimulationPanelData,
+    resetSimulationPanelData,
+    toast,
+  });
 
   useEffect(() => {
     const handleResize = () => {
@@ -70,29 +97,19 @@ export default function MainLayout() {
   }, [location.pathname]);
 
   const showLeftHamburger = !leftOpen;
-  const showRightHamburger = isSimulator && !rightOpen;
-  const showBackdrop = !isDesktop && (leftOpen || (rightOpen && isSimulator));
+  const showRightHamburger = showRightPanel && !rightOpen;
+  const showBackdrop = !isDesktop && (leftOpen || (rightOpen && showRightPanel));
 
   const closeLeft = () => setLeftOpen(false);
   const closeRight = () => setRightOpen(false);
-  const resetSimulationPanelData = useCallback(() => {
-    setSimulationPanelData({ ...EMPTY_SIMULATION_PANEL_DATA });
-    setCancelledFlightIds(new Set());
-    setPanelResetVersion((current) => current + 1);
-    setMapHighlight(null);
-    setSelected(null);
-    setMapFocus(null);
-    setPanelFocus(null);
-    setMapDim({ airports: null, flights: null });
-  }, []);
 
   useEffect(() => {
     const previousIsSimulator = previousIsSimulatorRef.current;
-    if (previousIsSimulator === true && !isSimulator) {
+    if (previousIsSimulator === true && !isOperations) {
       resetSimulationPanelData();
     }
-    previousIsSimulatorRef.current = isSimulator;
-  }, [isSimulator, resetSimulationPanelData]);
+    previousIsSimulatorRef.current = isOperations;
+  }, [isOperations, resetSimulationPanelData]);
 
   const layoutContext = useMemo(
     () => ({
@@ -101,8 +118,9 @@ export default function MainLayout() {
       resetSimulationPanelData,
       cancelledFlightIds,
       setCancelledFlightIds,
+      ops,
     }),
-    [simulationPanelData, resetSimulationPanelData, cancelledFlightIds],
+    [simulationPanelData, resetSimulationPanelData, cancelledFlightIds, ops],
   );
 
   return (
@@ -159,7 +177,7 @@ export default function MainLayout() {
         </button>
       )}
 
-      {rightOpen && isSimulator && (
+      {rightOpen && showRightPanel && (
         <div
           className={
             isDesktop

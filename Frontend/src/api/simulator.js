@@ -9,6 +9,7 @@ import {
   mockIniciarDiaADia,
   mockDetenerDiaADia,
   mockProcesarPedidoDiaADia,
+  mockProcesarPedidosBulkDiaADia,
 } from "./mock";
 
 /* =========================================================================
@@ -192,6 +193,11 @@ export const procesarPedidoDiaADia = (pedido) =>
   USE_MOCK
     ? mockProcesarPedidoDiaADia(pedido)
     : withReconnect((sid) => apiPost(`/operations/${sid}/pedido`, pedido));
+
+export const procesarPedidosBulkDiaADia = (icaoOrigen, content) =>
+  USE_MOCK
+    ? mockProcesarPedidosBulkDiaADia(icaoOrigen, content)
+    : withReconnect((sid) => apiPost(`/operations/${sid}/pedidos-bulk`, { icaoOrigen, content }));
 
 export const obtenerEstadoDiaADia = () =>
   withReconnect((sid) => apiGet(`/operations/${sid}/estado`));

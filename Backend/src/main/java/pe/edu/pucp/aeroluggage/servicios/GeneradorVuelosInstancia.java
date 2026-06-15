@@ -2,6 +2,7 @@ package pe.edu.pucp.aeroluggage.servicios;
 
 import java.time.LocalDate;
 import java.time.LocalDateTime;
+import java.time.format.DateTimeFormatter;
 import java.util.ArrayList;
 
 import pe.edu.pucp.aeroluggage.dominio.entidades.VueloInstancia;
@@ -23,8 +24,9 @@ public final class GeneradorVuelosInstancia {
 
         for (int diaOffset = 0; diaOffset < dias; diaOffset++) {
             final LocalDate fechaOperacion = fechaInicio.plusDays(diaOffset);
+            int secuencia = 1;
             for (final VueloProgramado vueloProgramado : vuelosProgramados) {
-                final VueloInstancia instancia = crearInstancia(vueloProgramado, fechaOperacion);
+                final VueloInstancia instancia = crearInstancia(vueloProgramado, fechaOperacion, secuencia++);
                 if (instancia == null) {
                     continue;
                 }
@@ -35,7 +37,8 @@ public final class GeneradorVuelosInstancia {
     }
 
     private static VueloInstancia crearInstancia(final VueloProgramado vueloProgramado,
-                                                 final LocalDate fechaOperacion) {
+                                                  final LocalDate fechaOperacion,
+                                                  final int secuencia) {
         final boolean vueloInvalido = vueloProgramado == null
                 || vueloProgramado.getIdVueloProgramado() == null
                 || vueloProgramado.getHoraSalida() == null
@@ -50,7 +53,13 @@ public final class GeneradorVuelosInstancia {
             llegada = llegada.plusDays(1);
         }
 
-        final String idInstancia = vueloProgramado.getIdVueloProgramado() + "-" + fechaOperacion;
+        final String orig = vueloProgramado.getAeropuertoOrigen() != null
+                ? vueloProgramado.getAeropuertoOrigen().getIdAeropuerto() : "??";
+        final String dest = vueloProgramado.getAeropuertoDestino() != null
+                ? vueloProgramado.getAeropuertoDestino().getIdAeropuerto() : "??";
+        final String fechaStr = fechaOperacion.format(DateTimeFormatter.ofPattern("yyyyMMdd"));
+        final String idInstancia = String.format("VUE-%s-%s-%s-%06d",
+                orig, dest, fechaStr, secuencia);
         final int capacidad = Math.max(0, vueloProgramado.getCapacidadBase());
         return new VueloInstancia(
                 idInstancia,
