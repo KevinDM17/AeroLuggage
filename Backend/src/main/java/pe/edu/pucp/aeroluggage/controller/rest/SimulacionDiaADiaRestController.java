@@ -15,21 +15,28 @@ import pe.edu.pucp.aeroluggage.dominio.entidades.Maleta;
 import pe.edu.pucp.aeroluggage.dominio.entidades.Pedido;
 import pe.edu.pucp.aeroluggage.dominio.entidades.Ruta;
 import pe.edu.pucp.aeroluggage.dominio.entidades.VueloInstancia;
+import pe.edu.pucp.aeroluggage.dominio.enums.EstadoMaleta;
 import pe.edu.pucp.aeroluggage.dominio.enums.EstadoRuta;
 import pe.edu.pucp.aeroluggage.dto.simulacion.rest.AeropuertoResponse;
 import pe.edu.pucp.aeroluggage.dto.simulacion.rest.AlmacenContenidoResponse;
+import pe.edu.pucp.aeroluggage.dto.simulacion.rest.EnvioPanelResponse;
+import pe.edu.pucp.aeroluggage.dto.simulacion.rest.EnviosPanelResponse;
 import pe.edu.pucp.aeroluggage.dto.simulacion.rest.MaletaSimulacionResponse;
 import pe.edu.pucp.aeroluggage.dto.simulacion.rest.PedidoRequest;
 import pe.edu.pucp.aeroluggage.dto.simulacion.rest.PedidoSimulacionResponse;
 import pe.edu.pucp.aeroluggage.dto.simulacion.rest.RutaSimulacionResponse;
 import pe.edu.pucp.aeroluggage.dto.simulacion.rest.RutaVueloResponse;
+import pe.edu.pucp.aeroluggage.dto.simulacion.rest.VueloManifiestoResponse;
 import pe.edu.pucp.aeroluggage.dto.simulacion.rest.VueloInstanciaResponse;
 import pe.edu.pucp.aeroluggage.dto.simulacion.ws.SimulacionEstadoDTO;
 import pe.edu.pucp.aeroluggage.simulacion.SimulacionDiaADiaService;
 
 import java.time.LocalDateTime;
+import java.time.ZoneOffset;
 import java.time.format.DateTimeFormatter;
 import java.util.ArrayList;
+import java.util.LinkedHashMap;
+import java.util.LinkedHashSet;
 import java.util.HashMap;
 import java.util.List;
 import java.util.Map;
@@ -79,8 +86,8 @@ public class SimulacionDiaADiaRestController {
     public SimulacionEstadoDTO procesarPedido(
             @PathVariable final String sessionId,
             @RequestBody final PedidoRequest request) {
-        log.info("[AeroLuggage/DiaADiaRest] - API-CALL/pedido: sessionId={}, idPedido={}",
-                sessionId, request.getIdPedido());
+        log.info("[AeroLuggage/DiaADiaRest] - API-CALL/pedido: sessionId={}, origen={}, destino={}",
+                sessionId, request.getIdAeropuertoOrigen(), request.getIdAeropuertoDestino());
         if (!sessionId.equals(service.getSessionId())) {
             throw new ResponseStatusException(HttpStatus.NOT_FOUND,
                     "Sesion expirada o no encontrada: " + sessionId);
@@ -90,8 +97,40 @@ public class SimulacionDiaADiaRestController {
             return SimulacionEstadoDTO.builder()
                     .withSessionId(sessionId)
                     .withEstado("PEDIDO_PROCESADO")
-                    .withMensaje("Pedido " + request.getIdPedido() + " procesado")
+                    .withMensaje("Pedido procesado correctamente")
                     .build();
+        } catch (final IllegalArgumentException exception) {
+            throw new ResponseStatusException(HttpStatus.BAD_REQUEST, exception.getMessage());
+        } catch (final IllegalStateException exception) {
+            throw new ResponseStatusException(HttpStatus.CONFLICT, exception.getMessage());
+        }
+    }
+
+    @PostMapping("/{sessionId}/pedidos-bulk")
+    public Map<String, Object> procesarPedidosBulk(
+            @PathVariable final String sessionId,
+            @RequestBody final Map<String, Object> body) {
+        final String icaoOrigen = (String) body.get("icaoOrigen");
+        final String content = (String) body.get("content");
+        if (icaoOrigen == null || icaoOrigen.isBlank()) {
+            throw new ResponseStatusException(HttpStatus.BAD_REQUEST, "icaoOrigen es requerido");
+        }
+        if (content == null || content.isBlank()) {
+            throw new ResponseStatusException(HttpStatus.BAD_REQUEST, "content es requerido");
+        }
+        log.info("[AeroLuggage/DiaADiaRest] - API-CALL/pedidos-bulk: sessionId={}, origen={}",
+                sessionId, icaoOrigen);
+        if (!sessionId.equals(service.getSessionId())) {
+            throw new ResponseStatusException(HttpStatus.NOT_FOUND,
+                    "Sesion expirada o no encontrada: " + sessionId);
+        }
+        final List<String> lineas = List.of(content.split("\\R"));
+        try {
+            service.procesarPedidosBulk(icaoOrigen, lineas);
+            final Map<String, Object> response = new HashMap<>();
+            response.put("accepted", lineas.stream().filter(l -> !l.trim().isEmpty()).count());
+            response.put("total", lineas.stream().filter(l -> !l.trim().isEmpty()).count());
+            return response;
         } catch (final IllegalArgumentException exception) {
             throw new ResponseStatusException(HttpStatus.BAD_REQUEST, exception.getMessage());
         } catch (final IllegalStateException exception) {
@@ -195,7 +234,7 @@ public class SimulacionDiaADiaRestController {
     }
 
     @GetMapping("/{sessionId}/vuelo/{idVuelo}/manifiesto")
-    public Map<String, Object> manifiestoVuelo(
+    public VueloManifiestoResponse manifiestoVuelo(
             @PathVariable final String sessionId,
             @PathVariable final String idVuelo) {
         if (!sessionId.equals(service.getSessionId())) {
@@ -204,27 +243,49 @@ public class SimulacionDiaADiaRestController {
         }
         final Map<String, VueloInstancia> vueloIndex = service.getVueloIndex();
         final VueloInstancia objetivo = vueloIndex.get(idVuelo);
-        final String codigoObjetivo = objetivo != null ? objetivo.getCodigo() : null;
-        final List<Map<String, String>> maletasDTO = new ArrayList<>();
+        final List<MaletaSimulacionResponse> maletasDTO = new ArrayList<>();
+        final LinkedHashMap<String, int[]> bagsPorPedido = new LinkedHashMap<>();
+        final Map<String, Pedido> pedidoPorId = new HashMap<>();
         for (final Ruta ruta : service.getRutas()) {
             if (ruta == null || ruta.getIdMaleta() == null) continue;
-            if (!rutaIncluyeVuelo(ruta, idVuelo, codigoObjetivo, vueloIndex)) continue;
             final Maleta maleta = service.getMaleta(ruta.getIdMaleta());
+            if (!maletaCorrespondeAlVuelo(ruta, maleta, objetivo, vueloIndex)) continue;
             final Pedido pedido = maleta != null ? maleta.getPedido() : null;
-            final Map<String, String> m = new HashMap<>();
-            m.put("idMaleta", ruta.getIdMaleta());
-            m.put("idPedido", pedido != null ? pedido.getIdPedido() : null);
-            m.put("estado", maleta != null && maleta.getEstado() != null
-                    ? maleta.getEstado().name() : null);
-            m.put("ubicacion", maleta != null ? maleta.getAeropuertoActual() : null);
-            maletasDTO.add(m);
+            final String idPedido = pedido != null ? pedido.getIdPedido() : null;
+
+            maletasDTO.add(MaletaSimulacionResponse.builder()
+                    .withIdMaleta(ruta.getIdMaleta())
+                    .withIdPedido(idPedido)
+                    .withEstado(maleta != null && maleta.getEstado() != null
+                            ? maleta.getEstado().name() : null)
+                    .withUbicacionActual(maleta != null ? maleta.getAeropuertoActual() : null)
+                    .build());
+
+            if (idPedido != null) {
+                bagsPorPedido.computeIfAbsent(idPedido, k -> new int[]{0})[0]++;
+                pedidoPorId.putIfAbsent(idPedido, pedido);
+            }
         }
-        final Map<String, Object> response = new HashMap<>();
-        response.put("idVueloInstancia", objetivo != null ? objetivo.getIdVueloInstancia() : idVuelo);
-        response.put("codigo", codigoObjetivo);
-        response.put("maletas", maletasDTO);
-        response.put("totalMaletas", maletasDTO.size());
-        return response;
+
+        final List<PedidoSimulacionResponse> pedidosDTO = new ArrayList<>();
+        for (final Map.Entry<String, int[]> entry : bagsPorPedido.entrySet()) {
+            final Pedido pedido = pedidoPorId.get(entry.getKey());
+            pedidosDTO.add(PedidoSimulacionResponse.builder()
+                    .withId(entry.getKey())
+                    .withOrigin(pedido != null && pedido.getAeropuertoOrigen() != null
+                            ? pedido.getAeropuertoOrigen().getIdAeropuerto() : null)
+                    .withDest(pedido != null && pedido.getAeropuertoDestino() != null
+                            ? pedido.getAeropuertoDestino().getIdAeropuerto() : null)
+                    .withBags(entry.getValue()[0])
+                    .build());
+        }
+
+        return VueloManifiestoResponse.builder()
+                .withIdVueloInstancia(objetivo != null ? objetivo.getIdVueloInstancia() : idVuelo)
+                .withCodigo(objetivo != null ? objetivo.getCodigo() : idVuelo)
+                .withMaletas(maletasDTO)
+                .withPedidos(pedidosDTO)
+                .build();
     }
 
     @GetMapping("/{sessionId}/maleta/{idMaleta}/ruta")
@@ -243,6 +304,27 @@ public class SimulacionDiaADiaRestController {
         return mapearRutaPorIds(ruta, service.getVueloIndex());
     }
 
+    @GetMapping("/{sessionId}/envio/{idPedido}/rutas")
+    public List<RutaSimulacionResponse> rutasEnvio(
+            @PathVariable final String sessionId,
+            @PathVariable final String idPedido) {
+        if (!sessionId.equals(service.getSessionId())) {
+            throw new ResponseStatusException(HttpStatus.NOT_FOUND,
+                    "Sesion expirada o no encontrada: " + sessionId);
+        }
+        final Map<String, VueloInstancia> vueloIndex = service.getVueloIndex();
+        final List<RutaSimulacionResponse> result = new ArrayList<>();
+        for (final Maleta maleta : service.getMaletas()) {
+            if (maleta == null || maleta.getPedido() == null) continue;
+            if (!idPedido.equals(maleta.getPedido().getIdPedido())) continue;
+            final Ruta ruta = service.getRutaPorMaleta(maleta.getIdMaleta());
+            if (ruta != null) {
+                result.add(mapearRutaPorIds(ruta, vueloIndex));
+            }
+        }
+        return result;
+    }
+
     @GetMapping("/{sessionId}/rutas")
     public List<RutaSimulacionResponse> rutas(@PathVariable final String sessionId) {
         if (!sessionId.equals(service.getSessionId())) {
@@ -250,17 +332,93 @@ public class SimulacionDiaADiaRestController {
                     "Sesion expirada o no encontrada: " + sessionId);
         }
         final List<RutaSimulacionResponse> result = new ArrayList<>();
+        final Map<String, VueloInstancia> vueloIndex = service.getVueloIndex();
         for (final Ruta r : service.getRutas()) {
             if (r == null) continue;
             final EstadoRuta estado = r.getEstado();
             if (estado != EstadoRuta.PLANIFICADA && estado != EstadoRuta.ACTIVA) continue;
-            result.add(RutaSimulacionResponse.builder()
-                    .withIdRuta(r.getIdRuta())
-                    .withIdMaleta(r.getIdMaleta())
-                    .withEstado(estado.name())
-                    .build());
+            result.add(mapearRutaPorIds(r, vueloIndex));
         }
         return result;
+    }
+
+    @GetMapping("/{sessionId}/envios")
+    public EnviosPanelResponse envios(@PathVariable final String sessionId) {
+        if (!sessionId.equals(service.getSessionId())) {
+            throw new ResponseStatusException(HttpStatus.NOT_FOUND,
+                    "Sesion expirada o no encontrada: " + sessionId);
+        }
+
+        final Map<String, VueloInstancia> vueloIndex = service.getVueloIndex();
+        final Map<String, Ruta> rutasPorMaleta = new HashMap<>();
+        for (final Ruta ruta : service.getRutas()) {
+            if (ruta != null && ruta.getIdMaleta() != null) {
+                rutasPorMaleta.putIfAbsent(ruta.getIdMaleta(), ruta);
+            }
+        }
+
+        final Map<String, List<Maleta>> maletasPorPedido = new LinkedHashMap<>();
+        final Map<String, Pedido> pedidoPorId = new HashMap<>();
+        for (final Maleta maleta : service.getMaletas()) {
+            if (maleta == null || maleta.getPedido() == null || maleta.getPedido().getIdPedido() == null) continue;
+            final String idPedido = maleta.getPedido().getIdPedido();
+            maletasPorPedido.computeIfAbsent(idPedido, k -> new ArrayList<>()).add(maleta);
+            pedidoPorId.putIfAbsent(idPedido, maleta.getPedido());
+        }
+
+        final List<EnvioPanelResponse> planificados = new ArrayList<>();
+        final List<EnvioPanelResponse> enVuelos = new ArrayList<>();
+        for (final Map.Entry<String, List<Maleta>> entry : maletasPorPedido.entrySet()) {
+            final List<Maleta> maletas = entry.getValue();
+            final Pedido pedido = pedidoPorId.get(entry.getKey());
+            final LinkedHashSet<String> uts = new LinkedHashSet<>();
+            final LinkedHashSet<String> origenes = new LinkedHashSet<>();
+            final LinkedHashSet<String> destinos = new LinkedHashSet<>();
+            boolean algunaEnVuelo = false;
+
+            for (final Maleta maleta : maletas) {
+                if (maleta != null && maleta.getEstado() == EstadoMaleta.EN_TRANSITO) {
+                    algunaEnVuelo = true;
+                }
+                final Ruta ruta = maleta != null ? rutasPorMaleta.get(maleta.getIdMaleta()) : null;
+                if (ruta == null) continue;
+                for (final String subId : ruta.getSubrutaIds()) {
+                    final VueloInstancia vuelo = vueloIndex.get(subId);
+                    if (vuelo == null) continue;
+                    if (vuelo.getCodigo() != null) uts.add(vuelo.getCodigo());
+                    if (vuelo.getAeropuertoOrigen() != null) {
+                        origenes.add(vuelo.getAeropuertoOrigen().getIdAeropuerto());
+                    }
+                    if (vuelo.getAeropuertoDestino() != null) {
+                        destinos.add(vuelo.getAeropuertoDestino().getIdAeropuerto());
+                    }
+                }
+            }
+
+            final EnvioPanelResponse envio = EnvioPanelResponse.builder()
+                    .withId(entry.getKey())
+                    .withOrigin(pedido != null && pedido.getAeropuertoOrigen() != null
+                            ? pedido.getAeropuertoOrigen().getIdAeropuerto() : null)
+                    .withDest(pedido != null && pedido.getAeropuertoDestino() != null
+                            ? pedido.getAeropuertoDestino().getIdAeropuerto() : null)
+                    .withBags(maletas.size())
+                    .withUts(new ArrayList<>(uts))
+                    .withOrigenesRuta(new ArrayList<>(origenes))
+                    .withDestinosRuta(new ArrayList<>(destinos))
+                    .build();
+
+            if (algunaEnVuelo) {
+                enVuelos.add(envio);
+            } else {
+                planificados.add(envio);
+            }
+        }
+
+        return EnviosPanelResponse.builder()
+                .withPlanificados(planificados)
+                .withEnVuelos(enVuelos)
+                .withEntregadosUltimas4h(List.of())
+                .build();
     }
 
     @GetMapping("/{sessionId}/almacen/{idAeropuerto}/contenido")
@@ -430,6 +588,54 @@ public class SimulacionDiaADiaRestController {
             if (idVuelo.equals(sv.getIdVueloInstancia()) || idVuelo.equals(sv.getCodigo())) return true;
         }
         return false;
+    }
+
+    private static boolean maletaCorrespondeAlVuelo(
+            final Ruta ruta,
+            final Maleta maleta,
+            final VueloInstancia objetivo,
+            final Map<String, VueloInstancia> vueloIndex) {
+        if (ruta == null || maleta == null || objetivo == null) return false;
+        if (maleta.getEstado() == EstadoMaleta.ENTREGADA) return false;
+
+        final LocalDateTime ahora = LocalDateTime.now(ZoneOffset.UTC);
+        final List<String> subrutas = ruta.getSubrutaIds();
+        if (subrutas == null || subrutas.isEmpty()) return false;
+
+        if (maleta.getEstado() == EstadoMaleta.EN_TRANSITO) {
+            for (final String subId : subrutas) {
+                final VueloInstancia vuelo = vueloIndex.get(subId);
+                if (vuelo == null) continue;
+                final boolean enCursoPorEstado = vuelo.getEstado() == pe.edu.pucp.aeroluggage.dominio.enums.EstadoVuelo.EN_PROGRESO;
+                final boolean enCursoPorTiempo = vuelo.getFechaSalida() != null
+                        && vuelo.getFechaLlegada() != null
+                        && !ahora.isBefore(vuelo.getFechaSalida())
+                        && ahora.isBefore(vuelo.getFechaLlegada());
+                if (enCursoPorEstado || enCursoPorTiempo) {
+                    return mismoVuelo(vuelo, objetivo);
+                }
+            }
+            return false;
+        }
+
+        final String ubicacionActual = maleta.getAeropuertoActual();
+        if (ubicacionActual == null) return false;
+
+        for (final String subId : subrutas) {
+            final VueloInstancia vuelo = vueloIndex.get(subId);
+            if (vuelo == null || vuelo.getAeropuertoOrigen() == null) continue;
+            if (!ubicacionActual.equals(vuelo.getAeropuertoOrigen().getIdAeropuerto())) continue;
+            return mismoVuelo(vuelo, objetivo);
+        }
+        return false;
+    }
+
+    private static boolean mismoVuelo(final VueloInstancia vuelo, final VueloInstancia objetivo) {
+        if (vuelo == null || objetivo == null) return false;
+        if (vuelo.getIdVueloInstancia() != null && vuelo.getIdVueloInstancia().equals(objetivo.getIdVueloInstancia())) {
+            return true;
+        }
+        return vuelo.getCodigo() != null && vuelo.getCodigo().equals(objetivo.getCodigo());
     }
 
     private static VueloInstanciaResponse toVueloResponse(final VueloInstancia v) {

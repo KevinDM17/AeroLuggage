@@ -106,6 +106,27 @@ public class VueloInstanciaRepositorio {
         return jdbcTemplate.update("DELETE FROM vuelo_instancia WHERE id_vuelo_instancia=?", id);
     }
 
+    public int obtenerUltimoSecuencial(final String fechaStr) {
+        final String pattern = "%-" + fechaStr + "-%";
+        final String sql = "SELECT id_vuelo_instancia FROM vuelo_instancia WHERE id_vuelo_instancia LIKE ?";
+        final List<String> ids = jdbcTemplate.queryForList(sql, String.class, pattern);
+        int maxSeq = 0;
+        for (final String id : ids) {
+            final int lastDash = id.lastIndexOf('-');
+            if (lastDash >= 0 && lastDash < id.length() - 1) {
+                try {
+                    final int seq = Integer.parseInt(id.substring(lastDash + 1));
+                    if (seq > maxSeq) {
+                        maxSeq = seq;
+                    }
+                } catch (final NumberFormatException e) {
+                    // ignore non-numeric suffixes from old-format ids
+                }
+            }
+        }
+        return maxSeq;
+    }
+
     private static final class VueloInstanciaRowMapper implements RowMapper<VueloInstancia> {
         @Override
         public VueloInstancia mapRow(ResultSet rs, int rowNum) throws SQLException {

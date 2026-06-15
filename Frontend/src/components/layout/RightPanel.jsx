@@ -9,7 +9,7 @@ import { listOrders } from "../../api/orders";
 import { listAirports } from "../../api/airports";
 import { listMaletas } from "../../api/maletas";
 import { listRutas } from "../../api/rutas";
-import { obtenerManifiestoVuelo, obtenerManifiestoVueloDiaADia, obtenerPedidosDiaADia, obtenerContenidoAlmacen, obtenerEnviosPanel, obtenerRutaMaleta, obtenerRutasEnvio } from "../../api/simulator";
+import { obtenerContenidoAlmacen, obtenerEnviosDiaADia, obtenerEnviosPanel, obtenerManifiestoVuelo, obtenerManifiestoVueloDiaADia, obtenerRutaMaleta, obtenerRutasEnvio, obtenerRutasEnvioDiaADia } from "../../api/simulator";
 import { apiGet, USE_MOCK } from "../../api/client";
 import { useMapFocus } from "../../context/MapFocusContext";
 import { LoadingState, EmptyState, ErrorState } from "../ui/States";
@@ -1250,23 +1250,11 @@ export default function RightPanel({
     setEnviosStatus("loading");
 
     if (isDiaADia) {
-      return obtenerPedidosDiaADia()
+      return obtenerEnviosDiaADia()
         .then((data) => {
-          const pedidos = Array.isArray(data) ? data : [];
           setEnviosData({
-            planificados: pedidos.map((p) => ({
-              id: p.id,
-              origin: p.origin,
-              dest: p.dest,
-              uts: [],
-              origenesRuta: [p.origin],
-              destinosRuta: [p.dest],
-              bags: p.bags,
-              envioFecha: p.date,
-              envioHora: p.time,
-              status: p.status,
-            })),
-            enVuelos: [],
+            planificados: data?.planificados ?? [],
+            enVuelos: data?.enVuelos ?? [],
           });
           setEnviosStatus("ready");
         })
@@ -1411,7 +1399,9 @@ export default function RightPanel({
     async (idPedido) => {
       if (!idPedido || !sessionId || USE_MOCK) return;
       try {
-        const rutas = await obtenerRutasEnvio(sessionId, idPedido);
+        const rutas = isDiaADia
+          ? await obtenerRutasEnvioDiaADia(idPedido)
+          : await obtenerRutasEnvio(sessionId, idPedido);
         const rutasVistas = new Set();
         const rutasNorm = [];
         const legSeen = new Set();
@@ -1449,7 +1439,7 @@ export default function RightPanel({
         toast.push({ type: "error", title: "No se pudieron cargar las rutas", message: err.message });
       }
     },
-    [sessionId, setMapHighlight, setMapFocus, centroideDe, toast]
+    [sessionId, isDiaADia, setMapHighlight, setMapFocus, centroideDe, toast]
   );
 
   // Enfocar un almacen (req 5) o una UT (req 7) en el mapa desde el panel.

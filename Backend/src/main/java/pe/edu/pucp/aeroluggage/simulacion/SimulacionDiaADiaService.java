@@ -229,6 +229,26 @@ public class SimulacionDiaADiaService {
             procesarEventos(ultimoTiempoProcesado, ultimoTiempoProcesado);
             vuelosInstancia.values().removeIf(v -> v.getEstado() == EstadoVuelo.FINALIZADO
                     || v.getEstado() == EstadoVuelo.CANCELADO);
+
+            for (final VueloInstancia v : vuelosInstancia.values()) {
+                if (v == null || v.getFechaSalida() == null || v.getFechaLlegada() == null) continue;
+                final EstadoVuelo estado = v.getEstado();
+                final String id = v.getIdVueloInstancia();
+                final int umbral = sistemaConfiguracion.getUmbralConfirmacionMinutos();
+                if (estado == EstadoVuelo.PROGRAMADO) {
+                    agregarEvento(v.getFechaSalida().minusMinutes(umbral),
+                            TipoEventoSim.VUELO_CONFIRMA, id, null, 0);
+                }
+                if (estado == EstadoVuelo.PROGRAMADO || estado == EstadoVuelo.CONFIRMADO) {
+                    agregarEvento(v.getFechaSalida(), TipoEventoSim.VUELO_INICIA, id, null, 0);
+                }
+                if (estado != EstadoVuelo.FINALIZADO && estado != EstadoVuelo.CANCELADO) {
+                    agregarEvento(v.getFechaLlegada(), TipoEventoSim.VUELO_FINALIZA, id, null, 0);
+                }
+            }
+
+            recalcularOcupacionAeropuertos();
+            recalcularOcupacionVuelos();
             guardarEstadosBD();
             pedidos.clear();
             maletasPorId.clear();
@@ -299,8 +319,10 @@ public class SimulacionDiaADiaService {
             if (!activa) {
                 throw new IllegalStateException("La simulacion no esta activa");
             }
-            final Aeropuerto origen = aeropuertos.get(request.getIdAeropuertoOrigen());
-            final Aeropuerto destino = aeropuertos.get(request.getIdAeropuertoDestino());
+            final String icaoOrigen = request.getIdAeropuertoOrigen();
+            final String icaoDestino = request.getIdAeropuertoDestino();
+            final Aeropuerto origen = aeropuertos.get(icaoOrigen);
+            final Aeropuerto destino = aeropuertos.get(icaoDestino);
             if (origen == null || destino == null) {
                 throw new IllegalArgumentException("Aeropuerto de origen o destino no encontrado");
             }
@@ -308,8 +330,13 @@ public class SimulacionDiaADiaService {
             final LocalDateTime fechaRegistro = request.getFechaRegistro() != null
                     ? LocalDateTime.parse(request.getFechaRegistro())
                     : ahora;
+            final String fechaStr = fechaRegistro.toLocalDate().format(
+                    DateTimeFormatter.ofPattern("yyyyMMdd"));
+            final int ultimoSeq = pedidoRepositorio.obtenerUltimoSecuencial(icaoOrigen, fechaStr);
+            final String idPedido = String.format("PED-%s-%s-%05d",
+                    icaoOrigen, fechaStr, ultimoSeq + 1);
             final Pedido pedido = new Pedido(
-                    request.getIdPedido(),
+                    idPedido,
                     origen,
                     destino,
                     fechaRegistro,
@@ -320,7 +347,10 @@ public class SimulacionDiaADiaService {
 
             final List<Maleta> nuevasMaletas = new ArrayList<>();
             for (int i = 0; i < request.getCantidadMaletas(); i++) {
-                final String idMaleta = pedido.getIdPedido().replaceFirst("^PED-", "MAL-") + "-B" + (i + 1);
+                final String idMaleta = String.format("MAL-%s-%s-%s-B%03d",
+                        icaoOrigen, fechaStr,
+                        idPedido.substring(idPedido.lastIndexOf('-') + 1),
+                        i + 1);
                 final Maleta maleta = new Maleta(
                         idMaleta,
                         pedido,
@@ -332,8 +362,7 @@ public class SimulacionDiaADiaService {
             }
 
             log.info("[AeroLuggage/DiaADia] - PEDIDO: id={}, origen={}, destino={}, maletas={}",
-                    request.getIdPedido(), request.getIdAeropuertoOrigen(),
-                    request.getIdAeropuertoDestino(), request.getCantidadMaletas());
+                    idPedido, icaoOrigen, icaoDestino, request.getCantidadMaletas());
 
             planificarPendientes();
 
@@ -345,9 +374,9 @@ public class SimulacionDiaADiaService {
                     maletasPorId.remove(m.getIdMaleta());
                     rutasPorMaleta.remove(m.getIdMaleta());
                 }
-                pedidos.remove(pedido.getIdPedido());
+                pedidos.remove(idPedido);
                 throw new IllegalStateException(
-                        "No se encontró ruta disponible para el pedido " + request.getIdPedido());
+                        "No se encontró ruta disponible para el pedido " + idPedido);
             }
 
             pedidoRepositorio.insertar(pedido);
@@ -364,7 +393,7 @@ public class SimulacionDiaADiaService {
                     SimulacionEstadoDTO.builder()
                             .withSessionId(sessionId)
                             .withEstado(ESTADO_PEDIDO_PROCESADO)
-                            .withMensaje("Pedido " + request.getIdPedido() + " procesado")
+                            .withMensaje("Pedido " + idPedido + " procesado")
                             .build());
         }
     }
@@ -513,22 +542,42 @@ public class SimulacionDiaADiaService {
     }
 
     private void generarVuelosParaFecha(final LocalDate fecha) {
+        final String fechaStr = fecha.format(DateTimeFormatter.ofPattern("yyyyMMdd"));
+        final LocalDateTime inicioVentanaUtc = fecha.atStartOfDay();
+        final LocalDateTime finVentanaUtc = inicioVentanaUtc.plusDays(1);
+        int seq = vueloInstanciaRepositorio.obtenerUltimoSecuencial(fechaStr) + 1;
         for (final VueloProgramado vp : vuelosProgramados.values()) {
             if (vp == null || vp.getHoraSalida() == null || vp.getHoraLlegada() == null) continue;
             final int gmtOrigen = vp.getAeropuertoOrigen() != null
                     ? vp.getAeropuertoOrigen().getHusoGMT() : 0;
             final int gmtDestino = vp.getAeropuertoDestino() != null
                     ? vp.getAeropuertoDestino().getHusoGMT() : 0;
-            LocalDateTime salidaUtc = LocalDateTime.of(fecha, vp.getHoraSalida()).minusHours(gmtOrigen);
-            LocalDate fechaLlegadaLocal = fecha;
-            if (vp.getHoraLlegada().isBefore(vp.getHoraSalida())) {
-                fechaLlegadaLocal = fecha.plusDays(1);
+
+            LocalDate fechaLocalOrigen = fecha;
+            LocalDateTime salidaUtc = LocalDateTime.of(fechaLocalOrigen, vp.getHoraSalida())
+                    .minusHours(gmtOrigen);
+            if (!salidaUtc.isBefore(finVentanaUtc)) {
+                fechaLocalOrigen = fecha.minusDays(1);
+            } else if (salidaUtc.isBefore(inicioVentanaUtc)) {
+                fechaLocalOrigen = fecha.plusDays(1);
             }
-            LocalDateTime llegadaUtc = LocalDateTime.of(fechaLlegadaLocal, vp.getHoraLlegada()).minusHours(gmtDestino);
+            salidaUtc = LocalDateTime.of(fechaLocalOrigen, vp.getHoraSalida()).minusHours(gmtOrigen);
+
+            LocalDate fechaLlegadaLocal = fechaLocalOrigen;
+            if (vp.getHoraLlegada().isBefore(vp.getHoraSalida())) {
+                fechaLlegadaLocal = fechaLlegadaLocal.plusDays(1);
+            }
+            LocalDateTime llegadaUtc = LocalDateTime.of(fechaLlegadaLocal, vp.getHoraLlegada())
+                    .minusHours(gmtDestino);
             if (!llegadaUtc.isAfter(salidaUtc)) {
                 llegadaUtc = llegadaUtc.plusDays(1);
             }
-            final String id = vp.getIdVueloProgramado() + "@" + fecha;
+            final String orig = vp.getAeropuertoOrigen() != null
+                    ? vp.getAeropuertoOrigen().getIdAeropuerto() : "??";
+            final String dest = vp.getAeropuertoDestino() != null
+                    ? vp.getAeropuertoDestino().getIdAeropuerto() : "??";
+            final String id = String.format("VUE-%s-%s-%s-%06d",
+                    orig, dest, fechaStr, seq);
             final VueloInstancia vi = new VueloInstancia(
                     id, vp, fecha, salidaUtc, llegadaUtc,
                     vp.getCapacidadMaxima(), vp.getCapacidadMaxima(),
@@ -539,6 +588,7 @@ public class SimulacionDiaADiaService {
             agregarEvento(tConf, TipoEventoSim.VUELO_CONFIRMA, id, null, 0);
             agregarEvento(salidaUtc, TipoEventoSim.VUELO_INICIA, id, null, 0);
             agregarEvento(llegadaUtc, TipoEventoSim.VUELO_FINALIZA, id, null, 0);
+            seq++;
         }
     }
 
@@ -891,10 +941,11 @@ public class SimulacionDiaADiaService {
         }
         if (m.getFechaRegistro() != null
                 && !m.getFechaRegistro().isAfter(LocalDateTime.now(ZoneOffset.UTC))) {
-            final VueloInstancia primerVuelo = !ids.isEmpty() ? vueloIndex.get(ids.getFirst()) : null;
-            if (primerVuelo != null) {
-                primerVuelo.setCapacidadDisponible(
-                        Math.max(0, primerVuelo.getCapacidadDisponible() - 1));
+            for (final String idVuelo : ids) {
+                final VueloInstancia vuelo = vueloIndex.get(idVuelo);
+                if (vuelo == null) continue;
+                vuelo.setCapacidadDisponible(
+                        Math.max(0, vuelo.getCapacidadDisponible() - 1));
             }
         }
         for (final String vid : ids) {
@@ -904,6 +955,145 @@ public class SimulacionDiaADiaService {
                         vi.getVueloProgramado() != null
                                 ? vi.getVueloProgramado().getIdVueloProgramado()
                                 : null);
+            }
+        }
+    }
+
+    public void procesarPedidosBulk(final String icaoOrigen, final List<String> lineas) {
+        touchSession();
+        synchronized (lock) {
+            if (!activa) {
+                throw new IllegalStateException("La simulacion no esta activa");
+            }
+            final Aeropuerto origen = aeropuertos.get(icaoOrigen);
+            if (origen == null) {
+                throw new IllegalArgumentException("Aeropuerto de origen no encontrado: " + icaoOrigen);
+            }
+            final String fechaStr = LocalDateTime.now(ZoneOffset.UTC).toLocalDate()
+                    .format(DateTimeFormatter.ofPattern("yyyyMMdd"));
+            final int ultimoId = pedidoRepositorio.obtenerUltimoSecuencial(icaoOrigen, fechaStr);
+            int siguienteId = ultimoId + 1;
+            final List<PedidoRequest> pedidos = new ArrayList<>();
+            final List<String> errores = new ArrayList<>();
+            for (int i = 0; i < lineas.size(); i++) {
+                final String linea = lineas.get(i).trim();
+                if (linea.isEmpty()) continue;
+                final String[] partes = linea.split("-");
+                if (partes.length < 3) {
+                    errores.add("Linea " + (i + 1) + ": formato invalido, se esperaba DEST-CANT-CLIENT");
+                    continue;
+                }
+                final String idDestino = partes[0].trim();
+                final String cantidadStr = partes[1].trim();
+                final String idCliente = partes[2].trim();
+                if (idDestino.isEmpty() || cantidadStr.isEmpty() || idCliente.isEmpty()) {
+                    errores.add("Linea " + (i + 1) + ": campos vacios");
+                    continue;
+                }
+                final int cantidad;
+                try {
+                    cantidad = Integer.parseInt(cantidadStr);
+                } catch (final NumberFormatException e) {
+                    errores.add("Linea " + (i + 1) + ": cantidad invalida - " + cantidadStr);
+                    continue;
+                }
+                if (cantidad < 1) {
+                    errores.add("Linea " + (i + 1) + ": cantidad debe ser >= 1");
+                    continue;
+                }
+                final Aeropuerto destino = aeropuertos.get(idDestino);
+                if (destino == null) {
+                    errores.add("Linea " + (i + 1) + ": aeropuerto destino no encontrado - " + idDestino);
+                    continue;
+                }
+                final String idPedido = String.format("PED-%s-%s-%05d",
+                        icaoOrigen, fechaStr, siguienteId);
+                final PedidoRequest req = new PedidoRequest();
+                req.setIdPedido(idPedido);
+                req.setIdAeropuertoOrigen(icaoOrigen);
+                req.setIdAeropuertoDestino(idDestino);
+                req.setCantidadMaletas(cantidad);
+                pedidos.add(req);
+                siguienteId++;
+            }
+            if (!errores.isEmpty()) {
+                throw new IllegalArgumentException(
+                        "Errores de validacion:\n" + String.join("\n", errores));
+            }
+            if (pedidos.isEmpty()) {
+                throw new IllegalArgumentException("No se encontraron pedidos validos en el archivo");
+            }
+            for (final PedidoRequest req : pedidos) {
+                procesarPedidoBulk(req);
+            }
+            broker.convertAndSend(
+                    String.format(TOPIC_ESTADO, sessionId),
+                    SimulacionEstadoDTO.builder()
+                            .withSessionId(sessionId)
+                            .withEstado(ESTADO_PEDIDO_PROCESADO)
+                            .withMensaje("Pedidos bulk procesados: " + pedidos.size())
+                            .build());
+        }
+    }
+
+    private void procesarPedidoBulk(final PedidoRequest request) {
+        final String icaoOrigen = request.getIdAeropuertoOrigen();
+        final String icaoDestino = request.getIdAeropuertoDestino();
+        final Aeropuerto origen = aeropuertos.get(icaoOrigen);
+        final Aeropuerto destino = aeropuertos.get(icaoDestino);
+        if (origen == null || destino == null) {
+            throw new IllegalArgumentException("Aeropuerto de origen o destino no encontrado");
+        }
+        final LocalDateTime ahora = LocalDateTime.now(ZoneOffset.UTC);
+        final String fechaStr = ahora.toLocalDate().format(
+                DateTimeFormatter.ofPattern("yyyyMMdd"));
+        final Pedido pedido = new Pedido(
+                request.getIdPedido(),
+                origen,
+                destino,
+                ahora,
+                request.getCantidadMaletas(),
+                EstadoPedido.REGISTRADO.name());
+        pedido.calcularFechaHoraPlazo();
+        pedidos.put(pedido.getIdPedido(), pedido);
+
+        final List<Maleta> nuevasMaletas = new ArrayList<>();
+        for (int i = 0; i < request.getCantidadMaletas(); i++) {
+            final String idMaleta = String.format("MAL-%s-%s-%s-B%03d",
+                    icaoOrigen, fechaStr,
+                    pedido.getIdPedido().substring(pedido.getIdPedido().lastIndexOf('-') + 1),
+                    i + 1);
+            final Maleta maleta = new Maleta(
+                    idMaleta,
+                    pedido,
+                    ahora,
+                    null,
+                    EstadoMaleta.EN_ALMACEN);
+            maletasPorId.put(idMaleta, maleta);
+            nuevasMaletas.add(maleta);
+        }
+
+        planificarPendientes();
+
+        final boolean todasAsignadas = nuevasMaletas.stream()
+                .allMatch(m -> rutasPorMaleta.containsKey(m.getIdMaleta()));
+
+        if (!todasAsignadas) {
+            for (final Maleta m : nuevasMaletas) {
+                maletasPorId.remove(m.getIdMaleta());
+                rutasPorMaleta.remove(m.getIdMaleta());
+            }
+            pedidos.remove(pedido.getIdPedido());
+            throw new IllegalStateException(
+                    "No se encontro ruta disponible para el pedido " + request.getIdPedido());
+        }
+
+        pedidoRepositorio.insertar(pedido);
+        for (final Maleta bag : nuevasMaletas) {
+            maletaRepositorio.insertar(bag);
+            final Ruta route = rutasPorMaleta.get(bag.getIdMaleta());
+            if (route != null) {
+                rutaRepositorio.insertar(route);
             }
         }
     }
@@ -930,6 +1120,40 @@ public class SimulacionDiaADiaService {
             maletasPorId.put(m.getIdMaleta(), m);
         }
         log.info("[AeroLuggage/DiaADia] - MALETAS DESDE BD: {}", maletasBD.size());
+    }
+
+    private void recalcularOcupacionAeropuertos() {
+        for (final Aeropuerto a : aeropuertos.values()) {
+            if (a != null) a.setMaletasActuales(0);
+        }
+        for (final Maleta m : maletasPorId.values()) {
+            if (m == null) continue;
+            if (m.getEstado() == EstadoMaleta.EN_ALMACEN && m.getAeropuertoActual() != null) {
+                final Aeropuerto a = aeropuertos.get(m.getAeropuertoActual());
+                if (a != null) {
+                    a.setMaletasActuales(a.getMaletasActuales() + 1);
+                }
+            }
+        }
+    }
+
+    private void recalcularOcupacionVuelos() {
+        for (final VueloInstancia v : vuelosInstancia.values()) {
+            if (v != null) v.setCapacidadDisponible(v.getCapacidadMaxima());
+        }
+        for (final Map.Entry<String, Ruta> entry : rutasPorMaleta.entrySet()) {
+            final Ruta ruta = entry.getValue();
+            if (ruta == null) continue;
+            final List<String> subrutas = ruta.getSubrutas();
+            if (subrutas == null || subrutas.isEmpty()) continue;
+            for (final String vid : subrutas) {
+                final VueloInstancia vuelo = vuelosInstancia.get(vid);
+                if (vuelo != null) {
+                    vuelo.setCapacidadDisponible(
+                            Math.max(0, vuelo.getCapacidadDisponible() - 1));
+                }
+            }
+        }
     }
 
     private void recrearEventosRuta(final Ruta ruta) {

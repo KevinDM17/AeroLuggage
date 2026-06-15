@@ -88,6 +88,15 @@ public class PedidoRepositorio {
         return jdbcTemplate.update("DELETE FROM pedido WHERE id_pedido=?", id);
     }
 
+    public int obtenerUltimoSecuencial(final String icaoOrigen, final String fecha) {
+        final String pattern = "PED-" + icaoOrigen + "-" + fecha + "-%";
+        final int prefixLen = pattern.length() - 1;
+        final String sql = "SELECT COALESCE(MAX(CAST(SUBSTR(id_pedido, ?) AS INTEGER)), 0) "
+                + "FROM pedido WHERE id_pedido LIKE ?";
+        final Integer result = jdbcTemplate.queryForObject(sql, Integer.class, prefixLen + 1, pattern);
+        return result != null ? result : 0;
+    }
+
     private static Aeropuerto mapAeropuerto(ResultSet rs, String prefijo, String prefijoCiudad)
             throws SQLException {
         Ciudad ciudad = new Ciudad(

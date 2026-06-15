@@ -9,6 +9,7 @@ import {
   mockIniciarDiaADia,
   mockDetenerDiaADia,
   mockProcesarPedidoDiaADia,
+  mockProcesarPedidosBulkDiaADia,
 } from "./mock";
 
 /* =========================================================================
@@ -193,6 +194,11 @@ export const procesarPedidoDiaADia = (pedido) =>
     ? mockProcesarPedidoDiaADia(pedido)
     : withReconnect((sid) => apiPost(`/operations/${sid}/pedido`, pedido));
 
+export const procesarPedidosBulkDiaADia = (icaoOrigen, content) =>
+  USE_MOCK
+    ? mockProcesarPedidosBulkDiaADia(icaoOrigen, content)
+    : withReconnect((sid) => apiPost(`/operations/${sid}/pedidos-bulk`, { icaoOrigen, content }));
+
 export const obtenerEstadoDiaADia = () =>
   withReconnect((sid) => apiGet(`/operations/${sid}/estado`));
 
@@ -205,6 +211,9 @@ export const obtenerAeropuertosDiaADia = () =>
 export const obtenerPedidosDiaADia = () =>
   withReconnect((sid) => apiGet(`/operations/${sid}/pedidos`));
 
+export const obtenerEnviosDiaADia = () =>
+  withReconnect((sid) => apiGet(`/operations/${sid}/envios`));
+
 export const obtenerMaletasDiaADia = () =>
   withReconnect((sid) => apiGet(`/operations/${sid}/maletas`));
 
@@ -213,6 +222,9 @@ export const obtenerManifiestoVueloDiaADia = (idVuelo) =>
 
 export const obtenerRutaMaletaDiaADia = (idMaleta) =>
   withReconnect((sid) => apiGet(`/operations/${sid}/maleta/${encodeURIComponent(idMaleta)}/ruta`));
+
+export const obtenerRutasEnvioDiaADia = (idPedido) =>
+  withReconnect((sid) => apiGet(`/operations/${sid}/envio/${encodeURIComponent(idPedido)}/rutas`));
 
 export const obtenerRutasDiaADia = () =>
   withReconnect((sid) => apiGet(`/operations/${sid}/rutas`));

@@ -221,6 +221,12 @@ export async function mockProcesarPedidoDiaADia(pedido) {
   return { estado: "PEDIDO_PROCESADO", mensaje: "Pedido " + pedido.idPedido + " procesado" };
 }
 
+export async function mockProcesarPedidosBulkDiaADia(icaoOrigen, content) {
+  await delay(600);
+  const lines = String(content).split(/\r?\n/).map(l => l.trim()).filter(Boolean);
+  return { accepted: lines.length, total: lines.length };
+}
+
 export function getMockDiaADiaState() {
   return { ..._simDiaADia };
 }
