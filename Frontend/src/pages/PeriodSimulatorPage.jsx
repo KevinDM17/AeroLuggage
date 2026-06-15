@@ -660,25 +660,44 @@ export default function PeriodSimulatorPage() {
       <div className="h-9 w-px bg-slate-700" />
       <div>
         <div className="text-[10px] text-slate-400 font-medium uppercase tracking-wider">
-          Fecha/hora simulada
+          Fecha simulada
         </div>
         <div className="text-lg font-bold text-info tabular-nums">
-          {simulationClock.date} - {simulationClock.time} UTC
+          {simulationClock.date}
+        </div>
+      </div>
+      <div className="h-9 w-px bg-slate-700" />
+      <div>
+        <div className="text-[10px] text-slate-400 font-medium uppercase tracking-wider">
+          Hora simulada
+        </div>
+        <div className="text-lg font-bold text-info tabular-nums">
+          {simulationClock.time} UTC
+        </div>
+      </div>
+      <div className="h-9 w-px bg-slate-700" />
+      <div>
+        <div className="text-[10px] text-slate-400 font-medium uppercase tracking-wider">
+          Día de simulación
+        </div>
+        <div className="text-lg font-bold text-info tabular-nums">
           {displayedDay
-            ? ` - dia ${displayedDay}/${PERIOD_DAYS}`
+            ? `Dia ${displayedDay}/${PERIOD_DAYS}`
             : ""}
         </div>
       </div>
       <div className="h-9 w-px bg-slate-700" />
-      <label className="flex items-center gap-2 cursor-pointer select-none">
-        <input
-          type="checkbox"
-          checked={showRouteLines}
-          onChange={(e) => setShowRouteLines(e.target.checked)}
-          className="h-4 w-4 rounded border-slate-600 bg-surface-1 text-blue-500 focus:ring-blue-500"
-        />
-        <span className="text-sm text-slate-200">Mostrar líneas</span>
-      </label>
+      <button
+        type="button"
+        onClick={() => setShowRouteLines((v) => !v)}
+        className={`rounded-lg px-3 py-1.5 text-sm font-medium transition-colors ${
+          showRouteLines
+            ? "bg-blue-600/20 text-blue-400 border border-blue-500/40 hover:bg-blue-600/30"
+            : "bg-surface-2 text-slate-400 border border-slate-700 hover:text-slate-200"
+        }`}
+      >
+        Mostrar líneas
+      </button>
       <div className="h-9 w-px bg-slate-700" />
       <button
         type="button"
@@ -732,7 +751,7 @@ export default function PeriodSimulatorPage() {
       </button>
     </div>
   ) : (
-    <div className="bg-surface-2/85 m-4 backdrop-blur border border-slate-700 shadow-[0_12px_35px_rgba(0,0,0,0.45)] rounded-xl px-4 py-3 flex items-center justify-center gap-6">
+    <div className="bg-surface-2/85 m-4   backdrop-blur border border-slate-700 shadow-[0_12px_35px_rgba(0,0,0,0.45)] rounded-xl px-4 py-3 flex items-center justify-center gap-6">
       <div className="flex flex-col">
         <span className="text-[10px] text-slate-400 font-medium uppercase tracking-wider">
           Fecha de inicio

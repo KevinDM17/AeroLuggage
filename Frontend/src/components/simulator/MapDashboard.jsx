@@ -82,14 +82,14 @@ export default function MapDashboard({
       <button
         type="button"
         onClick={() => setShowKpis((v) => !v)}
-        className="absolute top-1 left-1/2 -translate-x-1/2 z-[4000] bg-surface-1/60 hover:bg-surface-1/80 backdrop-blur border border-slate-700/50 rounded-full p-1 text-slate-400 hover:text-white transition-colors"
+        className="absolute mt-2 mb-2 top-1 left-1/2 -translate-x-1/2 z-[4000] bg-surface-1/60 hover:bg-surface-1/80 backdrop-blur border border-slate-700/50 rounded-full p-1 text-slate-400 hover:text-white transition-colors"
         title={showKpis ? "Ocultar métricas" : "Mostrar métricas"}
       >
         {showKpis ? <ChevronUp className="w-3.5 h-3.5" /> : <ChevronDown className="w-3.5 h-3.5" />}
       </button>
 
       {showKpis && (
-        <div className="absolute my-4 top-5 left-1/2 -translate-x-1/2 z-[2000] max-w-[calc(100%-1rem)]">
+        <div className="absolute my-6 top-5 left-1/2 -translate-x-1/2 z-[2000] max-w-[calc(100%-1rem)]">
           <div className="bg-surface-1/75 backdrop-blur border border-slate-700/50 rounded-xl px-2 py-2">
             <div className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-5 gap-1.5 sm:gap-2">
               <Kpi
