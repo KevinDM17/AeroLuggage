@@ -205,6 +205,9 @@ export const obtenerAeropuertosDiaADia = () =>
 export const obtenerPedidosDiaADia = () =>
   withReconnect((sid) => apiGet(`/operations/${sid}/pedidos`));
 
+export const obtenerEnviosDiaADia = () =>
+  withReconnect((sid) => apiGet(`/operations/${sid}/envios`));
+
 export const obtenerMaletasDiaADia = () =>
   withReconnect((sid) => apiGet(`/operations/${sid}/maletas`));
 
@@ -213,6 +216,9 @@ export const obtenerManifiestoVueloDiaADia = (idVuelo) =>
 
 export const obtenerRutaMaletaDiaADia = (idMaleta) =>
   withReconnect((sid) => apiGet(`/operations/${sid}/maleta/${encodeURIComponent(idMaleta)}/ruta`));
+
+export const obtenerRutasEnvioDiaADia = (idPedido) =>
+  withReconnect((sid) => apiGet(`/operations/${sid}/envio/${encodeURIComponent(idPedido)}/rutas`));
 
 export const obtenerRutasDiaADia = () =>
   withReconnect((sid) => apiGet(`/operations/${sid}/rutas`));

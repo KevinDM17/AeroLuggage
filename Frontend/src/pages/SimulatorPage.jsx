@@ -64,9 +64,10 @@ const PedidoModal = ({ open, airports, onClose, onSubmit, loading }) => {
   const [origen, setOrigen] = useState("");
   const [destino, setDestino] = useState("");
   const [maletas, setMaletas] = useState("1");
+  const [error, setError] = useState("");
 
   useEffect(() => {
-    if (!open) { setOrigen(""); setDestino(""); setMaletas("1"); }
+    if (!open) { setOrigen(""); setDestino(""); setMaletas("1"); setError(""); }
   }, [open]);
 
   if (!open) return null;
@@ -79,8 +80,12 @@ const PedidoModal = ({ open, airports, onClose, onSubmit, loading }) => {
 
   const handleSubmit = (e) => {
     e.preventDefault();
+    setError("");
     if (!origen || !destino || !maletas) return;
-    if (origen === destino) return;
+    if (origen === destino) {
+      setError("El aeropuerto de origen y destino no pueden ser el mismo.");
+      return;
+    }
     onSubmit({
       idPedido: "PED-" + Date.now(),
       idAeropuertoOrigen: origen,
@@ -119,6 +124,11 @@ const PedidoModal = ({ open, airports, onClose, onSubmit, loading }) => {
             <label className="block text-xs font-semibold text-slate-400 uppercase tracking-wider mb-1.5">Cantidad de Maletas</label>
             <input type="number" min="1" max="200" value={maletas} onChange={(e) => setMaletas(e.target.value)} required className="w-full rounded-lg border border-slate-800 bg-surface-2 py-2 px-3 text-sm text-slate-200 focus:border-slate-600 focus:outline-none" />
           </div>
+          {error && (
+            <div className="rounded-lg border border-danger/40 bg-danger/10 px-3 py-2 text-sm text-danger">
+              {error}
+            </div>
+          )}
           <div className="flex justify-end gap-3 pt-2">
             <button type="button" onClick={onClose} className="px-4 py-2 text-sm font-semibold text-slate-300 hover:text-white rounded-lg border border-slate-700 hover:bg-surface-2 transition-colors">Cancelar</button>
             <button type="submit" disabled={loading} className="px-4 py-2 text-sm font-semibold text-white bg-blue-600 hover:bg-blue-500 rounded-lg transition-colors disabled:opacity-50 disabled:cursor-not-allowed flex items-center gap-2">
@@ -462,16 +472,19 @@ export default function SimulatorPage() {
     setPedidoLoading(true);
     try {
       await procesarPedidoDiaADia(pedido);
-      const [pedidosData, maletasData] = await Promise.all([
+      const [pedidosData, maletasData, rutasData] = await Promise.all([
         obtenerPedidosDiaADia().catch(() => []),
         obtenerMaletasDiaADia().catch(() => []),
+        obtenerRutasDiaADia().catch(() => []),
       ]);
       setSimulationPanelData((prev) => {
         const orders = new Map(prev.orders);
         for (const o of pedidosData ?? []) orders.set(o.id ?? o.idPedido, o);
         const bags = new Map(prev.bags);
         for (const b of maletasData ?? []) bags.set(b.idMaleta, { ...b, ticksAusente: 0 });
-        return { ...prev, orders, bags };
+        const routes = new Map(prev.routes);
+        for (const r of rutasData ?? []) routes.set(r.idRuta, { ...r, ticksAusente: 0 });
+        return { ...prev, orders, bags, routes };
       });
       setPedidoOpen(false);
       toast.push({ type: "success", title: "Pedido enviado", message: `${pedido.idPedido} · ${pedido.cantidadMaletas} maletas` });

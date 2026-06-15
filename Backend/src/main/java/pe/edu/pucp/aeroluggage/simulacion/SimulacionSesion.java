@@ -488,11 +488,11 @@ public class SimulacionSesion {
         }
 
         if (m.getFechaRegistro() != null && !m.getFechaRegistro().isAfter(currentSimTimeUtc.get())) {
-            final VueloInstancia primerVuelo = !ids.isEmpty()
-                    ? vueloIndex.get(ids.getFirst()) : null;
-            if (primerVuelo != null) {
-                primerVuelo.setCapacidadDisponible(
-                        Math.max(0, primerVuelo.getCapacidadDisponible() - 1));
+            for (final String idVuelo : ids) {
+                final VueloInstancia vuelo = vueloIndex.get(idVuelo);
+                if (vuelo == null) continue;
+                vuelo.setCapacidadDisponible(
+                        Math.max(0, vuelo.getCapacidadDisponible() - 1));
             }
             if (m.getPedido() != null && m.getPedido().getAeropuertoOrigen() != null) {
                 final String idAero = m.getPedido().getAeropuertoOrigen().getIdAeropuerto();
@@ -558,9 +558,11 @@ public class SimulacionSesion {
                             if (r != null) {
                                 final List<String> idsRuta = r.getSubrutas();
                                 if (!idsRuta.isEmpty()) {
-                                    final VueloInstancia v1 = vuelosIndex.get(idsRuta.getFirst());
-                                    if (v1 != null) {
-                                        v1.setCapacidadDisponible(Math.max(0, v1.getCapacidadDisponible() - 1));
+                                    for (final String idVueloRuta : idsRuta) {
+                                        final VueloInstancia vuelo = vuelosIndex.get(idVueloRuta);
+                                        if (vuelo != null) {
+                                            vuelo.setCapacidadDisponible(Math.max(0, vuelo.getCapacidadDisponible() - 1));
+                                        }
                                     }
                                 }
                             }
