@@ -85,14 +85,8 @@ export default function SimulatorPage() {
         <div className="text-[10px] text-slate-400 font-medium uppercase tracking-wider">Fecha Lima, Peru (GMT-5)</div>
         <div className="text-lg font-bold text-info tabular-nums">{limaTime.date}</div>
       </div>
-<<<<<<< HEAD
       <div className="border-x-1 px-6">
         <div className="text-[10px] text-slate-400 font-medium uppercase tracking-wider">Hora Lima, Peru (GMT-5)</div>
-=======
-      <div className="h-9 w-px bg-slate-700 shrink-0" />
-      <div>
-        <div className="text-[10px] text-slate-400 font-medium uppercase tracking-wider">Hora Lima, Perú (GMT-5)</div>
->>>>>>> origin/CorreccionesDiaADia
         <div className="text-lg font-bold text-info tabular-nums">{limaTime.time}</div>
       </div>
       <div className="h-9 w-px bg-slate-700 shrink-0" />
