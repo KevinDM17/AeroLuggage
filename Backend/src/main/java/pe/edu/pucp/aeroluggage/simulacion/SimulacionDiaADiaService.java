@@ -229,6 +229,8 @@ public class SimulacionDiaADiaService {
             procesarEventos(ultimoTiempoProcesado, ultimoTiempoProcesado);
             vuelosInstancia.values().removeIf(v -> v.getEstado() == EstadoVuelo.FINALIZADO
                     || v.getEstado() == EstadoVuelo.CANCELADO);
+            recalcularOcupacionAeropuertos();
+            recalcularOcupacionVuelos();
             guardarEstadosBD();
             pedidos.clear();
             maletasPorId.clear();
@@ -327,8 +329,10 @@ public class SimulacionDiaADiaService {
 
             final List<Maleta> nuevasMaletas = new ArrayList<>();
             for (int i = 0; i < request.getCantidadMaletas(); i++) {
-                final String idMaleta = String.format("MAL-%s-%s-B%03d",
-                        icaoOrigen, fechaStr, i + 1);
+                final String idMaleta = String.format("MAL-%s-%s-%s-B%03d",
+                        icaoOrigen, fechaStr,
+                        idPedido.substring(idPedido.lastIndexOf('-') + 1),
+                        i + 1);
                 final Maleta maleta = new Maleta(
                         idMaleta,
                         pedido,
@@ -1024,8 +1028,10 @@ public class SimulacionDiaADiaService {
 
         final List<Maleta> nuevasMaletas = new ArrayList<>();
         for (int i = 0; i < request.getCantidadMaletas(); i++) {
-            final String idMaleta = String.format("MAL-%s-%s-B%03d",
-                    icaoOrigen, fechaStr, i + 1);
+            final String idMaleta = String.format("MAL-%s-%s-%s-B%03d",
+                    icaoOrigen, fechaStr,
+                    pedido.getIdPedido().substring(pedido.getIdPedido().lastIndexOf('-') + 1),
+                    i + 1);
             final Maleta maleta = new Maleta(
                     idMaleta,
                     pedido,
@@ -1083,6 +1089,40 @@ public class SimulacionDiaADiaService {
             maletasPorId.put(m.getIdMaleta(), m);
         }
         log.info("[AeroLuggage/DiaADia] - MALETAS DESDE BD: {}", maletasBD.size());
+    }
+
+    private void recalcularOcupacionAeropuertos() {
+        for (final Aeropuerto a : aeropuertos.values()) {
+            if (a != null) a.setMaletasActuales(0);
+        }
+        for (final Maleta m : maletasPorId.values()) {
+            if (m == null) continue;
+            if (m.getEstado() == EstadoMaleta.EN_ALMACEN && m.getAeropuertoActual() != null) {
+                final Aeropuerto a = aeropuertos.get(m.getAeropuertoActual());
+                if (a != null) {
+                    a.setMaletasActuales(a.getMaletasActuales() + 1);
+                }
+            }
+        }
+    }
+
+    private void recalcularOcupacionVuelos() {
+        for (final VueloInstancia v : vuelosInstancia.values()) {
+            if (v != null) v.setCapacidadDisponible(v.getCapacidadMaxima());
+        }
+        for (final Map.Entry<String, Ruta> entry : rutasPorMaleta.entrySet()) {
+            final Ruta ruta = entry.getValue();
+            if (ruta == null) continue;
+            final List<String> subrutas = ruta.getSubrutas();
+            if (subrutas == null || subrutas.isEmpty()) continue;
+            for (final String vid : subrutas) {
+                final VueloInstancia vuelo = vuelosInstancia.get(vid);
+                if (vuelo != null) {
+                    vuelo.setCapacidadDisponible(
+                            Math.max(0, vuelo.getCapacidadDisponible() - 1));
+                }
+            }
+        }
     }
 
     private void recrearEventosRuta(final Ruta ruta) {

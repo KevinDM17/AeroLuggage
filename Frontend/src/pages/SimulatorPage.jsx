@@ -4,7 +4,7 @@ import { Plus } from "lucide-react";
 import MapDashboard from "../components/simulator/MapDashboard";
 import PedidoModal from "../components/simulator/PedidoModal";
 import { useToast } from "../components/ui/Toast";
-import { procesarPedidoDiaADia, obtenerPedidosDiaADia, obtenerMaletasDiaADia } from "../api/simulator";
+import { procesarPedidoDiaADia, obtenerPedidosDiaADia, obtenerMaletasDiaADia, obtenerRutasDiaADia } from "../api/simulator";
 
 function formatLimaTime(utcIsoString) {
   if (!utcIsoString) return { date: "--", time: "--:--:--" };
