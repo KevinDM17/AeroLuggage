@@ -906,10 +906,11 @@ public class SimulacionDiaADiaService {
         }
         if (m.getFechaRegistro() != null
                 && !m.getFechaRegistro().isAfter(LocalDateTime.now(ZoneOffset.UTC))) {
-            final VueloInstancia primerVuelo = !ids.isEmpty() ? vueloIndex.get(ids.getFirst()) : null;
-            if (primerVuelo != null) {
-                primerVuelo.setCapacidadDisponible(
-                        Math.max(0, primerVuelo.getCapacidadDisponible() - 1));
+            for (final String idVuelo : ids) {
+                final VueloInstancia vuelo = vueloIndex.get(idVuelo);
+                if (vuelo == null) continue;
+                vuelo.setCapacidadDisponible(
+                        Math.max(0, vuelo.getCapacidadDisponible() - 1));
             }
         }
         for (final String vid : ids) {

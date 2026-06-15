@@ -33,6 +33,7 @@ import pe.edu.pucp.aeroluggage.dominio.entidades.Pedido;
 import pe.edu.pucp.aeroluggage.dominio.entidades.Ruta;
 import pe.edu.pucp.aeroluggage.dominio.entidades.VueloInstancia;
 import pe.edu.pucp.aeroluggage.dominio.enums.EstadoMaleta;
+import pe.edu.pucp.aeroluggage.dominio.enums.EstadoVuelo;
 import pe.edu.pucp.aeroluggage.servicios.query.SimulacionInicioQueryService;
 import pe.edu.pucp.aeroluggage.simulacion.SimulacionSesion;
 import pe.edu.pucp.aeroluggage.simulacion.SimulacionSesionManager;
@@ -285,7 +286,7 @@ public class SimulacionPeriodoRestController {
             final SimulacionSesion sesion, final String idVuelo) {
         final Map<String, VueloInstancia> vueloIndex = sesion.getVueloIndex();
         final VueloInstancia objetivo = vueloIndex.get(idVuelo);
-        final String codigoObjetivo = objetivo != null ? objetivo.getCodigo() : null;
+        final LocalDateTime ahora = sesion.getUltimoTiempoSim();
 
         // Indexamos maletas (calientes + frias) para resolver el pedido de cada una.
         final Map<String, Maleta> maletasPorId = new HashMap<>();
@@ -301,10 +302,10 @@ public class SimulacionPeriodoRestController {
 
         for (final Ruta ruta : sesion.getRutas()) {
             if (ruta == null || ruta.getIdMaleta() == null) continue;
-            if (!rutaIncluyeVuelo(ruta, idVuelo, codigoObjetivo, vueloIndex)) continue;
 
             final String idMaleta = ruta.getIdMaleta();
             final Maleta maleta = maletasPorId.get(idMaleta);
+            if (!maletaCorrespondeAlVuelo(ruta, maleta, objetivo, vueloIndex, ahora)) continue;
             final Pedido pedido = maleta != null ? maleta.getPedido() : null;
             final String idPedido = pedido != null ? pedido.getIdPedido() : null;
 
@@ -336,32 +337,59 @@ public class SimulacionPeriodoRestController {
 
         return VueloManifiestoResponse.builder()
                 .withIdVueloInstancia(objetivo != null ? objetivo.getIdVueloInstancia() : idVuelo)
-                .withCodigo(codigoObjetivo)
+                .withCodigo(objetivo != null ? objetivo.getCodigo() : idVuelo)
                 .withMaletas(maletasDTO)
                 .withPedidos(pedidosDTO)
                 .build();
     }
 
-    private boolean rutaIncluyeVuelo(
-            final Ruta ruta, final String idVuelo, final String codigoObjetivo,
-            final Map<String, VueloInstancia> vueloIndex) {
-        // subrutaIds = lista de idVueloInstancia; siempre presente (caliente o fria).
-        for (final String subId : ruta.getSubrutaIds()) {
-            if (subId == null) continue;
-            if (subId.equals(idVuelo)) return true;
-            if (codigoObjetivo != null) {
-                final VueloInstancia sv = vueloIndex.get(subId);
-                if (sv != null && codigoObjetivo.equals(sv.getCodigo())) return true;
+    private boolean maletaCorrespondeAlVuelo(
+            final Ruta ruta,
+            final Maleta maleta,
+            final VueloInstancia objetivo,
+            final Map<String, VueloInstancia> vueloIndex,
+            final LocalDateTime ahora) {
+        if (ruta == null || maleta == null || objetivo == null) return false;
+        if (maleta.getEstado() == EstadoMaleta.ENTREGADA) return false;
+
+        final List<String> subrutas = ruta.getSubrutaIds();
+        if (subrutas == null || subrutas.isEmpty()) return false;
+
+        if (maleta.getEstado() == EstadoMaleta.EN_TRANSITO) {
+            for (final String subId : subrutas) {
+                final VueloInstancia vuelo = vueloIndex.get(subId);
+                if (vuelo == null) continue;
+                final boolean enCursoPorEstado = vuelo.getEstado() == EstadoVuelo.EN_PROGRESO;
+                final boolean enCursoPorTiempo = ahora != null
+                        && vuelo.getFechaSalida() != null
+                        && vuelo.getFechaLlegada() != null
+                        && !ahora.isBefore(vuelo.getFechaSalida())
+                        && ahora.isBefore(vuelo.getFechaLlegada());
+                if (enCursoPorEstado || enCursoPorTiempo) {
+                    return mismoVuelo(vuelo, objetivo);
+                }
             }
+            return false;
         }
-        // Fallback: subrutas resueltas, por si el id recibido fuera un codigo.
-        for (final String subId : ruta.getSubrutas()) {
-            if (subId == null) continue;
-            final VueloInstancia sv = vueloIndex.get(subId);
-            if (sv == null) continue;
-            if (idVuelo.equals(sv.getIdVueloInstancia()) || idVuelo.equals(sv.getCodigo())) return true;
+
+        final String ubicacionActual = maleta.getAeropuertoActual();
+        if (ubicacionActual == null) return false;
+
+        for (final String subId : subrutas) {
+            final VueloInstancia vuelo = vueloIndex.get(subId);
+            if (vuelo == null || vuelo.getAeropuertoOrigen() == null) continue;
+            if (!ubicacionActual.equals(vuelo.getAeropuertoOrigen().getIdAeropuerto())) continue;
+            return mismoVuelo(vuelo, objetivo);
         }
         return false;
+    }
+
+    private boolean mismoVuelo(final VueloInstancia vuelo, final VueloInstancia objetivo) {
+        if (vuelo == null || objetivo == null) return false;
+        if (vuelo.getIdVueloInstancia() != null && vuelo.getIdVueloInstancia().equals(objetivo.getIdVueloInstancia())) {
+            return true;
+        }
+        return vuelo.getCodigo() != null && vuelo.getCodigo().equals(objetivo.getCodigo());
     }
 
     private static final int MAX_MALETAS_CONTENIDO = 500;
