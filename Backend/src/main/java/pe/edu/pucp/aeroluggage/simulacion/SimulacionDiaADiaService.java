@@ -229,6 +229,24 @@ public class SimulacionDiaADiaService {
             procesarEventos(ultimoTiempoProcesado, ultimoTiempoProcesado);
             vuelosInstancia.values().removeIf(v -> v.getEstado() == EstadoVuelo.FINALIZADO
                     || v.getEstado() == EstadoVuelo.CANCELADO);
+
+            for (final VueloInstancia v : vuelosInstancia.values()) {
+                if (v == null || v.getFechaSalida() == null || v.getFechaLlegada() == null) continue;
+                final EstadoVuelo estado = v.getEstado();
+                final String id = v.getIdVueloInstancia();
+                final int umbral = sistemaConfiguracion.getUmbralConfirmacionMinutos();
+                if (estado == EstadoVuelo.PROGRAMADO) {
+                    agregarEvento(v.getFechaSalida().minusMinutes(umbral),
+                            TipoEventoSim.VUELO_CONFIRMA, id, null, 0);
+                }
+                if (estado == EstadoVuelo.PROGRAMADO || estado == EstadoVuelo.CONFIRMADO) {
+                    agregarEvento(v.getFechaSalida(), TipoEventoSim.VUELO_INICIA, id, null, 0);
+                }
+                if (estado != EstadoVuelo.FINALIZADO && estado != EstadoVuelo.CANCELADO) {
+                    agregarEvento(v.getFechaLlegada(), TipoEventoSim.VUELO_FINALIZA, id, null, 0);
+                }
+            }
+
             recalcularOcupacionAeropuertos();
             recalcularOcupacionVuelos();
             guardarEstadosBD();
@@ -525,6 +543,8 @@ public class SimulacionDiaADiaService {
 
     private void generarVuelosParaFecha(final LocalDate fecha) {
         final String fechaStr = fecha.format(DateTimeFormatter.ofPattern("yyyyMMdd"));
+        final LocalDateTime inicioVentanaUtc = fecha.atStartOfDay();
+        final LocalDateTime finVentanaUtc = inicioVentanaUtc.plusDays(1);
         int seq = vueloInstanciaRepositorio.obtenerUltimoSecuencial(fechaStr) + 1;
         for (final VueloProgramado vp : vuelosProgramados.values()) {
             if (vp == null || vp.getHoraSalida() == null || vp.getHoraLlegada() == null) continue;
@@ -532,12 +552,23 @@ public class SimulacionDiaADiaService {
                     ? vp.getAeropuertoOrigen().getHusoGMT() : 0;
             final int gmtDestino = vp.getAeropuertoDestino() != null
                     ? vp.getAeropuertoDestino().getHusoGMT() : 0;
-            LocalDateTime salidaUtc = LocalDateTime.of(fecha, vp.getHoraSalida()).minusHours(gmtOrigen);
-            LocalDate fechaLlegadaLocal = fecha;
-            if (vp.getHoraLlegada().isBefore(vp.getHoraSalida())) {
-                fechaLlegadaLocal = fecha.plusDays(1);
+
+            LocalDate fechaLocalOrigen = fecha;
+            LocalDateTime salidaUtc = LocalDateTime.of(fechaLocalOrigen, vp.getHoraSalida())
+                    .minusHours(gmtOrigen);
+            if (!salidaUtc.isBefore(finVentanaUtc)) {
+                fechaLocalOrigen = fecha.minusDays(1);
+            } else if (salidaUtc.isBefore(inicioVentanaUtc)) {
+                fechaLocalOrigen = fecha.plusDays(1);
             }
-            LocalDateTime llegadaUtc = LocalDateTime.of(fechaLlegadaLocal, vp.getHoraLlegada()).minusHours(gmtDestino);
+            salidaUtc = LocalDateTime.of(fechaLocalOrigen, vp.getHoraSalida()).minusHours(gmtOrigen);
+
+            LocalDate fechaLlegadaLocal = fechaLocalOrigen;
+            if (vp.getHoraLlegada().isBefore(vp.getHoraSalida())) {
+                fechaLlegadaLocal = fechaLlegadaLocal.plusDays(1);
+            }
+            LocalDateTime llegadaUtc = LocalDateTime.of(fechaLlegadaLocal, vp.getHoraLlegada())
+                    .minusHours(gmtDestino);
             if (!llegadaUtc.isAfter(salidaUtc)) {
                 llegadaUtc = llegadaUtc.plusDays(1);
             }
