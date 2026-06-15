@@ -648,7 +648,7 @@ export default function PeriodSimulatorPage() {
   const displayedDay = getDisplayedDay(progress, hasActiveRun);
 
   const mapOverlay = hasActiveRun ? (
-    <div className="bg-surface-2/85 backdrop-blur border border-slate-700 shadow-[0_12px_35px_rgba(0,0,0,0.45)] rounded-xl px-4 py-3 flex items-center justify-center gap-6">
+    <div className="bg-surface-2/85 m-4 backdrop-blur border border-slate-700 shadow-[0_12px_35px_rgba(0,0,0,0.45)] rounded-xl px-4 py-3 flex items-center justify-center gap-6">
       <div>
         <div className="text-[10px] text-slate-400 font-medium uppercase tracking-wider">
           Cronometro
@@ -679,9 +679,18 @@ export default function PeriodSimulatorPage() {
         />
         <span className="text-sm text-slate-200">Mostrar líneas</span>
       </label>
+      <div className="h-9 w-px bg-slate-700" />
+      <button
+        type="button"
+        onClick={handleStop}
+        className="bg-danger/10 hover:bg-danger/20 text-danger border border-danger/40 rounded-lg px-3 py-1.5 transition-colors"
+        title="Detener"
+      >
+        <Square className="w-5 h-5" />
+      </button>
     </div>
   ) : simStatus !== "starting" ? (
-    <div className="bg-surface-2/85 backdrop-blur border border-slate-700 shadow-[0_12px_35px_rgba(0,0,0,0.45)] rounded-xl px-4 py-3 flex items-center justify-center gap-6">
+    <div className="bg-surface-2/85 m-4 backdrop-blur border border-slate-700 shadow-[0_12px_35px_rgba(0,0,0,0.45)] rounded-xl px-4 py-3 flex items-center justify-center gap-6">
       <div className="flex flex-col">
         <label
           htmlFor="period-start"
@@ -723,7 +732,7 @@ export default function PeriodSimulatorPage() {
       </button>
     </div>
   ) : (
-    <div className="bg-surface-2/85 backdrop-blur border border-slate-700 shadow-[0_12px_35px_rgba(0,0,0,0.45)] rounded-xl px-4 py-3 flex items-center justify-center gap-6">
+    <div className="bg-surface-2/85 m-4 backdrop-blur border border-slate-700 shadow-[0_12px_35px_rgba(0,0,0,0.45)] rounded-xl px-4 py-3 flex items-center justify-center gap-6">
       <div className="flex flex-col">
         <span className="text-[10px] text-slate-400 font-medium uppercase tracking-wider">
           Fecha de inicio
@@ -751,46 +760,14 @@ export default function PeriodSimulatorPage() {
   const header = (
     <div className="flex items-center gap-3 flex-wrap">
       {simStatus === "paused" ? (
-        <>
-          <button
-            type="button"
-            onClick={handleResume}
-            className="self-end bg-blue-600 hover:bg-blue-500 text-white px-4 py-2 rounded-lg flex items-center gap-2 font-medium text-sm transition-colors"
-          >
-            <RotateCw className="w-4 h-4" /> Reanudar
-          </button>
-          <button
-            type="button"
-            onClick={handleStop}
-            className="self-end bg-danger/10 hover:bg-danger/20 text-danger border border-danger/40 px-4 py-2 rounded-lg flex items-center gap-2 font-medium text-sm transition-colors"
-          >
-            <Square className="w-4 h-4" /> Detener
-          </button>
-        </>
-      ) : simStatus === "running" ? (
         <button
           type="button"
-          onClick={handleStop}
-          className="self-end bg-danger/10 hover:bg-danger/20 text-danger border border-danger/40 px-4 py-2 rounded-lg flex items-center gap-2 font-medium text-sm transition-colors"
+          onClick={handleResume}
+          className="self-end bg-blue-600 hover:bg-blue-500 text-white px-4 py-2 rounded-lg flex items-center gap-2 font-medium text-sm transition-colors"
         >
-          <Square className="w-4 h-4" /> Detener
+          <RotateCw className="w-4 h-4" /> Reanudar
         </button>
       ) : null}
-
-      {simStatus !== "idle" && (
-        <div className="flex flex-col w-44 self-end">
-          <div className="flex justify-between text-[10px] text-slate-400 mb-1">
-            <span>Progreso</span>
-            <span>{progress.toFixed(0)}%</span>
-          </div>
-          <div className="h-2 bg-surface-2 rounded-full overflow-hidden border border-slate-700">
-            <div
-              className={`h-full transition-all ${simStatus === "done" ? "bg-success" : simStatus === "paused" ? "bg-warning" : "bg-info"}`}
-              style={{ width: `${progress}%` }}
-            />
-          </div>
-        </div>
-      )}
     </div>
   );
 
@@ -811,6 +788,8 @@ export default function PeriodSimulatorPage() {
       date={simulationClock.date}
       time={simulationClock.time}
       metrics={liveMetrics}
+      progress={progress}
+      simStatus={simStatus}
     />
   );
 }

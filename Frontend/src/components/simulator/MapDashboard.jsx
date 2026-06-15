@@ -15,6 +15,8 @@ export default function MapDashboard({
   flights,
   simulatedNowMs,
   simulatedDayDurationMs,
+  progress,
+  simStatus,
   metrics = {},
 }) {
   const location = useLocation();
@@ -34,6 +36,15 @@ export default function MapDashboard({
 
   return (
     <div className="relative w-full h-full">
+      {progress != null && simStatus !== "idle" && (
+        <div className="absolute top-0 left-0 right-0 z-[5000] h-1">
+          <div
+            className={`h-full transition-all ${simStatus === "done" ? "bg-success" : simStatus === "paused" ? "bg-warning" : "bg-info"}`}
+            style={{ width: `${progress}%` }}
+          />
+        </div>
+      )}
+
       <div className="absolute inset-0">
         <AirportMap
           key={location.pathname}
@@ -78,7 +89,7 @@ export default function MapDashboard({
       </button>
 
       {showKpis && (
-        <div className="absolute top-5 left-1/2 -translate-x-1/2 z-[2000] max-w-[calc(100%-1rem)]">
+        <div className="absolute my-4 top-5 left-1/2 -translate-x-1/2 z-[2000] max-w-[calc(100%-1rem)]">
           <div className="bg-surface-1/75 backdrop-blur border border-slate-700/50 rounded-xl px-2 py-2">
             <div className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-5 gap-1.5 sm:gap-2">
               <Kpi
