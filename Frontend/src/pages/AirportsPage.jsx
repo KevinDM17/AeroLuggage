@@ -1,6 +1,6 @@
 import { useState } from "react";
 import { useOutletContext } from "react-router-dom";
-import { FileUp, Plus, Pencil, Trash2 } from "lucide-react";
+import { FileUp, Plus, Pencil } from "lucide-react";
 import PedidoModal from "../components/simulator/PedidoModal";
 import AirportFormModal from "../components/simulator/AirportFormModal";
 import Modal from "../components/ui/Modal";
@@ -239,14 +239,6 @@ export default function AirportsPage() {
                           className="p-2 rounded-lg hover:bg-surface-2 hover:text-blue-400 transition-colors text-slate-400"
                         >
                           <Pencil className="w-4 h-4" />
-                        </button>
-                        <button
-                          type="button"
-                          onClick={() => handleDelete(apt)}
-                          title="Eliminar aeropuerto"
-                          className="p-2 rounded-lg hover:bg-surface-2 hover:text-danger transition-colors text-slate-400"
-                        >
-                          <Trash2 className="w-4 h-4" />
                         </button>
                         <button
                           type="button"

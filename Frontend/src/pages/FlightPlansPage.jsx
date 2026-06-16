@@ -1,6 +1,6 @@
 import { useState, useEffect, useCallback } from "react";
 import { useOutletContext } from "react-router-dom";
-import { Plus, Pencil, Trash2 } from "lucide-react";
+import { Plus, Pencil } from "lucide-react";
 import FlightPlanFormModal from "../components/simulator/FlightPlanFormModal";
 import { LoadingState, EmptyState, ErrorState } from "../components/ui/States";
 import { useToast } from "../components/ui/Toast";
@@ -165,14 +165,6 @@ export default function FlightPlansPage() {
                         className="p-2 rounded-lg hover:bg-surface-2 hover:text-blue-400 transition-colors text-slate-400"
                       >
                         <Pencil className="w-4 h-4" />
-                      </button>
-                      <button
-                        type="button"
-                        onClick={() => handleDelete(fl)}
-                        title="Eliminar plan de vuelo"
-                        className="p-2 rounded-lg hover:bg-surface-2 hover:text-danger transition-colors text-slate-400"
-                      >
-                        <Trash2 className="w-4 h-4" />
                       </button>
                     </div>
                   </td>
