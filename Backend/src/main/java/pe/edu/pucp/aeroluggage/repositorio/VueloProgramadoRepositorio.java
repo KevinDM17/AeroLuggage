@@ -35,12 +35,20 @@ public class VueloProgramadoRepositorio {
 
     public VueloProgramadoRepositorio(JdbcTemplate jdbcTemplate) {
         this.jdbcTemplate = jdbcTemplate;
+        ejecutarMigracion();
+    }
+
+    private void ejecutarMigracion() {
+        try {
+            jdbcTemplate.execute("ALTER TABLE vuelo_programado ADD COLUMN activo INTEGER DEFAULT 1");
+        } catch (Exception ignored) {
+        }
     }
 
     public int insertar(VueloProgramado vueloProgramado) {
         String sql = "INSERT OR REPLACE INTO vuelo_programado " +
                 "(id_vuelo_programado, codigo, hora_salida, hora_llegada, capacidad_maxima, " +
-                "id_aeropuerto_origen, id_aeropuerto_destino) VALUES (?, ?, ?, ?, ?, ?, ?)";
+                "id_aeropuerto_origen, id_aeropuerto_destino, activo) VALUES (?, ?, ?, ?, ?, ?, ?, ?)";
         return jdbcTemplate.update(sql,
                 vueloProgramado.getIdVueloProgramado(),
                 vueloProgramado.getCodigo(),
@@ -48,17 +56,25 @@ public class VueloProgramadoRepositorio {
                 vueloProgramado.getHoraLlegada() != null ? vueloProgramado.getHoraLlegada().toString() : null,
                 vueloProgramado.getCapacidadBase(),
                 vueloProgramado.getAeropuertoOrigen() != null ? vueloProgramado.getAeropuertoOrigen().getIdAeropuerto() : null,
-                vueloProgramado.getAeropuertoDestino() != null ? vueloProgramado.getAeropuertoDestino().getIdAeropuerto() : null);
+                vueloProgramado.getAeropuertoDestino() != null ? vueloProgramado.getAeropuertoDestino().getIdAeropuerto() : null,
+                vueloProgramado.isActivo() ? 1 : 0);
     }
 
     public Optional<VueloProgramado> obtenerPorId(String id) {
-        String sql = SELECT_CON_JOINS + " WHERE vp.id_vuelo_programado = ?";
+        String sql = SELECT_CON_JOINS + " WHERE vp.id_vuelo_programado = ? AND vp.activo = 1";
         List<VueloProgramado> resultado = jdbcTemplate.query(sql, new VueloProgramadoRowMapper(), id);
         return resultado.isEmpty() ? Optional.empty() : Optional.of(resultado.get(0));
     }
 
     public List<VueloProgramado> obtenerTodos() {
-        return jdbcTemplate.query(SELECT_CON_JOINS, new VueloProgramadoRowMapper());
+        String sql = SELECT_CON_JOINS + " WHERE vp.activo = 1";
+        return jdbcTemplate.query(sql, new VueloProgramadoRowMapper());
+    }
+
+    public List<VueloProgramado> obtenerPorAeropuerto(String iata) {
+        String sql = SELECT_CON_JOINS
+                + " WHERE vp.activo = 1 AND vp.id_aeropuerto_origen = ?";
+        return jdbcTemplate.query(sql, new VueloProgramadoRowMapper(), iata);
     }
 
     public int actualizar(VueloProgramado vueloProgramado) {
@@ -76,7 +92,7 @@ public class VueloProgramadoRepositorio {
     }
 
     public int eliminar(String id) {
-        return jdbcTemplate.update("DELETE FROM vuelo_programado WHERE id_vuelo_programado=?", id);
+        return jdbcTemplate.update("UPDATE vuelo_programado SET activo = 0 WHERE id_vuelo_programado = ?", id);
     }
 
     private static final class VueloProgramadoRowMapper implements RowMapper<VueloProgramado> {

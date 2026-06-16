@@ -8,6 +8,7 @@ public class Aeropuerto {
     private float longitud;
     private float latitud;
     private int husoGMT;
+    private boolean activo = true;
 
     public Aeropuerto() {
     }
@@ -82,6 +83,14 @@ public class Aeropuerto {
 
     public void setHusoGMT(final int husoGMT) {
         this.husoGMT = husoGMT;
+    }
+
+    public boolean isActivo() {
+        return activo;
+    }
+
+    public void setActivo(final boolean activo) {
+        this.activo = activo;
     }
 
 }

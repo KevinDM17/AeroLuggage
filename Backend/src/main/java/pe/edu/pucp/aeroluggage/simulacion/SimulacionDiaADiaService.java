@@ -2,6 +2,7 @@ package pe.edu.pucp.aeroluggage.simulacion;
 
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.messaging.simp.SimpMessagingTemplate;
+import org.springframework.jdbc.core.JdbcTemplate;
 import org.springframework.stereotype.Service;
 import pe.edu.pucp.aeroluggage.algoritmo.InstanciaProblema;
 import pe.edu.pucp.aeroluggage.algoritmo.Solucion;
@@ -11,17 +12,20 @@ import pe.edu.pucp.aeroluggage.config.ALNSConfig;
 import pe.edu.pucp.aeroluggage.config.SimulacionDiaADiaParams;
 import pe.edu.pucp.aeroluggage.config.SistemaConfiguracion;
 import pe.edu.pucp.aeroluggage.dominio.entidades.Aeropuerto;
+import pe.edu.pucp.aeroluggage.dominio.entidades.Ciudad;
 import pe.edu.pucp.aeroluggage.dominio.entidades.Maleta;
 import pe.edu.pucp.aeroluggage.dominio.entidades.Pedido;
 import pe.edu.pucp.aeroluggage.dominio.entidades.Ruta;
 import pe.edu.pucp.aeroluggage.dominio.entidades.VueloInstancia;
 import pe.edu.pucp.aeroluggage.dominio.entidades.VueloProgramado;
+import pe.edu.pucp.aeroluggage.dominio.enums.Continente;
 import pe.edu.pucp.aeroluggage.dominio.enums.EstadoMaleta;
 import pe.edu.pucp.aeroluggage.dominio.enums.EstadoPedido;
 import pe.edu.pucp.aeroluggage.dominio.enums.EstadoPedido;
 import pe.edu.pucp.aeroluggage.dominio.enums.EstadoRuta;
 import pe.edu.pucp.aeroluggage.dominio.enums.EstadoVuelo;
 import pe.edu.pucp.aeroluggage.dto.simulacion.rest.PedidoRequest;
+import pe.edu.pucp.aeroluggage.dto.simulacion.rest.AeropuertoRequest;
 import pe.edu.pucp.aeroluggage.dto.simulacion.ws.EstadoMaletaDTO;
 import pe.edu.pucp.aeroluggage.dto.simulacion.ws.EstadoRutaDTO;
 import pe.edu.pucp.aeroluggage.dto.simulacion.ws.EstadoVueloDTO;
@@ -73,6 +77,7 @@ public class SimulacionDiaADiaService {
     private static final String ESTADO_PEDIDO_PROCESADO = "PEDIDO_PROCESADO";
 
     private final AeropuertoRepositorio aeropuertoRepositorio;
+    private final JdbcTemplate jdbcTemplate;
     private final VueloProgramadoRepositorio vueloProgramadoRepositorio;
     private final PedidoRepositorio pedidoRepositorio;
     private final MaletaRepositorio maletaRepositorio;
@@ -128,6 +133,7 @@ public class SimulacionDiaADiaService {
     record EventoSim(TipoEventoSim tipo, String idEntidad, String idAeropuerto, int delta) {}
 
     public SimulacionDiaADiaService(final AeropuertoRepositorio aeropuertoRepositorio,
+                                    final JdbcTemplate jdbcTemplate,
                                     final VueloProgramadoRepositorio vueloProgramadoRepositorio,
                                     final PedidoRepositorio pedidoRepositorio,
                                     final MaletaRepositorio maletaRepositorio,
@@ -138,6 +144,7 @@ public class SimulacionDiaADiaService {
                                     final ALNSConfig alnsConfig,
                                     final SimpMessagingTemplate broker) {
         this.aeropuertoRepositorio = aeropuertoRepositorio;
+        this.jdbcTemplate = jdbcTemplate;
         this.vueloProgramadoRepositorio = vueloProgramadoRepositorio;
         this.pedidoRepositorio = pedidoRepositorio;
         this.maletaRepositorio = maletaRepositorio;
@@ -1319,4 +1326,105 @@ public class SimulacionDiaADiaService {
         estado.put("tick", tickActual.get());
         return estado;
     }
+
+    public Aeropuerto crearAeropuerto(final AeropuertoRequest request) {
+        touchSession();
+        synchronized (lock) {
+            if (!activa) {
+                throw new IllegalStateException("La simulacion no esta activa");
+            }
+            final String idAeropuerto = request.getIdAeropuerto();
+            if (idAeropuerto == null || idAeropuerto.isBlank()) {
+                throw new IllegalArgumentException("idAeropuerto es requerido");
+            }
+            if (aeropuertos.containsKey(idAeropuerto)) {
+                throw new IllegalArgumentException("Ya existe un aeropuerto con IATA " + idAeropuerto);
+            }
+            final String idCiudad = String.valueOf(siguienteIdCiudad());
+            final String nombreCiudad = request.getNombreCiudad() != null
+                    ? request.getNombreCiudad().trim() : "";
+            final Continente continente = parseContinente(request.getContinente());
+            final Ciudad ciudadObj = new Ciudad(idCiudad, nombreCiudad, continente);
+            jdbcTemplate.update(
+                    "INSERT OR IGNORE INTO ciudad (id_ciudad, nombre, continente) VALUES (?, ?, ?)",
+                    idCiudad, nombreCiudad, continente != null ? continente.name() : null);
+            final Aeropuerto aeropuerto = new Aeropuerto();
+            aeropuerto.setIdAeropuerto(idAeropuerto);
+            aeropuerto.setCiudad(ciudadObj);
+            aeropuerto.setCapacidadAlmacen(request.getCapacidadAlmacen());
+            aeropuerto.setMaletasActuales(0);
+            aeropuerto.setLatitud(request.getLatitud());
+            aeropuerto.setLongitud(request.getLongitud());
+            aeropuerto.setHusoGMT(request.getHusoGMT());
+            aeropuerto.setActivo(true);
+            aeropuertoRepositorio.insertar(aeropuerto);
+            aeropuertos.put(idAeropuerto, aeropuerto);
+            return aeropuerto;
+        }
+    }
+
+    public Aeropuerto actualizarAeropuerto(final String iata, final AeropuertoRequest request) {
+        touchSession();
+        synchronized (lock) {
+            if (!activa) {
+                throw new IllegalStateException("La simulacion no esta activa");
+            }
+            final Aeropuerto existente = aeropuertos.get(iata);
+            if (existente == null) {
+                throw new IllegalArgumentException("Aeropuerto no encontrado: " + iata);
+            }
+            final String idCiudad = existente.getCiudad() != null && existente.getCiudad().getIdCiudad() != null
+                    ? existente.getCiudad().getIdCiudad()
+                    : String.valueOf(siguienteIdCiudad());
+            final String nombreCiudad = request.getNombreCiudad() != null
+                    ? request.getNombreCiudad().trim() : "";
+            final Continente continente = parseContinente(request.getContinente());
+            final Ciudad ciudadObj = new Ciudad(idCiudad, nombreCiudad, continente);
+            jdbcTemplate.update(
+                    "INSERT OR IGNORE INTO ciudad (id_ciudad, nombre, continente) VALUES (?, ?, ?)",
+                    idCiudad, nombreCiudad, continente != null ? continente.name() : null);
+            existente.setCiudad(ciudadObj);
+            existente.setCapacidadAlmacen(request.getCapacidadAlmacen());
+            existente.setLatitud(request.getLatitud());
+            existente.setLongitud(request.getLongitud());
+            existente.setHusoGMT(request.getHusoGMT());
+            aeropuertoRepositorio.actualizar(existente);
+            return existente;
+        }
+    }
+
+    public void eliminarAeropuerto(final String iata) {
+        touchSession();
+        synchronized (lock) {
+            if (!activa) {
+                throw new IllegalStateException("La simulacion no esta activa");
+            }
+            final Aeropuerto existente = aeropuertos.get(iata);
+            if (existente == null) {
+                throw new IllegalArgumentException("Aeropuerto no encontrado: " + iata);
+            }
+            aeropuertoRepositorio.eliminar(iata);
+            aeropuertos.remove(iata);
+        }
+    }
+
+    private int siguienteIdCiudad() {
+        final Integer max = jdbcTemplate.queryForObject(
+                "SELECT COALESCE(MAX(CAST(id_ciudad AS INTEGER)), 0) FROM ciudad",
+                Integer.class);
+        return (max != null ? max : 0) + 1;
+    }
+
+    private Continente parseContinente(final String raw) {
+        if (raw == null || raw.isBlank()) {
+            return null;
+        }
+        final String normalizado = raw.trim().toUpperCase().replace(" ", "_");
+        try {
+            return Continente.valueOf(normalizado);
+        } catch (final IllegalArgumentException ignored) {
+            return null;
+        }
+    }
+
 }

@@ -1,4 +1,4 @@
-import { apiGet, apiPost, USE_MOCK, ApiError } from "./client";
+import { apiGet, apiPost, apiPut, apiDelete, USE_MOCK, ApiError } from "./client";
 import {
   mockStartPeriodSim,
   mockStopPeriodSim,
@@ -10,6 +10,9 @@ import {
   mockDetenerDiaADia,
   mockProcesarPedidoDiaADia,
   mockProcesarPedidosBulkDiaADia,
+  mockCrearAeropuerto,
+  mockActualizarAeropuerto,
+  mockEliminarAeropuerto,
 } from "./mock";
 
 /* =========================================================================
@@ -207,6 +210,21 @@ export const obtenerVuelosDiaADia = () =>
 
 export const obtenerAeropuertosDiaADia = () =>
   withReconnect((sid) => apiGet(`/operations/${sid}/aeropuertos`));
+
+export const crearAeropuertoDiaADia = (payload) =>
+  USE_MOCK
+    ? mockCrearAeropuerto(payload)
+    : withReconnect((sid) => apiPost(`/operations/${sid}/aeropuertos`, payload));
+
+export const actualizarAeropuertoDiaADia = (iata, payload) =>
+  USE_MOCK
+    ? mockActualizarAeropuerto(iata, payload)
+    : withReconnect((sid) => apiPut(`/operations/${sid}/aeropuertos/${encodeURIComponent(iata)}`, payload));
+
+export const eliminarAeropuertoDiaADia = (iata) =>
+  USE_MOCK
+    ? mockEliminarAeropuerto(iata)
+    : withReconnect((sid) => apiDelete(`/operations/${sid}/aeropuertos/${encodeURIComponent(iata)}`));
 
 export const obtenerPedidosDiaADia = () =>
   withReconnect((sid) => apiGet(`/operations/${sid}/pedidos`));

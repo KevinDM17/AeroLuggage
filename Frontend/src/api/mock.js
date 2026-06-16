@@ -32,6 +32,20 @@ export async function mockCreateAirport(payload) {
   _airports = [..._airports, created];
   return created;
 }
+export async function mockCrearAeropuerto(payload) {
+  return mockCreateAirport(payload);
+}
+export async function mockActualizarAeropuerto(iata, payload) {
+  await delay();
+  const idx = _airports.findIndex(a => a.iata === iata);
+  if (idx === -1) throw new Error(`Aeropuerto ${iata} no encontrado`);
+  _airports[idx] = { ..._airports[idx], ...payload, iata };
+  return _airports[idx];
+}
+export async function mockEliminarAeropuerto(iata) {
+  await delay();
+  _airports = _airports.filter(a => a.iata !== iata);
+}
 
 // ---------- VUELOS ----------
 let _flights = [
@@ -43,6 +57,10 @@ let _flights = [
 ];
 
 export async function mockListFlights() { await delay(); return [..._flights]; }
+export async function mockListFlightsByAirport(airport) {
+  await delay();
+  return _flights.filter(f => f.origin === airport);
+}
 export async function mockCreateFlight(payload) {
   await delay();
   if (_flights.some(f => f.id === payload.id)) {
@@ -58,6 +76,17 @@ export async function mockCancelFlight(id) {
   if (idx < 0) throw new Error(`Vuelo ${id} no existe`);
   _flights[idx] = { ..._flights[idx], status: "Cancelado", used: 0 };
   return _flights[idx];
+}
+export async function mockUpdateFlight(id, payload) {
+  await delay();
+  const idx = _flights.findIndex(f => f.id === id);
+  if (idx === -1) throw new Error(`Vuelo programado ${id} no encontrado`);
+  _flights[idx] = { ..._flights[idx], ...payload, id };
+  return _flights[idx];
+}
+export async function mockDeleteFlightPlan(id) {
+  await delay();
+  _flights = _flights.filter(f => f.id !== id);
 }
 export async function mockBulkUploadFlights(text) {
   await delay(600);

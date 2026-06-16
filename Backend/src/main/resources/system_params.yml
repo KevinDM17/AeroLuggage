@@ -4,11 +4,11 @@ negocio:
   umbral-confirmacion-minutos: 30
 
 simulacion:
-  duracion-dia-simulado-ms: 240000
+  duracion-dia-simulado-ms: 600000
   ventana:
     tamanio-minutos: 120
     espaciado-minutos: 120
-  tick-interval-ms: 500
+  tick-interval-ms: 1000
   max-dias-vuelos-instancias: 30
   retencion-ventanas: 2
   retencion-pedidos-minutos: 120
