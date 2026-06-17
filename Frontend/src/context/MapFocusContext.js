@@ -25,6 +25,10 @@ export const MapFocusContext = createContext({
   setPanelFocus: () => {},
   mapDim: { airports: null, flights: null },
   setMapDim: () => {},
+  // Loader de manifiesto de vuelo (pedidos + maletas) que el RightPanel publica
+  // para que el mapa pueda mostrar la info al hacer click en un avion.
+  flightManifestLoader: null,
+  setFlightManifestLoader: () => {},
 });
 
 export const useMapFocus = () => useContext(MapFocusContext);

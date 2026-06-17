@@ -34,6 +34,7 @@ export default function MainLayout() {
   const [mapFocus, setMapFocus] = useState(null);
   const [panelFocus, setPanelFocus] = useState(null);
   const [mapDim, setMapDim] = useState({ airports: null, flights: null });
+  const [flightManifestLoader, setFlightManifestLoader] = useState(null);
   const location = useLocation();
   const previousIsSimulatorRef = useRef(null);
   const toast = useToast();
@@ -124,7 +125,7 @@ export default function MainLayout() {
   );
 
   return (
-    <MapFocusContext.Provider value={{ mapHighlight, setMapHighlight, selected, setSelected, mapFocus, setMapFocus, panelFocus, setPanelFocus, mapDim, setMapDim }}>
+    <MapFocusContext.Provider value={{ mapHighlight, setMapHighlight, selected, setSelected, mapFocus, setMapFocus, panelFocus, setPanelFocus, mapDim, setMapDim, flightManifestLoader, setFlightManifestLoader }}>
     <div className="flex h-screen overflow-hidden bg-surface-1 text-slate-200 font-sans relative">
       {showLeftHamburger && (
         <button
