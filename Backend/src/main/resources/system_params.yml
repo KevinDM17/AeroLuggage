@@ -4,7 +4,7 @@ negocio:
   umbral-confirmacion-minutos: 30
 
 simulacion:
-  duracion-dia-simulado-ms: 600000
+  duracion-dia-simulado-ms: 240000
   ventana:
     tamanio-minutos: 120
     espaciado-minutos: 120
