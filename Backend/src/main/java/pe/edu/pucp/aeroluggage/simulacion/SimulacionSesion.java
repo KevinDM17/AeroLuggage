@@ -93,6 +93,7 @@ public class SimulacionSesion {
     private final ConcurrentHashMap<String, List<VueloInstancia>> vuelosPorVentana = new ConcurrentHashMap<>();
     private final AtomicLong ultimoIndiceVuelosEnviado = new AtomicLong(0);
     private final Set<String> vuelosGenerados = ConcurrentHashMap.newKeySet();
+    private final Set<String> alertasColapsoEmitidas = ConcurrentHashMap.newKeySet();
     private volatile int umbralConfirmacionMinutos;
     private CargadorEnvios.LectorLotesEnvios lectorEnvios;
     private LocalDateTime ultimaCargaPedidos;
@@ -878,6 +879,7 @@ public class SimulacionSesion {
         this.pedidosPorVentana.clear();
         this.vuelosPorVentana.clear();
         this.vuelosGenerados.clear();
+        this.alertasColapsoEmitidas.clear();
         this.eventosSimulacion = null;
         this.ultimoTiempoSim = null;
         this.tareaScheduled = null;
@@ -893,6 +895,10 @@ public class SimulacionSesion {
         this.planificando.set(false);
         this.replanPendiente.set(false);
         this.ultimaVentanaPlanificada.set("");
+    }
+
+    public boolean registrarAlertaColapso(final String alertaKey) {
+        return alertaKey != null && alertasColapsoEmitidas.add(alertaKey);
     }
 
     public Collection<Maleta> getMaletas() {

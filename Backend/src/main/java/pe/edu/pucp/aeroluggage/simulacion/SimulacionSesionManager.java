@@ -73,6 +73,7 @@ public class SimulacionSesionManager {
     private static final String ESTADO_FINALIZADA = "FINALIZADA";
     private static final String ESTADO_PLANIFICACION_COMPLETADA = "PLANIFICACION_COMPLETADA";
     private static final String ESTADO_ERROR = "ERROR";
+    private static final String ESTADO_COLAPSO = "COLAPSO";
     private static final long WS_DISCONNECT_GRACE_MS = 15_000L;
 
     private final SimulacionPeriodoService periodoService;
@@ -116,6 +117,15 @@ public class SimulacionSesionManager {
             long tiempoPlanMs,
             int iteraciones,
             int vuelosFiltrados
+    ) {
+    }
+
+    private record ColapsoDetectado(
+            String mensaje,
+            String simTime,
+            int aeropuertosColapsados,
+            int vuelosColapsados,
+            int maletasVencidasSinRuta
     ) {
     }
 
@@ -271,6 +281,10 @@ public class SimulacionSesionManager {
         try {
             final SimulacionTickLigeroDTO tick = periodoService.ejecutarTick(sesion);
             broker.convertAndSend(TOPIC_TICKS + sesion.getSessionId(), tick);
+            if (emitirAlertasColapsoSiCorresponde(sesion, broker)) {
+                detenerPorColapso(sesion);
+                return;
+            }
 
             planificarAsync(sesion, broker);
 
@@ -572,6 +586,10 @@ public class SimulacionSesionManager {
                         (String) (TOPIC_TICKS + sesion.getSessionId()),
                         (Object) readyMsg
                 );
+                if (emitirAlertasColapsoSiCorresponde(sesion, broker)) {
+                    detenerPorColapso(sesion);
+                    return;
+                }
                 broker.convertAndSend(
                         String.format(TOPIC_ESTADO, sesion.getSessionId()),
                         SimulacionEstadoDTO.builder()
@@ -1369,6 +1387,101 @@ public class SimulacionSesionManager {
             }
         }
         return ocupacion;
+    }
+
+    private boolean emitirAlertasColapsoSiCorresponde(final SimulacionSesion sesion,
+                                                      final SimpMessagingTemplate broker) {
+        final ColapsoDetectado colapso = sesion.withEventosLiveReadLock(() -> detectarColapso(sesion));
+        if (colapso == null) {
+            return false;
+        }
+        broker.convertAndSend(
+                String.format(TOPIC_ESTADO, sesion.getSessionId()),
+                SimulacionEstadoDTO.builder()
+                        .withSessionId(sesion.getSessionId())
+                        .withEstado(ESTADO_COLAPSO)
+                        .withMensaje(colapso.mensaje())
+                        .withSimTime(colapso.simTime())
+                        .withAeropuertosColapsados(colapso.aeropuertosColapsados())
+                        .withVuelosColapsados(colapso.vuelosColapsados())
+                        .withMaletasVencidasSinRuta(colapso.maletasVencidasSinRuta())
+                        .build()
+        );
+        return true;
+    }
+
+    private ColapsoDetectado detectarColapso(final SimulacionSesion sesion) {
+        final LocalDateTime simTime = sesion.getCurrentSimTimeUtc().get();
+        int aeropuertosColapsados = 0;
+        int vuelosColapsados = 0;
+        int maletasVencidasSinRuta = 0;
+        final List<String> motivos = new ArrayList<>();
+
+        for (final Aeropuerto aeropuerto : sesion.getAeropuertos()) {
+            if (aeropuerto == null || aeropuerto.getIdAeropuerto() == null || aeropuerto.getCapacidadAlmacen() <= 0) {
+                continue;
+            }
+            if (aeropuerto.getMaletasActuales() > aeropuerto.getCapacidadAlmacen()) {
+                aeropuertosColapsados++;
+                motivos.add("Aeropuerto " + aeropuerto.getIdAeropuerto() + " excedio capacidad ("
+                        + aeropuerto.getMaletasActuales() + "/" + aeropuerto.getCapacidadAlmacen() + ")");
+            }
+        }
+
+        for (final VueloInstancia vuelo : sesion.getVuelosInstancia()) {
+            if (vuelo == null || vuelo.getIdVueloInstancia() == null || vuelo.getCapacidadMaxima() <= 0) {
+                continue;
+            }
+            final int capacidadUsada = vuelo.getCapacidadMaxima() - vuelo.getCapacidadDisponible();
+            if (vuelo.getCapacidadDisponible() < 0 || capacidadUsada > vuelo.getCapacidadMaxima()) {
+                vuelosColapsados++;
+                motivos.add("Vuelo " + vuelo.getIdVueloInstancia() + " excedio capacidad");
+            }
+        }
+
+        for (final Maleta maleta : sesion.getMaletasCalientes()) {
+            if (maleta == null || maleta.getIdMaleta() == null || maleta.getPedido() == null
+                    || maleta.getPedido().getFechaHoraPlazo() == null) {
+                continue;
+            }
+            final Ruta ruta = sesion.getRutaPorMaleta(maleta.getIdMaleta());
+            final boolean sinRuta = ruta == null
+                    || ruta.getEstado() == EstadoRuta.REPLANIFICADA
+                    || ruta.getSubrutas().isEmpty();
+            if (!sinRuta || !simTime.isAfter(maleta.getPedido().getFechaHoraPlazo())) {
+                continue;
+            }
+            maletasVencidasSinRuta++;
+            motivos.add("Maleta " + maleta.getIdMaleta() + " sin ruta con plazo vencido");
+        }
+
+        if (aeropuertosColapsados == 0 && vuelosColapsados == 0 && maletasVencidasSinRuta == 0) {
+            return null;
+        }
+        if (!sesion.registrarAlertaColapso("COLAPSO_GLOBAL")) {
+            return null;
+        }
+
+        final String mensaje = motivos.isEmpty()
+                ? "La simulacion llego al colapso del sistema."
+                : String.join(" | ", motivos);
+        return new ColapsoDetectado(
+                mensaje,
+                simTime != null ? simTime.format(FORMATO_FECHA_HORA) : null,
+                aeropuertosColapsados,
+                vuelosColapsados,
+                maletasVencidasSinRuta
+        );
+    }
+
+    private void detenerPorColapso(final SimulacionSesion sesion) {
+        sesion.getActiva().set(false);
+        limpiarSesion(sesion);
+        sesionesActivas.remove(sesion.getSessionId());
+        sesionesFinalizadas.remove(sesion.getSessionId());
+        cancelarLimpiezaPendiente(sesion.getSessionId());
+        wsSessionIdASimSessionId.values().removeIf(sesion.getSessionId()::equals);
+        log.warn("[AeroLuggage/Simulacion] - COLAPSO: sessionId={}", sesion.getSessionId());
     }
 
     private void limpiarSesion(final SimulacionSesion sesion) {

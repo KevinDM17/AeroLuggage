@@ -10,4 +10,8 @@ public class SimulacionEstadoDTO {
     private String sessionId;
     private String estado;
     private String mensaje;
+    private String simTime;
+    private Integer aeropuertosColapsados;
+    private Integer vuelosColapsados;
+    private Integer maletasVencidasSinRuta;
 }
