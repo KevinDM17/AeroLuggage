@@ -373,6 +373,7 @@ function AirportMap({
      * deck.gl no tiene box-shadow → simulamos con un scatterplot debajo. */
     if (airportList.length > 0) {
       const airportDimmed = (a) => mapDim.airports && !mapDim.airports.has(a.iata);
+      const selectedAirportId = selected?.kind === "airport" ? selected.id : null;
 
       ls.push(
         new ScatterplotLayer({
@@ -380,13 +381,14 @@ function AirportMap({
           data: airportList,
           getPosition: (a) => [a.lng, a.lat],
           getFillColor: (a) => {
+            if (a.iata === selectedAirportId) return hexToRgba(tokens.info, 110);
             const s = occupancyStatus(a.used, a.capacity);
             return hexToRgba(STATUS_HEX[s], airportDimmed(a) ? 10 : 90);
           },
           getRadius: 14,
           radiusUnits: "pixels",
           stroked: false,
-          updateTriggers: { getFillColor: mapDim.airports },
+          updateTriggers: { getFillColor: [mapDim.airports, selectedAirportId] },
         })
       );
 
@@ -397,6 +399,7 @@ function AirportMap({
           data: airportList,
           getPosition: (a) => [a.lng, a.lat],
           getFillColor: (a) => {
+            if (a.iata === selectedAirportId) return hexToRgba(tokens.info, 255);
             const s = occupancyStatus(a.used, a.capacity);
             return hexToRgba(STATUS_HEX[s], airportDimmed(a) ? 35 : 255);
           },
@@ -411,7 +414,7 @@ function AirportMap({
             }
             return false;
           },
-          updateTriggers: { getFillColor: mapDim.airports },
+          updateTriggers: { getFillColor: [mapDim.airports, selectedAirportId] },
         })
       );
 

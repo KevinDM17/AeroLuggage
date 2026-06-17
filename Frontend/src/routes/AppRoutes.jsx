@@ -1,5 +1,6 @@
 import { Routes, Route, Navigate } from "react-router-dom";
 import MainLayout from "../components/layout/MainLayout";
+import HomePage from "../pages/HomePage";
 import SimulatorPage from "../pages/SimulatorPage";
 import PeriodSimulatorPage from "../pages/PeriodSimulatorPage";
 import CollapseSimulatorPage from "../pages/CollapseSimulatorPage";
@@ -13,6 +14,7 @@ export default function AppRoutes() {
     <Routes>
       <Route path="/" element={<MainLayout />}>
         <Route index element={<SimulatorPage />} />
+        <Route path="inicio" element={<HomePage />} />
         <Route path="simulator" element={<Navigate to="/" replace />} />
         <Route path="simulator/period" element={<PeriodSimulatorPage />} />
         <Route path="simulator/collapse" element={<CollapseSimulatorPage />} />

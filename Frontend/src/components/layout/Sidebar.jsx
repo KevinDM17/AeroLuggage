@@ -3,6 +3,7 @@ import { cn } from "../../utils/cn";
 import { useLocation, useNavigate } from "react-router-dom";
 import {
   PanelLeftClose,
+  Home,
   RotateCw,
   Spline,
   Calendar,
@@ -72,6 +73,15 @@ export default function Sidebar({ onClose, closeOnNavigate = false }) {
       </div>
 
       <nav className="flex-1 py-2 px-3 space-y-1 overflow-y-auto">
+        <button
+          type="button"
+          onClick={() => handleNavigate("/inicio")}
+          className={navItemClass(location.pathname === "/inicio")}
+        >
+          <Home className="w-4 h-4" />
+          <span className="font-medium text-sm">Inicio</span>
+        </button>
+
         <button
           type="button"
           onClick={() => handleNavigate("/")}
