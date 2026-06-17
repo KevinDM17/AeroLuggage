@@ -1,7 +1,8 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { Map as MapGL, useControl } from "react-map-gl/maplibre";
 import { MapboxOverlay } from "@deck.gl/mapbox";
-import { ScatterplotLayer, LineLayer, IconLayer, TextLayer } from "@deck.gl/layers";
+import { ScatterplotLayer, LineLayer, IconLayer, TextLayer, PathLayer } from "@deck.gl/layers";
+import { PathStyleExtension } from "@deck.gl/extensions";
 import "maplibre-gl/dist/maplibre-gl.css";
 import { tokens } from "../../utils/tokens";
 import { useFetch } from "../../hooks/useFetch";
@@ -252,6 +253,7 @@ function AirportMap({
       const dLngRad = dLng * Math.PI / 180;
       const salidaMs = Date.parse(`${route.depTime}Z`);
       const llegadaMs = Date.parse(`${route.arrTime}Z`);
+      const occStatus = occupancyStatus(route.used, route.capacity);
       return {
         id: route.id ?? `${route.origin}-${route.dest}-${idx}`,
         origin,
@@ -263,10 +265,8 @@ function AirportMap({
         oMercY,
         dMercY,
         angle: (Math.atan2(dLngRad, dMercY) * 180) / Math.PI,
-        color: (() => {
-          const s = occupancyStatus(route.used, route.capacity);
-          return hexToRgba(STATUS_HEX[s], FLIGHT_ALPHA[s]);
-        })(),
+        color: hexToRgba(STATUS_HEX[occStatus], FLIGHT_ALPHA[occStatus]),
+        isEmpty: occStatus === "white",
         depMs: Number.isFinite(salidaMs) ? salidaMs : null,
         arrMs: Number.isFinite(llegadaMs) ? llegadaMs : null,
       };
@@ -332,19 +332,41 @@ function AirportMap({
   const layers = useMemo(() => {
     const ls = [];
 
-    /* Polylines de rutas. */
+    /* Polylines de rutas. Las vacias se pintan blancas discontinuas para
+     * distinguirlas a simple vista del trafico real. */
     if (showFlights && showRouteLines && routesGeometry.length > 0) {
-      ls.push(
-        new LineLayer({
-          id: "routes",
-          data: routesGeometry,
-          getSourcePosition: (d) => [d.origin.lng, d.origin.lat],
-          getTargetPosition: (d) => [d.destination.lng, d.destination.lat],
-          getColor: hexToRgba(tokens.success, 76), // ~0.3 alpha
-          getWidth: 1.2,
-          widthUnits: "pixels",
-        })
-      );
+      const loadedRoutes = routesGeometry.filter((r) => !r.isEmpty);
+      const emptyRoutes = routesGeometry.filter((r) => r.isEmpty);
+
+      if (loadedRoutes.length > 0) {
+        ls.push(
+          new LineLayer({
+            id: "routes",
+            data: loadedRoutes,
+            getSourcePosition: (d) => [d.origin.lng, d.origin.lat],
+            getTargetPosition: (d) => [d.destination.lng, d.destination.lat],
+            getColor: hexToRgba(tokens.success, 255), // opaco; solo las vacias son translucidas
+            getWidth: 1.2,
+            widthUnits: "pixels",
+          })
+        );
+      }
+
+      if (emptyRoutes.length > 0) {
+        ls.push(
+          new PathLayer({
+            id: "routes-empty",
+            data: emptyRoutes,
+            getPath: (d) => [[d.origin.lng, d.origin.lat], [d.destination.lng, d.destination.lat]],
+            getColor: [255, 255, 255, 70], // blanco translucido
+            getWidth: 1.2,
+            widthUnits: "pixels",
+            getDashArray: [4, 3],
+            dashJustified: true,
+            extensions: [new PathStyleExtension({ dash: true })],
+          })
+        );
+      }
     }
 
     /* Halo glow de cada aeropuerto (un disco grande semi-transparente).
@@ -497,7 +519,7 @@ function AirportMap({
           getSourcePosition: (d) => [d.oLng, d.oLat],
           getTargetPosition: (d) => [d.dLng, d.dLat],
           getColor: hexToRgba(tokens.info, 255),
-          getWidth: 3,
+          getWidth: 1.2,
           widthUnits: "pixels",
         })
       );

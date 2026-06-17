@@ -79,18 +79,9 @@ export default function MapDashboard({
         </div>
       )}
 
-      <button
-        type="button"
-        onClick={() => setShowKpis((v) => !v)}
-        className="absolute mt-2 mb-2 top-1 left-1/2 -translate-x-1/2 z-[4000] bg-surface-1/60 hover:bg-surface-1/80 backdrop-blur border border-slate-700/50 rounded-full p-1 text-slate-400 hover:text-white transition-colors"
-        title={showKpis ? "Ocultar métricas" : "Mostrar métricas"}
-      >
-        {showKpis ? <ChevronUp className="w-3.5 h-3.5" /> : <ChevronDown className="w-3.5 h-3.5" />}
-      </button>
-
       {showKpis && (
-        <div className="absolute my-6 top-5 left-1/2 -translate-x-1/2 z-[2000] max-w-[calc(100%-1rem)]">
-          <div className="bg-surface-1/75 backdrop-blur border border-slate-700/50 rounded-xl px-2 py-2">
+        <div className="absolute top-2 left-2 right-2 z-[2000]">
+          <div className="relative bg-surface-1/75 backdrop-blur border border-slate-700/50 rounded-xl pl-2 pr-9 py-1.5">
             <div className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-5 gap-1.5 sm:gap-2">
               <Kpi
                 icon={Luggage}
@@ -123,8 +114,27 @@ export default function MapDashboard({
                 tone={capacityTone}
               />
             </div>
+            <button
+              type="button"
+              onClick={() => setShowKpis(false)}
+              className="absolute top-1/2 right-2 -translate-y-1/2 z-[4000] bg-surface-1/60 hover:bg-surface-1/80 backdrop-blur border border-slate-700/50 rounded-full p-1 text-slate-400 hover:text-white transition-colors"
+              title="Ocultar métricas"
+            >
+              <ChevronUp className="w-3.5 h-3.5" />
+            </button>
           </div>
         </div>
+      )}
+
+      {!showKpis && (
+        <button
+          type="button"
+          onClick={() => setShowKpis(true)}
+          className="absolute top-2 left-1/2 -translate-x-1/2 z-[4000] bg-surface-1/60 hover:bg-surface-1/80 backdrop-blur border border-slate-700/50 rounded-full p-1 text-slate-400 hover:text-white transition-colors"
+          title="Mostrar métricas"
+        >
+          <ChevronDown className="w-3.5 h-3.5" />
+        </button>
       )}
 
       <button
@@ -150,12 +160,15 @@ const TONE_CLASSES = {
 function Kpi({ icon: Icon, label, value, tone = "info" }) {
   const valueClass = TONE_CLASSES[tone] ?? TONE_CLASSES.info;
   return (
-    <div className="bg-surface-1/70 backdrop-blur border border-slate-800 rounded-lg px-2.5 py-1.5 flex items-center gap-2">
+    <div className="bg-surface-1/70 backdrop-blur border border-slate-800 rounded-lg px-2.5 py-1 flex items-center gap-2 min-w-0">
       <div className={`shrink-0 ${valueClass}`}>
         <Icon className="w-4 h-4" />
       </div>
       <div className="min-w-0 flex-1">
-        <div className="text-[9px] text-slate-400 font-medium uppercase tracking-wide leading-tight break-words whitespace-normal">
+        <div
+          className="text-[10px] text-slate-400 font-medium uppercase tracking-wide leading-tight truncate"
+          title={label}
+        >
           {label}
         </div>
         <div className={`text-base sm:text-lg font-bold tabular-nums leading-none mt-0.5 ${valueClass}`}>
