@@ -1,4 +1,4 @@
-import { memo, useCallback, useEffect, useMemo, useState } from "react";
+import { memo, useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { Virtuoso } from "react-virtuoso";
 import { useLocation } from "react-router-dom";
 import { Ban, Filter, PanelRightClose, MapPin, Globe, Info, ChevronDown, Plane, RefreshCw, Package, Luggage, ArrowDownUp, ArrowUp, ArrowDown, Route, X, Crosshair } from "lucide-react";
@@ -900,6 +900,9 @@ export default function RightPanel({
   const toast = useToast();
   const [activeTab, setActiveTab] = useState("flights");
   const [query, setQuery] = useState("");
+  // Marca si el query/filtro activo lo impuso una seleccion (click en mapa).
+  // Al deseleccionar hay que limpiarlo para que el mapa deje de atenuar el resto.
+  const selectionDrivenFilterRef = useRef(false);
   const [flightStatusFilter, setFlightStatusFilter] = useState("DEFAULT");
   const [flightOriginFilter, setFlightOriginFilter] = useState("ALL");
   const [flightDestFilter, setFlightDestFilter] = useState("ALL");
@@ -1512,8 +1515,24 @@ export default function RightPanel({
       const f = (flights.data ?? []).find((fl) => (fl.idVueloInstancia ?? fl.id) === panelFocus.id);
       setQuery(f?.id ?? panelFocus.id);
     }
+    // El filtro recien aplicado proviene de una seleccion en el mapa.
+    selectionDrivenFilterRef.current = true;
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [panelFocus]);
+
+  // Al deseleccionar (boton X del panel o click en zona vacia del mapa), limpiar
+  // el filtro que la seleccion habia impuesto para que el mapa deje de atenuar
+  // los demas vuelos/aeropuertos y todo vuelva a su color normal.
+  useEffect(() => {
+    if (selected) return;
+    if (!selectionDrivenFilterRef.current) return;
+    selectionDrivenFilterRef.current = false;
+    setQuery("");
+    setFlightStatusFilter("DEFAULT");
+    clearFlightFilters();
+    clearAirportFilters();
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [selected]);
 
   // Panel -> mapa: refleja el filtro de almacenes (semaforo y otros) (req 10/12).
   useEffect(() => {
