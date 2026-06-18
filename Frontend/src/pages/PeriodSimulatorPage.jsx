@@ -104,6 +104,8 @@ export default function PeriodSimulatorPage() {
   const iniciarTickWatchdogRef = useRef(null);
   const iniciarTickRetriesRef = useRef(0);
   const tickReceivedRef = useRef(false);
+  const pendienteIniciarTickRef = useRef(null);
+  const planCompletionTimeoutRef = useRef(null);
 
   const clearSimulationData = () => {
     ventanasCargadasRef.current.clear();
@@ -161,6 +163,11 @@ export default function PeriodSimulatorPage() {
         publish("/app/simulacion/periodo/detener", { sessionId: sid });
       }
       cancelarWatchdogIniciarTick();
+      if (planCompletionTimeoutRef.current) {
+        clearTimeout(planCompletionTimeoutRef.current);
+        planCompletionTimeoutRef.current = null;
+      }
+      pendienteIniciarTickRef.current = null;
     };
   }, []);
 
@@ -215,6 +222,16 @@ export default function PeriodSimulatorPage() {
       setSessionId(null);
       setCurrentSimTimeUtc(null);
       clearSimulationData();
+    }
+    if (estadoMessage.estado === "PLANIFICACION_COMPLETADA"
+        && pendienteIniciarTickRef.current) {
+      const sid = pendienteIniciarTickRef.current;
+      pendienteIniciarTickRef.current = null;
+      if (planCompletionTimeoutRef.current) {
+        clearTimeout(planCompletionTimeoutRef.current);
+        planCompletionTimeoutRef.current = null;
+      }
+      enviarIniciarTick(sid);
     }
   }, [mockState, estadoMessage]);
 
@@ -487,6 +504,7 @@ export default function PeriodSimulatorPage() {
   };
 
   const enviarIniciarTick = async (targetSessionId) => {
+    setSimStatus("running");
     cancelarWatchdogIniciarTick();
     try {
       await publish("/app/simulacion/periodo/iniciar-tick", {
@@ -501,7 +519,12 @@ export default function PeriodSimulatorPage() {
         iniciarTickRetriesRef.current += 1;
         enviarIniciarTick(targetSessionId);
       } else {
-        cancelarWatchdogIniciarTick();
+      cancelarWatchdogIniciarTick();
+      if (planCompletionTimeoutRef.current) {
+        clearTimeout(planCompletionTimeoutRef.current);
+        planCompletionTimeoutRef.current = null;
+      }
+      pendienteIniciarTickRef.current = null;
         toast.push({
           type: "error",
           title: "No se pudo iniciar la simulación",
@@ -586,11 +609,20 @@ export default function PeriodSimulatorPage() {
         sessionId: newSessionId,
         loaded: true,
       });
-      setSimStatus("running");
 
       tickReceivedRef.current = false;
       iniciarTickRetriesRef.current = 0;
-      enviarIniciarTick(newSessionId);
+      pendienteIniciarTickRef.current = newSessionId;
+      cancelarWatchdogIniciarTick();
+      if (planCompletionTimeoutRef.current) {
+        clearTimeout(planCompletionTimeoutRef.current);
+      }
+      planCompletionTimeoutRef.current = setTimeout(() => {
+        if (!pendienteIniciarTickRef.current) return;
+        const sid = pendienteIniciarTickRef.current;
+        pendienteIniciarTickRef.current = null;
+        enviarIniciarTick(sid);
+      }, 30000);
 
       toast.push({
         type: "info",
@@ -708,7 +740,7 @@ export default function PeriodSimulatorPage() {
         <Square className="w-5 h-5" />
       </button>
     </div>
-  ) : simStatus !== "starting" ? (
+  ) : (
     <div className="bg-surface-2/85 m-4 backdrop-blur border border-slate-700 shadow-[0_12px_35px_rgba(0,0,0,0.45)] rounded-xl px-4 py-3 flex items-center justify-center gap-6">
       <div className="flex flex-col">
         <label
@@ -750,31 +782,23 @@ export default function PeriodSimulatorPage() {
         <Play className="w-4 h-4" /> Ejecutar
       </button>
     </div>
-  ) : (
-    <div className="bg-surface-2/85 m-4   backdrop-blur border border-slate-700 shadow-[0_12px_35px_rgba(0,0,0,0.45)] rounded-xl px-4 py-3 flex items-center justify-center gap-6">
-      <div className="flex flex-col">
-        <span className="text-[10px] text-slate-400 font-medium uppercase tracking-wider">
-          Fecha de inicio
-        </span>
-        <span className="text-sm text-slate-200 px-3 py-1.5">{startDate}</span>
-      </div>
-      <div className="h-9 w-px bg-slate-700" />
-      <div className="flex flex-col">
-        <span className="text-[10px] text-slate-400 font-medium uppercase tracking-wider">
-          Hora de inicio
-        </span>
-        <span className="text-sm text-slate-200 px-3 py-1.5">{startTime}</span>
-      </div>
-      <div className="h-9 w-px bg-slate-700" />
-      <button
-        type="button"
-        disabled
-        className="self-end bg-blue-600/60 text-white px-4 py-2 rounded-lg flex items-center gap-2 font-medium text-sm cursor-wait"
-      >
-        <Play className="w-4 h-4" /> Iniciando...
-      </button>
-    </div>
   );
+
+  const loadingModal = simStatus === "starting" ? (
+    <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/55 backdrop-blur-[2px]">
+      <div className="bg-surface-2 border border-slate-700 shadow-[0_12px_35px_rgba(0,0,0,0.45)] rounded-xl px-8 py-6 flex flex-col items-center gap-4 max-w-sm mx-4">
+        <div className="w-10 h-10 border-4 border-blue-500/30 border-t-blue-500 rounded-full animate-spin" />
+        <div className="text-center">
+          <div className="text-lg font-semibold text-slate-100">
+            Preparando simulación…
+          </div>
+          <div className="text-sm text-slate-400 mt-1">
+            Planificando rutas iniciales, esto puede tomar unos segundos
+          </div>
+        </div>
+      </div>
+    </div>
+  ) : null;
 
   const header = (
     <div className="flex items-center gap-3 flex-wrap">
@@ -791,7 +815,9 @@ export default function PeriodSimulatorPage() {
   );
 
   return (
-    <MapDashboard
+    <>
+      {loadingModal}
+      <MapDashboard
       title=""
       header={header}
       mapOverlay={mapOverlay}
@@ -810,5 +836,6 @@ export default function PeriodSimulatorPage() {
       progress={progress}
       simStatus={simStatus}
     />
+    </>
   );
 }

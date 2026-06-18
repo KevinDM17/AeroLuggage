@@ -56,7 +56,7 @@ public class SimulacionSesion {
     private final int windowSpacingMinutes;
     private final LocalDateTime fechaInicioUtc;
     private final LocalDateTime fechaFinUtc;
-    private final long startedAtRealMs;
+    private long startedAtRealMs;
     private final AtomicInteger tickActual = new AtomicInteger(0);
     private final AtomicReference<LocalDateTime> currentSimTimeUtc;
     private final AtomicReference<SimulacionVentana> currentWindow;
@@ -1114,6 +1114,10 @@ public class SimulacionSesion {
         final LocalDateTime nextTime = fechaInicioUtc.plus(Duration.ofMillis(simulatedElapsedMs));
         final LocalDateTime boundedTime = nextTime.isAfter(fechaFinUtc) ? fechaFinUtc : nextTime;
         currentSimTimeUtc.set(boundedTime);
+    }
+
+    public void resetTiempoInicioReal() {
+        this.startedAtRealMs = System.currentTimeMillis();
     }
 
     public SimulacionVentana refreshCurrentWindow() {

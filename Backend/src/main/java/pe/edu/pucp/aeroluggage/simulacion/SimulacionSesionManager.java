@@ -561,6 +561,7 @@ public class SimulacionSesionManager {
         if (sesion == null || sesion.getTareaScheduled() != null) {
             return;
         }
+        sesion.resetTiempoInicioReal();
         programarTarea(sesion, broker);
     }
 
