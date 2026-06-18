@@ -39,7 +39,7 @@ export default function MapDashboard({
       {progress != null && simStatus !== "idle" && (
         <div className="absolute top-0 left-0 right-0 z-[5000] h-1">
           <div
-            className={`h-full transition-all ${simStatus === "done" ? "bg-success" : simStatus === "paused" ? "bg-warning" : "bg-info"}`}
+            className={`h-full transition-all ${simStatus === "collapsed" ? "bg-danger" : simStatus === "done" ? "bg-success" : simStatus === "paused" ? "bg-warning" : "bg-info"}`}
             style={{ width: `${progress}%` }}
           />
         </div>

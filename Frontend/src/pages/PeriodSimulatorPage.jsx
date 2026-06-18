@@ -1,6 +1,6 @@
 import { useEffect, useMemo, useRef, useState } from "react";
 import { useOutletContext } from "react-router-dom";
-import { Play, Square, RotateCw } from "lucide-react";
+import { Play, Square, RotateCw, AlertTriangle, X } from "lucide-react";
 import MapDashboard from "../components/simulator/MapDashboard";
 import { usePolling } from "../hooks/usePolling";
 import { useElapsedTimer } from "../hooks/useElapsedTimer";
@@ -35,12 +35,19 @@ const PERIOD_DAYS = 5;
 const CLOCK_REFRESH_MS = 500;
 const MAP_REFRESH_MS = 500;
 
+const METRICAS_COLAPSO = [
+  { key: "aeropuertosColapsados", label: "Aeropuertos colapsados" },
+  { key: "vuelosColapsados", label: "Vuelos colapsados" },
+  { key: "maletasEvaluadasSinRuta", label: "Maletas sin ruta" },
+];
+
 const ESTADO_BACK_A_LOCAL = {
   INICIADA: "running",
   REANUDADA: "running",
   PAUSADA: "paused",
   DETENIDA: "idle",
   FINALIZADA: "done",
+  COLAPSO: "collapsed",
 };
 
 const clamp = (value, min, max) => Math.min(max, Math.max(min, value));
@@ -97,6 +104,8 @@ export default function PeriodSimulatorPage() {
   const [simulatedDayDurationMs, setSimulatedDayDurationMs] = useState(null);
   const [windowSizeMinutes, setWindowSizeMinutes] = useState(120);
   const [windowSpacingMinutes, setWindowSpacingMinutes] = useState(120);
+  const [showColapsoModal, setShowColapsoModal] = useState(false);
+  const [colapsoInfo, setColapsoInfo] = useState(null);
   const startSimMsRef = useRef(null);
   const ventanasCargadasRef = useRef(new Set());
   const lastMapFlightsRef = useRef([]);
@@ -190,7 +199,7 @@ export default function PeriodSimulatorPage() {
     CLOCK_REFRESH_MS,
   );
   const hasActiveRun =
-    simStatus === "running" || simStatus === "paused" || simStatus === "done";
+    simStatus === "running" || simStatus === "paused" || simStatus === "done" || simStatus === "collapsed";
 
   useDefensivePerformanceCleanup(simStatus === "running");
 
@@ -217,6 +226,11 @@ export default function PeriodSimulatorPage() {
         title: "Simulación completada",
         message: estadoMessage.mensaje,
       });
+    }
+    if (estadoMessage.estado === "COLAPSO") {
+      setSimStatus("collapsed");
+      setColapsoInfo(estadoMessage);
+      setShowColapsoModal(true);
     }
     if (estadoMessage.estado === "DETENIDA" && simStatus !== "idle") {
       setSessionId(null);
@@ -656,6 +670,8 @@ export default function PeriodSimulatorPage() {
   };
 
   const handleStop = async () => {
+    setShowColapsoModal(false);
+    setColapsoInfo(null);
     setSimStatus("idle");
     setSessionId(null);
     setCurrentSimTimeUtc(null);
@@ -800,6 +816,47 @@ export default function PeriodSimulatorPage() {
     </div>
   ) : null;
 
+  const colapsoModal = showColapsoModal ? (
+    <div className="fixed inset-0 z-[10000] flex items-center justify-center bg-black/60 backdrop-blur-sm">
+      <div className="bg-surface-2 border border-danger/40 shadow-[0_12px_35px_rgba(0,0,0,0.55)] rounded-xl px-8 py-6 max-w-md w-full mx-4">
+        <div className="flex items-start justify-between gap-4 mb-4">
+          <div className="flex items-center gap-3">
+            <AlertTriangle className="w-8 h-8 text-danger flex-shrink-0" />
+            <h2 className="text-xl font-bold text-danger">¡Colapso!</h2>
+          </div>
+          <button
+            type="button"
+            onClick={() => setShowColapsoModal(false)}
+            className="text-slate-400 hover:text-slate-200 transition-colors flex-shrink-0"
+            title="Cerrar"
+          >
+            <X className="w-5 h-5" />
+          </button>
+        </div>
+        {colapsoInfo?.mensaje && (
+          <p className="text-slate-300 text-sm mb-4">{colapsoInfo.mensaje}</p>
+        )}
+        <ul className="text-sm text-slate-400 space-y-1.5 mb-4">
+          {METRICAS_COLAPSO.map(({ key, label }) => {
+            const valor = colapsoInfo?.[key];
+            if (valor == null || valor <= 0) return null;
+            return (
+              <li key={key} className="flex justify-between">
+                <span>{label}</span>
+                <span className="text-slate-200 font-medium tabular-nums">{valor}</span>
+              </li>
+            );
+          })}
+        </ul>
+        <p className="text-xs text-slate-500 leading-relaxed">
+          La simulación se ha detenido. Puedes cerrar este panel o usar el botón{" "}
+          <Square className="inline w-3 h-3 text-danger" /> en el panel inferior
+          para finalizar la simulación.
+        </p>
+      </div>
+    </div>
+  ) : null;
+
   const header = (
     <div className="flex items-center gap-3 flex-wrap">
       {simStatus === "paused" ? (
@@ -817,6 +874,7 @@ export default function PeriodSimulatorPage() {
   return (
     <>
       {loadingModal}
+      {colapsoModal}
       <MapDashboard
       title=""
       header={header}
