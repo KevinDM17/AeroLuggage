@@ -80,7 +80,7 @@ export default function MapDashboard({
       )}
 
       {showKpis && (
-        <div className="absolute top-2 left-2 right-2 z-[2000]">
+        <div className="absolute top-2 left-2 right-2 z-[2000] px-14">
           <div className="relative bg-surface-1/75 backdrop-blur border border-slate-700/50 rounded-xl pl-2 pr-9 py-1.5">
             <div className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-5 gap-1.5 sm:gap-2">
               <Kpi

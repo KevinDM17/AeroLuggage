@@ -64,7 +64,7 @@ public class SimulacionSesion {
     private final AtomicLong stateVersion = new AtomicLong(1);
     private final AtomicBoolean activa = new AtomicBoolean(true);
     private final AtomicBoolean planValido = new AtomicBoolean(false);
-    private final AtomicBoolean planificando = new AtomicBoolean(false);
+    private final AtomicInteger planificando = new AtomicInteger(0);
     private final AtomicBoolean replanPendiente = new AtomicBoolean(false);
     private final AtomicBoolean csvEscrito = new AtomicBoolean(false);
     private final AtomicReference<String> ultimaVentanaPlanificada = new AtomicReference<>("");
@@ -892,7 +892,7 @@ public class SimulacionSesion {
         this.stateVersion.set(1);
         this.csvEscrito.set(false);
         this.planValido.set(false);
-        this.planificando.set(false);
+        this.planificando.set(0);
         this.replanPendiente.set(false);
         this.ultimaVentanaPlanificada.set("");
     }
@@ -1147,7 +1147,7 @@ public class SimulacionSesion {
     }
 
     public boolean necesitaPlanificacion() {
-        if (planificando.get()) {
+        if (planificando.get() > 0) {
             return false;
         }
         if (replanPendiente.get()) {
@@ -1197,15 +1197,15 @@ public class SimulacionSesion {
     }
 
     public boolean iniciarPlanificacion() {
-        return planificando.compareAndSet(false, true);
+        return planificando.compareAndSet(0, 1);
     }
 
     public void finalizarPlanificacion() {
-        planificando.set(false);
+        planificando.decrementAndGet();
     }
 
     public boolean estaPlanificando() {
-        return planificando.get();
+        return planificando.get() > 0;
     }
 
     public boolean solicitarReplan() {
