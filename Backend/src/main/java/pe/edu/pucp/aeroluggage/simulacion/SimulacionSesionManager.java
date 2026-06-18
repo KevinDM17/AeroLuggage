@@ -126,7 +126,7 @@ public class SimulacionSesionManager {
             String simTime,
             int aeropuertosColapsados,
             int vuelosColapsados,
-            int maletasVencidasSinRuta
+            int maletasEvaluadasSinRuta
     ) {
     }
 
@@ -282,7 +282,7 @@ public class SimulacionSesionManager {
         try {
             final SimulacionTickLigeroDTO tick = periodoService.ejecutarTick(sesion);
             broker.convertAndSend(TOPIC_TICKS + sesion.getSessionId(), tick);
-            if (emitirAlertasColapsoSiCorresponde(sesion, broker)) {
+            if (emitirAlertasColapsoSiCorresponde(sesion, broker, Set.of())) {
                 detenerPorColapso(sesion);
                 return;
             }
@@ -519,7 +519,10 @@ public class SimulacionSesionManager {
                     (String) (TOPIC_TICKS + sesion.getSessionId()),
                     (Object) readyMsg
             );
-            if (emitirAlertasColapsoSiCorresponde(sesion, broker)) {
+            final Set<String> maletasEvaluadas = instancia.getMaletas().stream()
+                    .map(Maleta::getIdMaleta)
+                    .collect(Collectors.toSet());
+            if (emitirAlertasColapsoSiCorresponde(sesion, broker, maletasEvaluadas)) {
                 colapsoDetectado = true;
                 detenerPorColapso(sesion);
                 return;
@@ -771,8 +774,11 @@ public class SimulacionSesionManager {
                 broker.convertAndSend(
                         (String) (TOPIC_TICKS + sesion.getSessionId()),
                         (Object) readyMsg
-                );
-                if (emitirAlertasColapsoSiCorresponde(sesion, broker)) {
+                 );
+            final Set<String> maletasEvaluadas = instancia.getMaletas().stream()
+                    .map(Maleta::getIdMaleta)
+                    .collect(Collectors.toSet());
+            if (emitirAlertasColapsoSiCorresponde(sesion, broker, maletasEvaluadas)) {
                     colapsoDetectado = true;
                     detenerPorColapso(sesion);
                     return;
@@ -1715,8 +1721,10 @@ public class SimulacionSesionManager {
     }
 
     private boolean emitirAlertasColapsoSiCorresponde(final SimulacionSesion sesion,
-                                                      final SimpMessagingTemplate broker) {
-        final ColapsoDetectado colapso = sesion.withEventosLiveReadLock(() -> detectarColapso(sesion));
+                                                      final SimpMessagingTemplate broker,
+                                                      final Set<String> maletasEvaluadasIds) {
+        final ColapsoDetectado colapso = sesion.withEventosLiveReadLock(
+                () -> detectarColapso(sesion, maletasEvaluadasIds));
         if (colapso == null) {
             return false;
         }
@@ -1729,17 +1737,18 @@ public class SimulacionSesionManager {
                         .withSimTime(colapso.simTime())
                         .withAeropuertosColapsados(colapso.aeropuertosColapsados())
                         .withVuelosColapsados(colapso.vuelosColapsados())
-                        .withMaletasVencidasSinRuta(colapso.maletasVencidasSinRuta())
+                        .withMaletasEvaluadasSinRuta(colapso.maletasEvaluadasSinRuta())
                         .build()
         );
         return true;
     }
 
-    private ColapsoDetectado detectarColapso(final SimulacionSesion sesion) {
+    private ColapsoDetectado detectarColapso(final SimulacionSesion sesion,
+                                              final Set<String> maletasEvaluadasIds) {
         final LocalDateTime simTime = sesion.getCurrentSimTimeUtc().get();
         int aeropuertosColapsados = 0;
         int vuelosColapsados = 0;
-        int maletasVencidasSinRuta = 0;
+        int maletasEvaluadasSinRuta = 0;
         final List<String> motivos = new ArrayList<>();
 
         for (final Aeropuerto aeropuerto : sesion.getAeropuertos()) {
@@ -1764,23 +1773,25 @@ public class SimulacionSesionManager {
             }
         }
 
-        for (final Maleta maleta : sesion.getMaletasCalientes()) {
-            if (maleta == null || maleta.getIdMaleta() == null || maleta.getPedido() == null
-                    || maleta.getPedido().getFechaHoraPlazo() == null) {
-                continue;
+        if (maletasEvaluadasIds != null && !maletasEvaluadasIds.isEmpty()) {
+            for (final String idMaleta : maletasEvaluadasIds) {
+                if (idMaleta == null) {
+                    continue;
+                }
+                final Ruta ruta = sesion.getRutaPorMaleta(idMaleta);
+                final boolean sinRuta = ruta == null
+                        || ruta.getEstado() == EstadoRuta.REPLANIFICADA
+                        || ruta.getSubrutas().isEmpty();
+                if (sinRuta) {
+                    maletasEvaluadasSinRuta++;
+                    motivos.add("Maleta " + idMaleta + " evaluada en ventana actual sin ruta asignada");
+                }
             }
-            final Ruta ruta = sesion.getRutaPorMaleta(maleta.getIdMaleta());
-            final boolean sinRuta = ruta == null
-                    || ruta.getEstado() == EstadoRuta.REPLANIFICADA
-                    || ruta.getSubrutas().isEmpty();
-            if (!sinRuta || !simTime.isAfter(maleta.getPedido().getFechaHoraPlazo())) {
-                continue;
-            }
-            maletasVencidasSinRuta++;
-            motivos.add("Maleta " + maleta.getIdMaleta() + " sin ruta con plazo vencido");
         }
 
-        if (aeropuertosColapsados == 0 && vuelosColapsados == 0 && maletasVencidasSinRuta == 0) {
+        final boolean hayColapso = aeropuertosColapsados > 0 || vuelosColapsados > 0
+                || maletasEvaluadasSinRuta > 0;
+        if (!hayColapso) {
             return null;
         }
         if (!sesion.registrarAlertaColapso("COLAPSO_GLOBAL")) {
@@ -1795,7 +1806,7 @@ public class SimulacionSesionManager {
                 simTime != null ? simTime.format(FORMATO_FECHA_HORA) : null,
                 aeropuertosColapsados,
                 vuelosColapsados,
-                maletasVencidasSinRuta
+                maletasEvaluadasSinRuta
         );
     }
 

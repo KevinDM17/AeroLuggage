@@ -13,5 +13,5 @@ public class SimulacionEstadoDTO {
     private String simTime;
     private Integer aeropuertosColapsados;
     private Integer vuelosColapsados;
-    private Integer maletasVencidasSinRuta;
+    private Integer maletasEvaluadasSinRuta;
 }
