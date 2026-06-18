@@ -21,12 +21,20 @@ public class AeropuertoRepositorio {
 
     public AeropuertoRepositorio(JdbcTemplate jdbcTemplate) {
         this.jdbcTemplate = jdbcTemplate;
+        ejecutarMigracion();
+    }
+
+    private void ejecutarMigracion() {
+        try {
+            jdbcTemplate.execute("ALTER TABLE aeropuerto ADD COLUMN activo INTEGER DEFAULT 1");
+        } catch (Exception ignored) {
+        }
     }
 
     public int insertar(Aeropuerto aeropuerto) {
         String sql = "INSERT OR REPLACE INTO aeropuerto " +
-                "(id_aeropuerto, id_ciudad, capacidad_almacen, maletas_actuales, longitud, latitud, huso_gmt) " +
-                "VALUES (?, ?, ?, ?, ?, ?, ?)";
+                "(id_aeropuerto, id_ciudad, capacidad_almacen, maletas_actuales, longitud, latitud, huso_gmt, activo) " +
+                "VALUES (?, ?, ?, ?, ?, ?, ?, ?)";
         String idCiudad = aeropuerto.getCiudad() != null ? aeropuerto.getCiudad().getIdCiudad() : null;
         return jdbcTemplate.update(sql,
                 aeropuerto.getIdAeropuerto(),
@@ -35,19 +43,20 @@ public class AeropuertoRepositorio {
                 aeropuerto.getMaletasActuales(),
                 aeropuerto.getLongitud(),
                 aeropuerto.getLatitud(),
-                aeropuerto.getHusoGMT());
+                aeropuerto.getHusoGMT(),
+                aeropuerto.isActivo() ? 1 : 0);
     }
 
     public Optional<Aeropuerto> obtenerPorId(String id) {
         String sql = "SELECT id_aeropuerto, capacidad_almacen, maletas_actuales, longitud, latitud, huso_gmt " +
-                "FROM aeropuerto WHERE id_aeropuerto = ?";
+                "FROM aeropuerto WHERE id_aeropuerto = ? AND activo = 1";
         List<Aeropuerto> resultado = jdbcTemplate.query(sql, new AeropuertoRowMapper(), id);
         return resultado.isEmpty() ? Optional.empty() : Optional.of(resultado.get(0));
     }
 
     public List<Aeropuerto> obtenerTodos() {
         String sql = "SELECT id_aeropuerto, capacidad_almacen, maletas_actuales, longitud, latitud, huso_gmt " +
-                "FROM aeropuerto";
+                "FROM aeropuerto WHERE activo = 1";
         return jdbcTemplate.query(sql, new AeropuertoRowMapper());
     }
 
@@ -56,7 +65,7 @@ public class AeropuertoRepositorio {
                 "a.longitud, a.latitud, a.huso_gmt, " +
                 "c.id_ciudad, c.nombre AS ciudad_nombre, c.continente " +
                 "FROM aeropuerto a JOIN ciudad c ON a.id_ciudad = c.id_ciudad " +
-                "WHERE a.id_aeropuerto = ?";
+                "WHERE a.id_aeropuerto = ? AND a.activo = 1";
         List<Aeropuerto> resultado = jdbcTemplate.query(sql, new AeropuertoConCiudadRowMapper(), id);
         return resultado.isEmpty() ? Optional.empty() : Optional.of(resultado.get(0));
     }
@@ -65,7 +74,8 @@ public class AeropuertoRepositorio {
         String sql = "SELECT a.id_aeropuerto, a.capacidad_almacen, a.maletas_actuales, " +
                 "a.longitud, a.latitud, a.huso_gmt, " +
                 "c.id_ciudad, c.nombre AS ciudad_nombre, c.continente " +
-                "FROM aeropuerto a JOIN ciudad c ON a.id_ciudad = c.id_ciudad";
+                "FROM aeropuerto a JOIN ciudad c ON a.id_ciudad = c.id_ciudad " +
+                "WHERE a.activo = 1";
         return jdbcTemplate.query(sql, new AeropuertoConCiudadRowMapper());
     }
 
@@ -89,7 +99,7 @@ public class AeropuertoRepositorio {
     }
 
     public int eliminar(String id) {
-        return jdbcTemplate.update("DELETE FROM aeropuerto WHERE id_aeropuerto=?", id);
+        return jdbcTemplate.update("UPDATE aeropuerto SET activo = 0 WHERE id_aeropuerto = ?", id);
     }
 
     private static final class AeropuertoRowMapper implements RowMapper<Aeropuerto> {

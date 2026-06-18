@@ -1,30 +1,51 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { Map as MapGL, useControl } from "react-map-gl/maplibre";
 import { MapboxOverlay } from "@deck.gl/mapbox";
-import { ScatterplotLayer, LineLayer, IconLayer, TextLayer } from "@deck.gl/layers";
+import { ScatterplotLayer, LineLayer, IconLayer, TextLayer, PathLayer } from "@deck.gl/layers";
+import { PathStyleExtension } from "@deck.gl/extensions";
 import "maplibre-gl/dist/maplibre-gl.css";
-import { tokens, semaphoreColor } from "../../utils/tokens";
+import { tokens } from "../../utils/tokens";
 import { useFetch } from "../../hooks/useFetch";
 import { listAirports } from "../../api/airports";
 import { listFlights } from "../../api/flights";
 import { useMapFocus } from "../../context/MapFocusContext";
 
+/* Escalones discretos por % de ocupación.
+ *   0%     → "white" (vacío)
+ *   <60%   → "green"
+ *   60-84% → "yellow"
+ *   >=85%  → "red"
+ */
 const occupancyStatus = (used, capacity) => {
   const pct = capacity > 0 ? (used / capacity) * 100 : 0;
+  if (pct <= 0) return "white";
   if (pct >= 85) return "red";
   if (pct >= 60) return "yellow";
   return "green";
 };
 
-const flightLoadColor = (used, capacity) => {
-  const pct = capacity > 0 ? (used / capacity) * 100 : 0;
-  if (pct >= 85) return tokens.danger;
-  if (pct >= 60) return tokens.warning;
-  return tokens.success;
+const STATUS_HEX = {
+  white: "#ffffff",
+  green: tokens.success,
+  yellow: tokens.warning,
+  red: tokens.danger,
+};
+
+/* Alpha para los aviones según el escalón.
+ * Vacío = blanco translúcido; cargado = opaco. */
+const FLIGHT_ALPHA = {
+  white: 70,
+  green: 255,
+  yellow: 255,
+  red: 255,
 };
 
 const normalizeStatus = (status) =>
   String(status ?? "").trim().toUpperCase().replace(/\s+/g, "_");
+
+/* Web Mercator: la latitud no es lineal en pantalla; sin esta correccion los
+ * aviones se desvian de la linea pintada en rutas con mucho rango de latitud. */
+const mercY = (lat) => Math.log(Math.tan(Math.PI / 4 + (lat * Math.PI) / 360));
 
 /* Hex (#RRGGBB) → [r, g, b, a] que es lo que deck.gl espera. */
 function hexToRgba(hex, alpha = 255) {
@@ -112,7 +133,7 @@ function AirportMap({
   const airportList = useMemo(() => Array.from(airportsByIata.values()), [airportsByIata]);
 
   /* Vinculacion panel <-> mapa. */
-  const { mapHighlight, selected, mapFocus, mapDim, setSelected, setPanelFocus } = useMapFocus();
+  const { mapHighlight, selected, mapFocus, mapDim, setSelected, setPanelFocus, flightManifestLoader } = useMapFocus();
   const mapRef = useRef(null);
 
   // Click en el mapa -> seleccionar y pedir enfoque en el panel (req 6/8).
@@ -120,6 +141,49 @@ function AirportMap({
     setSelected(entity);
     setPanelFocus({ ...entity, ts: Date.now() });
   }, [setSelected, setPanelFocus]);
+
+  /* Popup con datos del vuelo al hacer click en un avion.
+   * - clickedFlightId: id del vuelo cuya tarjeta se muestra.
+   * - manifest: pedidos/maletas a bordo, pedidos al back cuando se abre.
+   * Se limpia al clickear fondo vacio del mapa. */
+  const [clickedFlightId, setClickedFlightId] = useState(null);
+  const [manifest, setManifest] = useState({ status: "idle", pedidos: 0, maletas: 0 });
+
+  const clickedFlight = useMemo(() => {
+    if (!clickedFlightId) return null;
+    return (flights ?? []).find((f) => (f.id ?? f.idVueloInstancia) === clickedFlightId) ?? null;
+  }, [clickedFlightId, flights]);
+
+  useEffect(() => {
+    if (!clickedFlightId || !flightManifestLoader) {
+      setManifest({ status: "idle", pedidos: 0, maletas: 0 });
+      return undefined;
+    }
+    let cancelled = false;
+    setManifest({ status: "loading", pedidos: 0, maletas: 0 });
+    flightManifestLoader(clickedFlightId)
+      .then((data) => {
+        if (cancelled) return;
+        setManifest({
+          status: "ready",
+          pedidos: (data?.pedidos ?? []).length,
+          maletas: (data?.maletas ?? []).length,
+        });
+      })
+      .catch(() => {
+        if (cancelled) return;
+        setManifest({ status: "error", pedidos: 0, maletas: 0 });
+      });
+    return () => { cancelled = true; };
+  }, [clickedFlightId, flightManifestLoader]);
+
+  const handleDeckClick = useCallback((info) => {
+    // info.object es null cuando el click cae sobre el fondo (sin layer pickable).
+    if (!info?.object) {
+      setClickedFlightId(null);
+      setSelected(null);
+    }
+  }, [setSelected]);
 
   // Enfoque de camara pedido por el panel (req 5/7/9).
   useEffect(() => {
@@ -180,8 +244,16 @@ function AirportMap({
       if (!origin || !destination) return null;
       const dLat = destination.lat - origin.lat;
       const dLng = destination.lng - origin.lng;
+      // deck.gl LineLayer dibuja recto en espacio Mercator proyectado, no en
+      // lat/lng. Para que el avion siga la linea exactamente, interpolamos la
+      // lat en mercator-y (la lng es lineal en Mercator). dLngRad/dMercY tambien
+      // dan el angulo "real" de la trayectoria en pantalla.
+      const oMercY = mercY(origin.lat);
+      const dMercY = mercY(destination.lat) - oMercY;
+      const dLngRad = dLng * Math.PI / 180;
       const salidaMs = Date.parse(`${route.depTime}Z`);
       const llegadaMs = Date.parse(`${route.arrTime}Z`);
+      const occStatus = occupancyStatus(route.used, route.capacity);
       return {
         id: route.id ?? `${route.origin}-${route.dest}-${idx}`,
         origin,
@@ -190,8 +262,11 @@ function AirportMap({
         oLat: origin.lat,
         dLng,
         dLat,
-        angle: (Math.atan2(dLng, dLat) * 180) / Math.PI,
-        color: hexToRgba(flightLoadColor(route.used, route.capacity)),
+        oMercY,
+        dMercY,
+        angle: (Math.atan2(dLngRad, dMercY) * 180) / Math.PI,
+        color: hexToRgba(STATUS_HEX[occStatus], FLIGHT_ALPHA[occStatus]),
+        isEmpty: occStatus === "white",
         depMs: Number.isFinite(salidaMs) ? salidaMs : null,
         arrMs: Number.isFinite(llegadaMs) ? llegadaMs : null,
       };
@@ -242,6 +317,8 @@ function AirportMap({
         oLat: g.oLat,
         dLng: g.dLng,
         dLat: g.dLat,
+        oMercY: g.oMercY,
+        dMercY: g.dMercY,
         angle: g.angle,
         color: g.color,
         depMs: g.depMs,
@@ -255,25 +332,48 @@ function AirportMap({
   const layers = useMemo(() => {
     const ls = [];
 
-    /* Polylines de rutas. */
+    /* Polylines de rutas. Las vacias se pintan blancas discontinuas para
+     * distinguirlas a simple vista del trafico real. */
     if (showFlights && showRouteLines && routesGeometry.length > 0) {
-      ls.push(
-        new LineLayer({
-          id: "routes",
-          data: routesGeometry,
-          getSourcePosition: (d) => [d.origin.lng, d.origin.lat],
-          getTargetPosition: (d) => [d.destination.lng, d.destination.lat],
-          getColor: hexToRgba(tokens.success, 76), // ~0.3 alpha
-          getWidth: 1.5,
-          widthUnits: "pixels",
-        })
-      );
+      const loadedRoutes = routesGeometry.filter((r) => !r.isEmpty);
+      const emptyRoutes = routesGeometry.filter((r) => r.isEmpty);
+
+      if (loadedRoutes.length > 0) {
+        ls.push(
+          new LineLayer({
+            id: "routes",
+            data: loadedRoutes,
+            getSourcePosition: (d) => [d.origin.lng, d.origin.lat],
+            getTargetPosition: (d) => [d.destination.lng, d.destination.lat],
+            getColor: hexToRgba(tokens.success, 255), // opaco; solo las vacias son translucidas
+            getWidth: 1.2,
+            widthUnits: "pixels",
+          })
+        );
+      }
+
+      if (emptyRoutes.length > 0) {
+        ls.push(
+          new PathLayer({
+            id: "routes-empty",
+            data: emptyRoutes,
+            getPath: (d) => [[d.origin.lng, d.origin.lat], [d.destination.lng, d.destination.lat]],
+            getColor: [255, 255, 255, 70], // blanco translucido
+            getWidth: 1.2,
+            widthUnits: "pixels",
+            getDashArray: [4, 3],
+            dashJustified: true,
+            extensions: [new PathStyleExtension({ dash: true })],
+          })
+        );
+      }
     }
 
     /* Halo glow de cada aeropuerto (un disco grande semi-transparente).
      * deck.gl no tiene box-shadow → simulamos con un scatterplot debajo. */
     if (airportList.length > 0) {
       const airportDimmed = (a) => mapDim.airports && !mapDim.airports.has(a.iata);
+      const selectedAirportId = selected?.kind === "airport" ? selected.id : null;
 
       ls.push(
         new ScatterplotLayer({
@@ -281,13 +381,14 @@ function AirportMap({
           data: airportList,
           getPosition: (a) => [a.lng, a.lat],
           getFillColor: (a) => {
+            if (a.iata === selectedAirportId) return hexToRgba(tokens.info, 110);
             const s = occupancyStatus(a.used, a.capacity);
-            return hexToRgba(semaphoreColor(s), airportDimmed(a) ? 10 : 90);
+            return hexToRgba(STATUS_HEX[s], airportDimmed(a) ? 10 : 90);
           },
           getRadius: 14,
           radiusUnits: "pixels",
           stroked: false,
-          updateTriggers: { getFillColor: mapDim.airports },
+          updateTriggers: { getFillColor: [mapDim.airports, selectedAirportId] },
         })
       );
 
@@ -298,8 +399,9 @@ function AirportMap({
           data: airportList,
           getPosition: (a) => [a.lng, a.lat],
           getFillColor: (a) => {
+            if (a.iata === selectedAirportId) return hexToRgba(tokens.info, 255);
             const s = occupancyStatus(a.used, a.capacity);
-            return hexToRgba(semaphoreColor(s), airportDimmed(a) ? 35 : 255);
+            return hexToRgba(STATUS_HEX[s], airportDimmed(a) ? 35 : 255);
           },
           getRadius: 6,
           radiusUnits: "pixels",
@@ -312,7 +414,7 @@ function AirportMap({
             }
             return false;
           },
-          updateTriggers: { getFillColor: mapDim.airports },
+          updateTriggers: { getFillColor: [mapDim.airports, selectedAirportId] },
         })
       );
 
@@ -340,6 +442,8 @@ function AirportMap({
       const iconUrl = getPlaneIconUrl();
       if (iconUrl) {
         const flightDimmed = (d) => mapDim.flights && !mapDim.flights.has(d.id);
+        const selectedFlightId = selected?.kind === "flight" ? selected.id : null;
+        const selectedColor = hexToRgba(tokens.info, 255);
         ls.push(
           new IconLayer({
             id: "planes",
@@ -352,13 +456,18 @@ function AirportMap({
             // Para que apunte al destino: rotar CW por (bearing - 45).
             // Pero deck.gl mide CCW → invertir signo → 45 - bearing.
             getAngle: (d) => 45 - d.angle,
-            getColor: (d) => (flightDimmed(d) ? [d.color[0], d.color[1], d.color[2], 45] : d.color),
-            getSize: 22,
+            getColor: (d) => {
+              if (d.id === selectedFlightId) return selectedColor;
+              if (flightDimmed(d)) return [d.color[0], d.color[1], d.color[2], 45];
+              return d.color;
+            },
+            getSize: 18,
             sizeUnits: "pixels",
             pickable: true,
             onClick: (info) => {
               if (info?.object?.id) {
                 selectFromMap({ kind: "flight", id: info.object.id });
+                setClickedFlightId(info.object.id);
                 return true;
               }
               return false;
@@ -366,7 +475,7 @@ function AirportMap({
             updateTriggers: {
               getPosition: planes,
               getAngle: planes,
-              getColor: [planes, mapDim.flights],
+              getColor: [planes, mapDim.flights, selectedFlightId],
             },
           })
         );
@@ -412,8 +521,8 @@ function AirportMap({
           data: [selectedFlightLine],
           getSourcePosition: (d) => [d.oLng, d.oLat],
           getTargetPosition: (d) => [d.dLng, d.dLat],
-          getColor: hexToRgba(tokens.warning, 255),
-          getWidth: 3,
+          getColor: hexToRgba(tokens.info, 255),
+          getWidth: 1.2,
           widthUnits: "pixels",
         })
       );
@@ -426,7 +535,7 @@ function AirportMap({
           getPosition: (a) => [a.lng, a.lat],
           getFillColor: [0, 0, 0, 0],
           stroked: true,
-          getLineColor: hexToRgba(tokens.warning, 255),
+          getLineColor: hexToRgba(tokens.info, 255),
           lineWidthUnits: "pixels",
           getLineWidth: 3,
           getRadius: 12,
@@ -438,11 +547,11 @@ function AirportMap({
     return ls;
   }, [
     showFlights, showRouteLines, routesGeometry, airportList, planes,
-    highlightGeometry, highlightAirports, mapDim, selectedAirport, selectedFlightLine, selectFromMap,
+    highlightGeometry, highlightAirports, mapDim, selected, selectedAirport, selectedFlightLine, selectFromMap,
   ]);
 
   return (
-    <div className="w-full h-full bg-canvas">
+    <div className="w-full h-full bg-canvas relative">
       <MapGL
         ref={mapRef}
         initialViewState={initialViewState}
@@ -451,8 +560,83 @@ function AirportMap({
         renderWorldCopies={false}
         style={{ width: "100%", height: "100%", background: tokens.canvas }}
       >
-        <DeckGLOverlay layers={layers} interleaved />
+        <DeckGLOverlay layers={layers} interleaved onClick={handleDeckClick} />
       </MapGL>
+      {clickedFlight && (
+        <FlightInfoCard
+          flight={clickedFlight}
+          manifest={manifest}
+          onClose={() => setClickedFlightId(null)}
+        />
+      )}
+    </div>
+  );
+}
+
+function FlightInfoCard({ flight, manifest, onClose }) {
+  const used = Number(flight.used ?? 0);
+  const cap = Number(flight.capacity ?? 0);
+  const pct = cap > 0 ? Math.round((used / cap) * 100) : 0;
+  const free = Math.max(cap - used, 0);
+  const fmt = (iso) => {
+    if (!iso) return "—";
+    const d = new Date(`${iso}Z`);
+    if (Number.isNaN(d.getTime())) return iso;
+    return d.toISOString().slice(11, 16) + " UTC";
+  };
+  return (
+    <div className="absolute top-3 right-3 z-[3500] w-72 rounded-xl border border-info/40 bg-surface-1/95 backdrop-blur px-4 py-3 shadow-lg shadow-info/10 text-slate-200">
+      <div className="flex items-start justify-between gap-2">
+        <div>
+          <div className="text-[10px] uppercase tracking-wider text-info font-semibold">Vuelo seleccionado</div>
+          <div className="font-bold text-base text-white">{flight.id ?? flight.idVueloInstancia}</div>
+          <div className="text-xs text-slate-400 mt-0.5">{flight.origin} → {flight.dest}</div>
+        </div>
+        <button
+          type="button"
+          onClick={onClose}
+          aria-label="Cerrar"
+          className="rounded-md border border-slate-700 bg-surface-2/60 p-1 text-slate-300 hover:text-white hover:bg-surface-2"
+        >
+          <span className="block leading-none text-xs px-1">×</span>
+        </button>
+      </div>
+
+      <div className="mt-3 grid grid-cols-2 gap-2 text-xs">
+        <Stat label="Maletas" value={`${used}/${cap}`} tone="info" />
+        <Stat label="Ocupacion" value={`${pct}%`} tone={pct >= 85 ? "danger" : pct >= 60 ? "warning" : "success"} />
+        <Stat
+          label="Pedidos a bordo"
+          value={
+            manifest.status === "loading" ? "…" :
+            manifest.status === "ready" ? String(manifest.pedidos) :
+            "—"
+          }
+          tone="info"
+        />
+        <Stat label="Capacidad libre" value={String(free)} tone={free === 0 ? "danger" : "success"} />
+      </div>
+
+      <div className="mt-3 grid grid-cols-2 gap-2 text-[11px] text-slate-400 border-t border-slate-800 pt-2">
+        <div>
+          <div className="uppercase text-[9px] tracking-wider text-slate-500">Salida</div>
+          <div className="text-slate-200 font-medium">{fmt(flight.depTime)}</div>
+        </div>
+        <div className="text-right">
+          <div className="uppercase text-[9px] tracking-wider text-slate-500">Llegada</div>
+          <div className="text-slate-200 font-medium">{fmt(flight.arrTime)}</div>
+        </div>
+      </div>
+    </div>
+  );
+}
+
+function Stat({ label, value, tone = "info" }) {
+  const toneClass = tone === "danger" ? "text-danger" : tone === "warning" ? "text-warning" : tone === "success" ? "text-success" : "text-info";
+  return (
+    <div className="rounded-lg border border-slate-800 bg-surface-2/60 px-2 py-1.5">
+      <div className="text-[9px] uppercase tracking-wider text-slate-500">{label}</div>
+      <div className={`text-sm font-bold tabular-nums ${toneClass}`}>{value}</div>
     </div>
   );
 }

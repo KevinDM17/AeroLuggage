@@ -23,6 +23,8 @@ import java.util.concurrent.atomic.AtomicBoolean;
 import java.util.concurrent.atomic.AtomicInteger;
 import java.util.concurrent.atomic.AtomicLong;
 import java.util.concurrent.atomic.AtomicReference;
+import java.util.concurrent.locks.ReentrantReadWriteLock;
+import java.util.function.Supplier;
 import java.util.stream.Collectors;
 
 import pe.edu.pucp.aeroluggage.cargador.CargadorEnvios;
@@ -54,7 +56,7 @@ public class SimulacionSesion {
     private final int windowSpacingMinutes;
     private final LocalDateTime fechaInicioUtc;
     private final LocalDateTime fechaFinUtc;
-    private final long startedAtRealMs;
+    private long startedAtRealMs;
     private final AtomicInteger tickActual = new AtomicInteger(0);
     private final AtomicReference<LocalDateTime> currentSimTimeUtc;
     private final AtomicReference<SimulacionVentana> currentWindow;
@@ -62,7 +64,7 @@ public class SimulacionSesion {
     private final AtomicLong stateVersion = new AtomicLong(1);
     private final AtomicBoolean activa = new AtomicBoolean(true);
     private final AtomicBoolean planValido = new AtomicBoolean(false);
-    private final AtomicBoolean planificando = new AtomicBoolean(false);
+    private final AtomicInteger planificando = new AtomicInteger(0);
     private final AtomicBoolean replanPendiente = new AtomicBoolean(false);
     private final AtomicBoolean csvEscrito = new AtomicBoolean(false);
     private final AtomicReference<String> ultimaVentanaPlanificada = new AtomicReference<>("");
@@ -91,6 +93,7 @@ public class SimulacionSesion {
     private final ConcurrentHashMap<String, List<VueloInstancia>> vuelosPorVentana = new ConcurrentHashMap<>();
     private final AtomicLong ultimoIndiceVuelosEnviado = new AtomicLong(0);
     private final Set<String> vuelosGenerados = ConcurrentHashMap.newKeySet();
+    private final Set<String> alertasColapsoEmitidas = ConcurrentHashMap.newKeySet();
     private volatile int umbralConfirmacionMinutos;
     private CargadorEnvios.LectorLotesEnvios lectorEnvios;
     private LocalDateTime ultimaCargaPedidos;
@@ -110,9 +113,11 @@ public class SimulacionSesion {
     }
 
     record EventoSim(TipoEventoSim tipo, String idEntidad, String idAeropuerto, int delta) {}
+    record EventoSimProgramado(LocalDateTime tiempo, EventoSim evento) {}
 
     private NavigableMap<LocalDateTime, List<EventoSim>> eventosSimulacion;
     private volatile LocalDateTime ultimoTiempoSim;
+    private final ReentrantReadWriteLock eventosLiveLock = new ReentrantReadWriteLock();
 
     public void setUltimoTiempoSim(final LocalDateTime t) {
         this.ultimoTiempoSim = t;
@@ -437,74 +442,12 @@ public class SimulacionSesion {
     }
 
     public void onRutaAgregada(final Ruta ruta, final int umbralConfirmacionMinutos) {
-        if (ruta == null || ruta.getIdMaleta() == null) return;
-        final Maleta m = maletasPorId.get(ruta.getIdMaleta());
-        if (m == null || m.getFechaRegistro() == null) return;
-        final List<String> ids = ruta.getSubrutas();
-        if (ids.isEmpty()) return;
-
-        final Map<String, VueloInstancia> vueloIndex = getVueloIndex();
-
-        agregarEvento(m.getFechaRegistro(), TipoEventoSim.MALETA_APARECE,
-                ruta.getIdMaleta(),
-                m.getPedido() != null && m.getPedido().getAeropuertoOrigen() != null
-                        ? m.getPedido().getAeropuertoOrigen().getIdAeropuerto() : null,
-                -1);
-
-        for (int i = 0; i < ids.size(); i++) {
-            final VueloInstancia v = vueloIndex.get(ids.get(i));
-            if (v == null) continue;
-            final String idAeroOrig = v.getAeropuertoOrigen() != null
-                    ? v.getAeropuertoOrigen().getIdAeropuerto() : null;
-            final String idAeroDest = v.getAeropuertoDestino() != null
-                    ? v.getAeropuertoDestino().getIdAeropuerto() : null;
-            final boolean ultimo = (i == ids.size() - 1);
-
-            if (v.getFechaSalida() != null && idAeroOrig != null) {
-                agregarEvento(v.getFechaSalida(), TipoEventoSim.MALETA_SALE_AEROP,
-                        ruta.getIdMaleta(), idAeroOrig, -1);
-            }
-            if (v.getFechaLlegada() != null && idAeroDest != null) {
-                agregarEvento(v.getFechaLlegada(), TipoEventoSim.MALETA_LLEGA_AEROP,
-                        ruta.getIdMaleta(), idAeroDest, 1);
-            }
-            if (ultimo && v.getFechaLlegada() != null && idAeroDest != null) {
-                agregarEvento(v.getFechaLlegada().plusMinutes(10), TipoEventoSim.MALETA_ENTREGADA,
-                        ruta.getIdMaleta(), idAeroDest, -1);
-            }
-        }
-
-        if (!ids.isEmpty()) {
-            final VueloInstancia primero = vueloIndex.get(ids.getFirst());
-            final VueloInstancia ultimoSub = vueloIndex.get(ids.getLast());
-            if (primero != null && primero.getFechaSalida() != null) {
-                agregarEvento(primero.getFechaSalida(), TipoEventoSim.RUTA_ACTIVA,
-                        ruta.getIdRuta(), null, 0);
-            }
-            if (ultimoSub != null && ultimoSub.getFechaLlegada() != null) {
-                agregarEvento(ultimoSub.getFechaLlegada(), TipoEventoSim.RUTA_COMPLETA,
-                        ruta.getIdRuta(), null, 0);
-            }
-        }
-
-        if (m.getFechaRegistro() != null && !m.getFechaRegistro().isAfter(currentSimTimeUtc.get())) {
-            for (final String idVuelo : ids) {
-                final VueloInstancia vuelo = vueloIndex.get(idVuelo);
-                if (vuelo == null) continue;
-                vuelo.setCapacidadDisponible(
-                        Math.max(0, vuelo.getCapacidadDisponible() - 1));
-            }
-            if (m.getPedido() != null && m.getPedido().getAeropuertoOrigen() != null) {
-                final String idAero = m.getPedido().getAeropuertoOrigen().getIdAeropuerto();
-                for (final Aeropuerto a : aeropuertos) {
-                    if (a != null && a.getIdAeropuerto() != null
-                            && a.getIdAeropuerto().equals(idAero)) {
-                        a.setMaletasActuales(a.getMaletasActuales() + 1);
-                        break;
-                    }
-                }
-            }
-        }
+        withEventosLiveWriteLock(() -> {
+            commitRutasPlanificadas(
+                    List.of(ruta),
+                    construirEventosPlanificadosParaRutas(List.of(ruta), getVueloIndex(), currentSimTimeUtc.get())
+            );
+        });
     }
 
     public void onRutaCancelada(final Ruta rutaAntigua) {
@@ -530,22 +473,24 @@ public class SimulacionSesion {
     }
 
     public void proyectarEstadoEnCopias(
+            final NavigableMap<LocalDateTime, List<EventoSim>> eventosFuente,
+            final Collection<Ruta> rutasFuente,
             final Map<String, VueloInstancia> vuelosIndex,
             final Map<String, Ruta> rutasIndex,
             final Map<String, Aeropuerto> aeropuertosIndex,
             final LocalDateTime desde,
             final LocalDateTime hasta,
             final int umbralConfirmacionMinutos) {
-        if (eventosSimulacion == null || desde == null || hasta == null || !desde.isBefore(hasta)) {
+        if (eventosFuente == null || desde == null || hasta == null || !desde.isBefore(hasta)) {
             return;
         }
         final Map<String, String> rutaPorMaleta = new HashMap<>();
-        for (final Ruta r : this.rutasPorMaleta.values()) {
+        for (final Ruta r : rutasFuente) {
             if (r != null && r.getIdMaleta() != null) {
                 rutaPorMaleta.put(r.getIdMaleta(), r.getIdRuta());
             }
         }
-        final Collection<List<EventoSim>> eventos = eventosSimulacion
+        final Collection<List<EventoSim>> eventos = eventosFuente
                 .subMap(desde, false, hasta, true)
                 .values();
         for (final List<EventoSim> lote : eventos) {
@@ -644,6 +589,229 @@ public class SimulacionSesion {
         }
     }
 
+    public void proyectarEstadoEnCopias(
+            final Map<String, VueloInstancia> vuelosIndex,
+            final Map<String, Ruta> rutasIndex,
+            final Map<String, Aeropuerto> aeropuertosIndex,
+            final LocalDateTime desde,
+            final LocalDateTime hasta,
+            final int umbralConfirmacionMinutos) {
+        proyectarEstadoEnCopias(
+                copiarEventosEntre(desde, hasta),
+                new ArrayList<>(this.rutasPorMaleta.values()),
+                vuelosIndex,
+                rutasIndex,
+                aeropuertosIndex,
+                desde,
+                hasta,
+                umbralConfirmacionMinutos
+        );
+    }
+
+    public <T> T withEventosLiveReadLock(final Supplier<T> supplier) {
+        eventosLiveLock.readLock().lock();
+        try {
+            return supplier.get();
+        } finally {
+            eventosLiveLock.readLock().unlock();
+        }
+    }
+
+    public <T> T withEventosLiveWriteLock(final Supplier<T> supplier) {
+        eventosLiveLock.writeLock().lock();
+        try {
+            return supplier.get();
+        } finally {
+            eventosLiveLock.writeLock().unlock();
+        }
+    }
+
+    public void withEventosLiveWriteLock(final Runnable runnable) {
+        eventosLiveLock.writeLock().lock();
+        try {
+            runnable.run();
+        } finally {
+            eventosLiveLock.writeLock().unlock();
+        }
+    }
+
+    public NavigableMap<LocalDateTime, List<EventoSim>> copiarEventosEntre(
+            final LocalDateTime desdeExclusivo,
+            final LocalDateTime hastaInclusivo) {
+        if (eventosSimulacion == null || desdeExclusivo == null || hastaInclusivo == null
+                || !desdeExclusivo.isBefore(hastaInclusivo)) {
+            return new TreeMap<>();
+        }
+        return clonarEventos(eventosSimulacion.subMap(desdeExclusivo, false, hastaInclusivo, true));
+    }
+
+    public NavigableMap<LocalDateTime, List<EventoSim>> copiarEventosDesde(final LocalDateTime desdeInclusivo) {
+        if (eventosSimulacion == null || desdeInclusivo == null) {
+            return new TreeMap<>();
+        }
+        return clonarEventos(eventosSimulacion.tailMap(desdeInclusivo, true));
+    }
+
+    public List<EventoSimProgramado> construirEventosPlanificadosParaRutas(
+            final List<Ruta> rutas,
+            final Map<String, VueloInstancia> vueloIndex,
+            final LocalDateTime desdeInclusivo) {
+        final List<EventoSimProgramado> eventos = new ArrayList<>();
+        if (rutas == null || rutas.isEmpty() || vueloIndex == null) {
+            return eventos;
+        }
+        for (final Ruta ruta : rutas) {
+            construirEventosPlanificadosRuta(ruta, vueloIndex, desdeInclusivo, eventos);
+        }
+        return eventos;
+    }
+
+    public void commitRutasPlanificadas(
+            final List<Ruta> nuevasRutas,
+            final List<EventoSimProgramado> eventosPlanificados) {
+        if (nuevasRutas == null || nuevasRutas.isEmpty()) {
+            return;
+        }
+        agregarRutas(nuevasRutas);
+        if (eventosSimulacion == null) {
+            eventosSimulacion = new TreeMap<>();
+        }
+        if (eventosPlanificados != null) {
+            for (final EventoSimProgramado programado : eventosPlanificados) {
+                if (programado == null || programado.tiempo() == null || programado.evento() == null) {
+                    continue;
+                }
+                eventosSimulacion
+                        .computeIfAbsent(programado.tiempo(), k -> new ArrayList<>())
+                        .add(programado.evento());
+            }
+        }
+        final Map<String, VueloInstancia> vueloIndex = getVueloIndex();
+        for (final Ruta ruta : nuevasRutas) {
+            aplicarEfectosInmediatosRutaLive(ruta, vueloIndex);
+        }
+    }
+
+    private void construirEventosPlanificadosRuta(
+            final Ruta ruta,
+            final Map<String, VueloInstancia> vueloIndex,
+            final LocalDateTime desdeInclusivo,
+            final List<EventoSimProgramado> destino) {
+        if (ruta == null || ruta.getIdMaleta() == null) {
+            return;
+        }
+        final Maleta maleta = maletasPorId.get(ruta.getIdMaleta());
+        if (maleta == null || maleta.getFechaRegistro() == null) {
+            return;
+        }
+        final List<String> ids = ruta.getSubrutas();
+        if (ids.isEmpty()) {
+            return;
+        }
+        agregarEventoPlanificado(destino, maleta.getFechaRegistro(), desdeInclusivo,
+                TipoEventoSim.MALETA_APARECE,
+                ruta.getIdMaleta(),
+                maleta.getPedido() != null && maleta.getPedido().getAeropuertoOrigen() != null
+                        ? maleta.getPedido().getAeropuertoOrigen().getIdAeropuerto() : null,
+                -1);
+
+        for (int i = 0; i < ids.size(); i++) {
+            final VueloInstancia vuelo = vueloIndex.get(ids.get(i));
+            if (vuelo == null) {
+                continue;
+            }
+            final String idAeroOrig = vuelo.getAeropuertoOrigen() != null
+                    ? vuelo.getAeropuertoOrigen().getIdAeropuerto() : null;
+            final String idAeroDest = vuelo.getAeropuertoDestino() != null
+                    ? vuelo.getAeropuertoDestino().getIdAeropuerto() : null;
+            final boolean ultimo = (i == ids.size() - 1);
+
+            if (vuelo.getFechaSalida() != null && idAeroOrig != null) {
+                agregarEventoPlanificado(destino, vuelo.getFechaSalida(), desdeInclusivo,
+                        TipoEventoSim.MALETA_SALE_AEROP, ruta.getIdMaleta(), idAeroOrig, -1);
+            }
+            if (vuelo.getFechaLlegada() != null && idAeroDest != null) {
+                agregarEventoPlanificado(destino, vuelo.getFechaLlegada(), desdeInclusivo,
+                        TipoEventoSim.MALETA_LLEGA_AEROP, ruta.getIdMaleta(), idAeroDest, 1);
+            }
+            if (ultimo && vuelo.getFechaLlegada() != null && idAeroDest != null) {
+                agregarEventoPlanificado(destino, vuelo.getFechaLlegada().plusMinutes(10), desdeInclusivo,
+                        TipoEventoSim.MALETA_ENTREGADA, ruta.getIdMaleta(), idAeroDest, -1);
+            }
+        }
+
+        final VueloInstancia primero = vueloIndex.get(ids.getFirst());
+        final VueloInstancia ultimoSub = vueloIndex.get(ids.getLast());
+        if (primero != null && primero.getFechaSalida() != null) {
+            agregarEventoPlanificado(destino, primero.getFechaSalida(), desdeInclusivo,
+                    TipoEventoSim.RUTA_ACTIVA, ruta.getIdRuta(), null, 0);
+        }
+        if (ultimoSub != null && ultimoSub.getFechaLlegada() != null) {
+            agregarEventoPlanificado(destino, ultimoSub.getFechaLlegada(), desdeInclusivo,
+                    TipoEventoSim.RUTA_COMPLETA, ruta.getIdRuta(), null, 0);
+        }
+    }
+
+    private void aplicarEfectosInmediatosRutaLive(final Ruta ruta, final Map<String, VueloInstancia> vueloIndex) {
+        if (ruta == null || ruta.getIdMaleta() == null) {
+            return;
+        }
+        final Maleta maleta = maletasPorId.get(ruta.getIdMaleta());
+        if (maleta == null || maleta.getFechaRegistro() == null
+                || maleta.getFechaRegistro().isAfter(currentSimTimeUtc.get())) {
+            return;
+        }
+        for (final String idVuelo : ruta.getSubrutas()) {
+            final VueloInstancia vuelo = vueloIndex.get(idVuelo);
+            if (vuelo == null) {
+                continue;
+            }
+            vuelo.setCapacidadDisponible(Math.max(0, vuelo.getCapacidadDisponible() - 1));
+        }
+        if (maleta.getPedido() != null && maleta.getPedido().getAeropuertoOrigen() != null) {
+            final String idAero = maleta.getPedido().getAeropuertoOrigen().getIdAeropuerto();
+            for (final Aeropuerto aeropuerto : aeropuertos) {
+                if (aeropuerto != null && aeropuerto.getIdAeropuerto() != null
+                        && aeropuerto.getIdAeropuerto().equals(idAero)) {
+                    aeropuerto.setMaletasActuales(aeropuerto.getMaletasActuales() + 1);
+                    break;
+                }
+            }
+        }
+    }
+
+    private void agregarEventoPlanificado(
+            final List<EventoSimProgramado> destino,
+            final LocalDateTime tiempo,
+            final LocalDateTime desdeInclusivo,
+            final TipoEventoSim tipo,
+            final String idEntidad,
+            final String idAeropuerto,
+            final int delta) {
+        if (tiempo == null || destino == null) {
+            return;
+        }
+        if (desdeInclusivo != null && tiempo.isBefore(desdeInclusivo)) {
+            return;
+        }
+        destino.add(new EventoSimProgramado(
+                tiempo,
+                new EventoSim(tipo, idEntidad, idAeropuerto, delta)
+        ));
+    }
+
+    private NavigableMap<LocalDateTime, List<EventoSim>> clonarEventos(
+            final NavigableMap<LocalDateTime, List<EventoSim>> origen) {
+        final NavigableMap<LocalDateTime, List<EventoSim>> copia = new TreeMap<>();
+        if (origen == null) {
+            return copia;
+        }
+        for (final Map.Entry<LocalDateTime, List<EventoSim>> entry : origen.entrySet()) {
+            copia.put(entry.getKey(), entry.getValue() == null ? new ArrayList<>() : new ArrayList<>(entry.getValue()));
+        }
+        return copia;
+    }
+
     public SimulacionSesion(
             final String sessionId,
             final LocalDate fechaInicio,
@@ -711,6 +879,7 @@ public class SimulacionSesion {
         this.pedidosPorVentana.clear();
         this.vuelosPorVentana.clear();
         this.vuelosGenerados.clear();
+        this.alertasColapsoEmitidas.clear();
         this.eventosSimulacion = null;
         this.ultimoTiempoSim = null;
         this.tareaScheduled = null;
@@ -723,9 +892,13 @@ public class SimulacionSesion {
         this.stateVersion.set(1);
         this.csvEscrito.set(false);
         this.planValido.set(false);
-        this.planificando.set(false);
+        this.planificando.set(0);
         this.replanPendiente.set(false);
         this.ultimaVentanaPlanificada.set("");
+    }
+
+    public boolean registrarAlertaColapso(final String alertaKey) {
+        return alertaKey != null && alertasColapsoEmitidas.add(alertaKey);
     }
 
     public Collection<Maleta> getMaletas() {
@@ -943,6 +1116,10 @@ public class SimulacionSesion {
         currentSimTimeUtc.set(boundedTime);
     }
 
+    public void resetTiempoInicioReal() {
+        this.startedAtRealMs = System.currentTimeMillis();
+    }
+
     public SimulacionVentana refreshCurrentWindow() {
         final SimulacionVentana previous = currentWindow.get();
         final SimulacionVentana next = buildWindowFor(currentSimTimeUtc.get(), "ACTIVE");
@@ -974,7 +1151,7 @@ public class SimulacionSesion {
     }
 
     public boolean necesitaPlanificacion() {
-        if (planificando.get()) {
+        if (planificando.get() > 0) {
             return false;
         }
         if (replanPendiente.get()) {
@@ -1024,15 +1201,15 @@ public class SimulacionSesion {
     }
 
     public boolean iniciarPlanificacion() {
-        return planificando.compareAndSet(false, true);
+        return planificando.compareAndSet(0, 1);
     }
 
     public void finalizarPlanificacion() {
-        planificando.set(false);
+        planificando.decrementAndGet();
     }
 
     public boolean estaPlanificando() {
-        return planificando.get();
+        return planificando.get() > 0;
     }
 
     public boolean solicitarReplan() {

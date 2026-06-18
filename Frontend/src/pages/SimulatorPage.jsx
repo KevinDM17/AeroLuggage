@@ -35,8 +35,10 @@ export default function SimulatorPage() {
     const out = [];
     for (const flight of simulationPanelData.flights.values()) {
       const status = flight.status;
-      if (normalizeFlightStatus(status) === "CANCELADO") continue;
-      if (normalizeFlightStatus(status) === "FINALIZADO") continue;
+      if (normalizeFlightStatus(status) !== "EN_PROGRESO") continue;
+      const salidaMs = Date.parse(`${flight.depTime}Z`);
+      const llegadaMs = Date.parse(`${flight.arrTime}Z`);
+      if (!Number.isFinite(salidaMs) || !Number.isFinite(llegadaMs)) continue;
       out.push({
         id: flight.idVueloInstancia ?? flight.id,
         origin: flight.origin,

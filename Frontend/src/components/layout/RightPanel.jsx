@@ -1,4 +1,4 @@
-import { memo, useCallback, useEffect, useMemo, useState } from "react";
+import { memo, useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { Virtuoso } from "react-virtuoso";
 import { useLocation } from "react-router-dom";
 import { Ban, Filter, PanelRightClose, MapPin, Globe, Info, ChevronDown, Plane, RefreshCw, Package, Luggage, ArrowDownUp, ArrowUp, ArrowDown, Route, X, Crosshair } from "lucide-react";
@@ -72,7 +72,7 @@ const routeStatusColor = (s) => {
 
 const EMPTY_MANIFEST = { bags: [], orders: [] };
 
-const FlightItem = memo(function FlightItem({ flight, onCancel, canceling, loadManifest, onFocus, isSelected }) {
+const FlightItem = memo(function FlightItem({ flight, onCancel, canceling, loadManifest, onFocus, onDeselect, isSelected }) {
   const [expanded, setExpanded] = useState(false);
   const pct = flight.capacity > 0 ? Math.round((flight.used / flight.capacity) * 100) : 0;
   const normalizedStatus = normalizeFlightStatus(flight.status);
@@ -106,7 +106,7 @@ const FlightItem = memo(function FlightItem({ flight, onCancel, canceling, loadM
   }, [expanded, flightKey, loadManifest]);
 
   return (
-    <div className={`flex flex-col border-b border-slate-800/50 h-full cursor-pointer ${isSelected ? "rounded-lg ring-1 ring-warning/70 bg-warning/5" : ""}`} onClick={() => setExpanded(!expanded)}>
+    <div className={`flex flex-col border-b border-slate-800/50 h-full cursor-pointer ${isSelected ? "rounded-lg ring-1 ring-info/70 bg-info/5" : ""}`} onClick={() => setExpanded(!expanded)}>
       <div className="flex justify-between items-start mb-2">
         <div>
           <h4 className="font-bold text-lg text-slate-200">{flight.id}</h4>
@@ -116,6 +116,17 @@ const FlightItem = memo(function FlightItem({ flight, onCancel, canceling, loadM
         </div>
         <div className="flex flex-col items-end gap-2">
           <div className="flex items-center gap-1.5">
+            {isSelected && onDeselect && (
+              <button
+                type="button"
+                onClick={(ev) => { ev.stopPropagation(); onDeselect(); }}
+                aria-label={`Quitar seleccion de ${flight.id}`}
+                title="Quitar seleccion"
+                className="rounded-md border border-slate-600/60 bg-slate-700/40 p-1 text-slate-200 transition-colors hover:bg-slate-700/70"
+              >
+                <X className="h-3.5 w-3.5" />
+              </button>
+            )}
             {onFocus && (
               <button
                 type="button"
@@ -473,7 +484,7 @@ function EnvioSeccion({ title, envios, showOrigin = true, defaultOpen = false, m
   );
 }
 
-const AirportItem = memo(function AirportItem({ apt, loadContenido, onFocus, isSelected }) {
+const AirportItem = memo(function AirportItem({ apt, loadContenido, onFocus, onDeselect, isSelected }) {
   const [expanded, setExpanded] = useState(false);
   const pct = apt.capacity > 0 ? Math.round((apt.used / apt.capacity) * 100) : 0;
 
@@ -516,11 +527,22 @@ const AirportItem = memo(function AirportItem({ apt, loadContenido, onFocus, isS
   }, [expanded, airportKey, loadContenido]);
 
   return (
-    <div className={`flex flex-col border-b border-slate-800/50 h-full cursor-pointer ${isSelected ? "rounded-lg ring-1 ring-warning/70 bg-warning/5" : ""}`} onClick={() => setExpanded(!expanded)}>
+    <div className={`flex flex-col border-b border-slate-800/50 h-full cursor-pointer ${isSelected ? "rounded-lg ring-1 ring-info/70 bg-info/5" : ""}`} onClick={() => setExpanded(!expanded)}>
       <div className="flex justify-between items-center gap-2">
         <h4 className="font-bold text-lg text-slate-200">{apt.iata}</h4>
         <div className="flex items-center gap-2 shrink-0">
           <span className="text-xs text-slate-400">{pct}% Ocupado</span>
+          {isSelected && onDeselect && (
+            <button
+              type="button"
+              onClick={(ev) => { ev.stopPropagation(); onDeselect(); }}
+              aria-label={`Quitar seleccion de ${apt.iata}`}
+              title="Quitar seleccion"
+              className="rounded-md border border-slate-600/60 bg-slate-700/40 p-1 text-slate-200 transition-colors hover:bg-slate-700/70"
+            >
+              <X className="h-3.5 w-3.5" />
+            </button>
+          )}
           {onFocus && (
             <button
               type="button"
@@ -710,12 +732,14 @@ function ColorLegend() {
       <div className="mt-3 grid gap-3 text-xs text-slate-300">
         <div>
           <div className="mb-2 font-semibold text-slate-200">Aeropuertos</div>
-          <LegendRow color="bg-success shadow-[0_0_10px_rgba(0,255,136,0.7)]" label="Verde" value="operativo / capacidad disponible" />
-          <LegendRow color="bg-warning shadow-[0_0_10px_rgba(255,221,0,0.7)]" label="Amarillo" value="alta ocupacion / alerta" />
-          <LegendRow color="bg-danger shadow-[0_0_10px_rgba(255,59,48,0.7)]" label="Rojo" value="critico / colapso" />
+          <LegendRow color="bg-white shadow-[0_0_10px_rgba(255,255,255,0.7)]" label="Blanco" value="vacio / 0% ocupado" />
+          <LegendRow color="bg-success shadow-[0_0_10px_rgba(0,255,136,0.7)]" label="Verde" value="menos de 60% ocupado" />
+          <LegendRow color="bg-warning shadow-[0_0_10px_rgba(255,221,0,0.7)]" label="Amarillo" value="60% a 84% ocupado" />
+          <LegendRow color="bg-danger shadow-[0_0_10px_rgba(255,59,48,0.7)]" label="Rojo" value="85% o mas ocupado" />
         </div>
         <div>
           <div className="mb-2 font-semibold text-slate-200">Carga de vuelos</div>
+          <FlightLegendRow color="text-white/60" label="Blanco translucido" value="vuelo vacio / 0% ocupado" />
           <FlightLegendRow color="text-success" label="Verde" value="menos de 60% ocupado" />
           <FlightLegendRow color="text-warning" label="Amarillo" value="60% a 84% ocupado" />
           <FlightLegendRow color="text-danger" label="Rojo" value="85% o mas ocupado" />
@@ -876,6 +900,9 @@ export default function RightPanel({
   const toast = useToast();
   const [activeTab, setActiveTab] = useState("flights");
   const [query, setQuery] = useState("");
+  // Marca si el query/filtro activo lo impuso una seleccion (click en mapa).
+  // Al deseleccionar hay que limpiarlo para que el mapa deje de atenuar el resto.
+  const selectionDrivenFilterRef = useRef(false);
   const [flightStatusFilter, setFlightStatusFilter] = useState("DEFAULT");
   const [flightOriginFilter, setFlightOriginFilter] = useState("ALL");
   const [flightDestFilter, setFlightDestFilter] = useState("ALL");
@@ -895,7 +922,7 @@ export default function RightPanel({
   const [cancelingFlightId, setCancelingFlightId] = useState(null);
   const publish = useStompPublish();
   const sessionId = simulationPanelData?.sessionId ?? null;
-  const { mapHighlight, setMapHighlight, selected, setSelected, setMapFocus, panelFocus, setMapDim } = useMapFocus();
+  const { mapHighlight, setMapHighlight, selected, setSelected, setMapFocus, panelFocus, setMapDim, setFlightManifestLoader } = useMapFocus();
   const location = useLocation();
   const isDiaADia = location.pathname === "/";
   const isPeriodo = location.pathname === "/simulator/period";
@@ -1335,6 +1362,14 @@ export default function RightPanel({
     [sessionId, isDiaADia]
   );
 
+  // Publicamos el loader al contexto para que el mapa pueda usarlo al hacer
+  // click en un avion (popup con pedidos/maletas).
+  useEffect(() => {
+    // useState con setter funcional: envolver para evitar que React lo trate como updater.
+    setFlightManifestLoader(() => loadFlightManifest);
+    return () => setFlightManifestLoader(() => null);
+  }, [loadFlightManifest, setFlightManifestLoader]);
+
   // Contenido de un almacen (envios/maletas presentes), pedido al back al
   // expandir el aeropuerto. El enlace almacen->contenido vive en el estado
   // global de la sesion, no en el subconjunto por-ventana del panel.
@@ -1480,8 +1515,24 @@ export default function RightPanel({
       const f = (flights.data ?? []).find((fl) => (fl.idVueloInstancia ?? fl.id) === panelFocus.id);
       setQuery(f?.id ?? panelFocus.id);
     }
+    // El filtro recien aplicado proviene de una seleccion en el mapa.
+    selectionDrivenFilterRef.current = true;
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [panelFocus]);
+
+  // Al deseleccionar (boton X del panel o click en zona vacia del mapa), limpiar
+  // el filtro que la seleccion habia impuesto para que el mapa deje de atenuar
+  // los demas vuelos/aeropuertos y todo vuelva a su color normal.
+  useEffect(() => {
+    if (selected) return;
+    if (!selectionDrivenFilterRef.current) return;
+    selectionDrivenFilterRef.current = false;
+    setQuery("");
+    setFlightStatusFilter("DEFAULT");
+    clearFlightFilters();
+    clearAirportFilters();
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [selected]);
 
   // Panel -> mapa: refleja el filtro de almacenes (semaforo y otros) (req 10/12).
   useEffect(() => {
@@ -1521,6 +1572,7 @@ export default function RightPanel({
             canceling={cancelingFlightId === f.id}
             loadManifest={loadFlightManifest}
             onFocus={focusFlightOnMap}
+            onDeselect={() => setSelected(null)}
             isSelected={selected?.kind === "flight" && selected.id === (f.idVueloInstancia ?? f.id)}
           />
         )}
@@ -1575,6 +1627,7 @@ export default function RightPanel({
             apt={a}
             loadContenido={loadAirportContenido}
             onFocus={focusAirportOnMap}
+            onDeselect={() => setSelected(null)}
             isSelected={selected?.kind === "airport" && selected.id === (a.iata ?? a.idAeropuerto)}
           />
         )}

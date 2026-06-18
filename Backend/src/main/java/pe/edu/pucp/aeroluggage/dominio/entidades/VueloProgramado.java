@@ -11,6 +11,7 @@ public class VueloProgramado {
     private int capacidadBase;
     private Aeropuerto aeropuertoOrigen;
     private Aeropuerto aeropuertoDestino;
+    private boolean activo = true;
 
     public VueloProgramado() {
     }
@@ -111,5 +112,13 @@ public class VueloProgramado {
 
     public void setAeropuertoDestino(final Aeropuerto aeropuertoDestino) {
         this.aeropuertoDestino = aeropuertoDestino;
+    }
+
+    public boolean isActivo() {
+        return activo;
+    }
+
+    public void setActivo(final boolean activo) {
+        this.activo = activo;
     }
 }

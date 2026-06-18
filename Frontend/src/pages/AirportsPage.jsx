@@ -1,7 +1,8 @@
 import { useState } from "react";
 import { useOutletContext } from "react-router-dom";
-import { FileUp, Plus } from "lucide-react";
+import { FileUp, Plus, Pencil } from "lucide-react";
 import PedidoModal from "../components/simulator/PedidoModal";
+import AirportFormModal from "../components/simulator/AirportFormModal";
 import Modal from "../components/ui/Modal";
 import { LoadingState, EmptyState, ErrorState } from "../components/ui/States";
 import { useToast } from "../components/ui/Toast";
@@ -10,7 +11,12 @@ import {
   procesarPedidosBulkDiaADia,
   obtenerPedidosDiaADia,
   obtenerMaletasDiaADia,
+  crearAeropuertoDiaADia,
+  actualizarAeropuertoDiaADia,
+  eliminarAeropuertoDiaADia,
+  obtenerAeropuertosDiaADia,
 } from "../api/simulator";
+import { adaptAirport } from "../api/airports";
 
 const colorByOccupancy = (pct) =>
   pct >= 85 ? "bg-danger" : pct >= 60 ? "bg-warning" : "bg-success";
@@ -32,6 +38,10 @@ export default function AirportsPage() {
   const [bulkAirport, setBulkAirport] = useState(null);
   const [bulkLoading, setBulkLoading] = useState(false);
   const [bulkFile, setBulkFile] = useState(null);
+
+  const [formOpen, setFormOpen] = useState(false);
+  const [editingAirport, setEditingAirport] = useState(null);
+  const [formLoading, setFormLoading] = useState(false);
 
   const handlePedidoSubmit = async (pedido) => {
     setPedidoLoading(true);
@@ -103,6 +113,62 @@ export default function AirportsPage() {
     setBulkOpen(true);
   };
 
+  const openCreate = () => {
+    setEditingAirport(null);
+    setFormOpen(true);
+  };
+
+  const openEdit = (airport) => {
+    setEditingAirport(airport);
+    setFormOpen(true);
+  };
+
+  const handleFormSubmit = async (payload) => {
+    setFormLoading(true);
+    try {
+      if (editingAirport) {
+        await actualizarAeropuertoDiaADia(editingAirport.iata, payload);
+      } else {
+        await crearAeropuertoDiaADia(payload);
+      }
+      const raw = await obtenerAeropuertosDiaADia().catch(() => []);
+      const aeropuertos = Array.isArray(raw) ? raw.map(adaptAirport) : [];
+      setSimulationPanelData((prev) => ({
+        ...prev,
+        airports: aeropuertos,
+      }));
+      setFormOpen(false);
+      toast.push({
+        type: "success",
+        title: editingAirport ? "Aeropuerto actualizado" : "Aeropuerto creado",
+        message: `${payload.idAeropuerto} ${editingAirport ? "actualizado" : "creado"} correctamente`,
+      });
+    } catch (err) {
+      toast.push({ type: "error", title: "Error", message: err.message });
+    } finally {
+      setFormLoading(false);
+    }
+  };
+
+  const handleDelete = async (airport) => {
+    if (!window.confirm(`Eliminar ${airport.iata} - ${airport.city}?`)) return;
+    try {
+      await eliminarAeropuertoDiaADia(airport.iata);
+      const raw = await obtenerAeropuertosDiaADia().catch((e) => { console.error("[handleDelete] fetch error:", e); return []; });
+      console.log("[handleDelete] raw response:", raw);
+      const aeropuertos = Array.isArray(raw) ? raw.map(adaptAirport) : [];
+      console.log("[handleDelete] adapted:", aeropuertos);
+      setSimulationPanelData((prev) => ({
+        ...prev,
+        airports: aeropuertos,
+      }));
+      toast.push({ type: "success", title: "Aeropuerto eliminado", message: airport.iata });
+    } catch (err) {
+      console.error("[handleDelete] error:", err);
+      toast.push({ type: "error", title: "Error al eliminar", message: err.message });
+    }
+  };
+
   return (
     <div className="flex-1 bg-surface-0 flex flex-col min-h-0 overflow-y-auto w-full h-full p-4 sm:p-8 text-slate-200">
       <div className="flex flex-col sm:flex-row justify-between sm:items-start gap-4 mb-8 pl-12 sm:pl-14">
@@ -110,6 +176,13 @@ export default function AirportsPage() {
           <h1 className="text-2xl sm:text-4xl font-extrabold text-white mb-2">Tabla de Aeropuertos</h1>
           <p className="text-slate-400 text-base sm:text-lg">Gestiona la capacidad y estado de los nodos logisticos globales.</p>
         </div>
+        <button
+          type="button"
+          onClick={openCreate}
+          className="flex items-center gap-2 bg-blue-600 hover:bg-blue-500 text-white px-4 py-2 rounded-lg font-medium text-sm transition-colors"
+        >
+          <Plus className="w-4 h-4" /> Agregar Aeropuerto
+        </button>
       </div>
 
       <div className="bg-surface-1 border border-slate-800 rounded-xl overflow-x-auto">
@@ -150,13 +223,23 @@ export default function AirportsPage() {
                           <span>{pct}%</span>
                         </div>
                         <div className="w-full h-1.5 bg-surface-2 border border-slate-800 rounded-full overflow-hidden flex items-center pr-12 relative">
-                          <div className={`h-full ${colorByOccupancy(pct)}`} style={{ width: `${pct}%` }}></div>
-                          <span className="absolute right-0 text-[10px] text-slate-400">{apt.capacity}</span>
+                          <div>
+                            <div className={`h-full ${colorByOccupancy(pct)}`} style={{ width: `${pct}%` }}></div>
+                            <span className="absolute right-0 text-[10px] text-slate-400">{apt.capacity}</span>
+                          </div>
                         </div>
                       </div>
                     </td>
                     <td className="py-4 px-6 text-right">
                       <div className="flex justify-end gap-1 opacity-60 sm:opacity-0 sm:group-hover:opacity-100 transition-opacity">
+                        <button
+                          type="button"
+                          onClick={() => openEdit(apt)}
+                          title="Editar aeropuerto"
+                          className="p-2 rounded-lg hover:bg-surface-2 hover:text-blue-400 transition-colors text-slate-400"
+                        >
+                          <Pencil className="w-4 h-4" />
+                        </button>
                         <button
                           type="button"
                           onClick={() => openBulk(apt)}
@@ -190,6 +273,14 @@ export default function AirportsPage() {
         onSubmit={handlePedidoSubmit}
         loading={pedidoLoading}
         lockedOrigin={pedidoAirport?.iata ?? null}
+      />
+
+      <AirportFormModal
+        open={formOpen}
+        initialData={editingAirport}
+        onClose={() => setFormOpen(false)}
+        onSubmit={handleFormSubmit}
+        loading={formLoading}
       />
 
       <BulkPedidoModal

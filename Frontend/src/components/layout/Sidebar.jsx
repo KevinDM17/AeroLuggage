@@ -1,7 +1,9 @@
+import { useState } from "react";
 import { cn } from "../../utils/cn";
 import { useLocation, useNavigate } from "react-router-dom";
 import {
   PanelLeftClose,
+  Home,
   RotateCw,
   Spline,
   Calendar,
@@ -9,11 +11,15 @@ import {
   Plane,
   Building,
   Package,
+  ChevronDown,
 } from "lucide-react";
 
 export default function Sidebar({ onClose, closeOnNavigate = false }) {
   const location = useLocation();
   const navigate = useNavigate();
+  const [flightsOpen, setFlightsOpen] = useState(
+    location.pathname.startsWith("/flights")
+  );
 
   const handleNavigate = (to) => {
     if (location.pathname !== to) {
@@ -69,6 +75,15 @@ export default function Sidebar({ onClose, closeOnNavigate = false }) {
       <nav className="flex-1 py-2 px-3 space-y-1 overflow-y-auto">
         <button
           type="button"
+          onClick={() => handleNavigate("/inicio")}
+          className={navItemClass(location.pathname === "/inicio")}
+        >
+          <Home className="w-4 h-4" />
+          <span className="font-medium text-sm">Inicio</span>
+        </button>
+
+        <button
+          type="button"
           onClick={() => handleNavigate("/")}
           className={navItemClass(location.pathname === "/")}
         >
@@ -110,14 +125,42 @@ export default function Sidebar({ onClose, closeOnNavigate = false }) {
             <Building className="w-4 h-4" />
             <span className="font-medium">Aeropuertos</span>
           </button>
-          <button
-            type="button"
-            onClick={() => handleNavigate("/flights")}
-            className={navItemClass(location.pathname === "/flights")}
-          >
-            <Plane className="w-4 h-4" />
-            <span className="font-medium">Vuelos</span>
-          </button>
+
+          <div>
+            <button
+              type="button"
+              onClick={() => setFlightsOpen((v) => !v)}
+              className={cn(
+                "flex w-full items-center gap-3 rounded-lg px-3 py-2 text-left transition-colors",
+                location.pathname.startsWith("/flights")
+                  ? "bg-blue-600/20 text-blue-400"
+                  : "text-slate-400 hover:bg-slate-800 hover:text-slate-300",
+              )}
+            >
+              <Plane className="w-4 h-4" />
+              <span className="font-medium text-sm flex-1">Vuelos</span>
+              <ChevronDown className={cn("w-4 h-4 transition-transform", flightsOpen && "rotate-180")} />
+            </button>
+            {flightsOpen && (
+              <div className="flex flex-col gap-1 ml-[1.65rem] mt-1 pr-3 border-l border-slate-800 pl-4">
+                <button
+                  type="button"
+                  onClick={() => handleNavigate("/flights/plans")}
+                  className={navItemClass(location.pathname === "/flights/plans", true)}
+                >
+                  Planes de vuelo
+                </button>
+                <button
+                  type="button"
+                  onClick={() => handleNavigate("/flights/occurrences")}
+                  className={navItemClass(location.pathname === "/flights/occurrences", true)}
+                >
+                  Ocurrencia de vuelos
+                </button>
+              </div>
+            )}
+          </div>
+
           <button
             type="button"
             onClick={() => handleNavigate("/orders")}

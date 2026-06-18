@@ -1,9 +1,14 @@
+negocio:
+  minutos-conexion: 10
+  minutos-recojo: 10
+  umbral-confirmacion-minutos: 30
+
 simulacion:
-  duracion-dia-simulado-ms: 240000
+  duracion-dia-simulado-ms: 300000
   ventana:
     tamanio-minutos: 120
     espaciado-minutos: 120
-  tick-interval-ms: 500
+  tick-interval-ms: 1000
   max-dias-vuelos-instancias: 30
   retencion-ventanas: 2
   retencion-pedidos-minutos: 120
@@ -23,8 +28,6 @@ algoritmos:
     q-max: 6
     q-critical: 4
     max-reintentos-ruteo: 100
-    minutos-conexion: 10
-    tiempo-recojo: 10
     umbral-critico-aeropuerto: 0.25
     temperatura-inicial: 5.0
     factor-enfriamiento: 0.98
@@ -45,6 +48,3 @@ algoritmos:
       sigma-4: 0
       rho: 0.2
       peso-minimo-operador: 0.1
-
-vuelos:
-  umbral-confirmacion-minutos: 30

@@ -104,6 +104,8 @@ export default function PeriodSimulatorPage() {
   const iniciarTickWatchdogRef = useRef(null);
   const iniciarTickRetriesRef = useRef(0);
   const tickReceivedRef = useRef(false);
+  const pendienteIniciarTickRef = useRef(null);
+  const planCompletionTimeoutRef = useRef(null);
 
   const clearSimulationData = () => {
     ventanasCargadasRef.current.clear();
@@ -161,6 +163,11 @@ export default function PeriodSimulatorPage() {
         publish("/app/simulacion/periodo/detener", { sessionId: sid });
       }
       cancelarWatchdogIniciarTick();
+      if (planCompletionTimeoutRef.current) {
+        clearTimeout(planCompletionTimeoutRef.current);
+        planCompletionTimeoutRef.current = null;
+      }
+      pendienteIniciarTickRef.current = null;
     };
   }, []);
 
@@ -184,9 +191,6 @@ export default function PeriodSimulatorPage() {
   );
   const hasActiveRun =
     simStatus === "running" || simStatus === "paused" || simStatus === "done";
-  const isStarting = simStatus === "starting";
-  const isSimulationLocked =
-    isStarting || simStatus === "running" || simStatus === "paused";
 
   useDefensivePerformanceCleanup(simStatus === "running");
 
@@ -218,6 +222,16 @@ export default function PeriodSimulatorPage() {
       setSessionId(null);
       setCurrentSimTimeUtc(null);
       clearSimulationData();
+    }
+    if (estadoMessage.estado === "PLANIFICACION_COMPLETADA"
+        && pendienteIniciarTickRef.current) {
+      const sid = pendienteIniciarTickRef.current;
+      pendienteIniciarTickRef.current = null;
+      if (planCompletionTimeoutRef.current) {
+        clearTimeout(planCompletionTimeoutRef.current);
+        planCompletionTimeoutRef.current = null;
+      }
+      enviarIniciarTick(sid);
     }
   }, [mockState, estadoMessage]);
 
@@ -490,6 +504,7 @@ export default function PeriodSimulatorPage() {
   };
 
   const enviarIniciarTick = async (targetSessionId) => {
+    setSimStatus("running");
     cancelarWatchdogIniciarTick();
     try {
       await publish("/app/simulacion/periodo/iniciar-tick", {
@@ -504,7 +519,12 @@ export default function PeriodSimulatorPage() {
         iniciarTickRetriesRef.current += 1;
         enviarIniciarTick(targetSessionId);
       } else {
-        cancelarWatchdogIniciarTick();
+      cancelarWatchdogIniciarTick();
+      if (planCompletionTimeoutRef.current) {
+        clearTimeout(planCompletionTimeoutRef.current);
+        planCompletionTimeoutRef.current = null;
+      }
+      pendienteIniciarTickRef.current = null;
         toast.push({
           type: "error",
           title: "No se pudo iniciar la simulación",
@@ -589,11 +609,20 @@ export default function PeriodSimulatorPage() {
         sessionId: newSessionId,
         loaded: true,
       });
-      setSimStatus("running");
 
       tickReceivedRef.current = false;
       iniciarTickRetriesRef.current = 0;
-      enviarIniciarTick(newSessionId);
+      pendienteIniciarTickRef.current = newSessionId;
+      cancelarWatchdogIniciarTick();
+      if (planCompletionTimeoutRef.current) {
+        clearTimeout(planCompletionTimeoutRef.current);
+      }
+      planCompletionTimeoutRef.current = setTimeout(() => {
+        if (!pendienteIniciarTickRef.current) return;
+        const sid = pendienteIniciarTickRef.current;
+        pendienteIniciarTickRef.current = null;
+        enviarIniciarTick(sid);
+      }, 30000);
 
       toast.push({
         type: "info",
@@ -651,7 +680,7 @@ export default function PeriodSimulatorPage() {
   const displayedDay = getDisplayedDay(progress, hasActiveRun);
 
   const mapOverlay = hasActiveRun ? (
-    <div className="bg-surface-2/85 backdrop-blur border border-slate-700 shadow-[0_12px_35px_rgba(0,0,0,0.45)] rounded-xl px-4 py-3 flex items-center justify-center gap-6">
+    <div className="bg-surface-2/85 m-4 backdrop-blur border border-slate-700 shadow-[0_12px_35px_rgba(0,0,0,0.45)] rounded-xl px-4 py-3 flex items-center justify-center gap-6">
       <div>
         <div className="text-[10px] text-slate-400 font-medium uppercase tracking-wider">
           Cronometro
@@ -663,24 +692,60 @@ export default function PeriodSimulatorPage() {
       <div className="h-9 w-px bg-slate-700" />
       <div>
         <div className="text-[10px] text-slate-400 font-medium uppercase tracking-wider">
-          Fecha/hora simulada
+          Fecha simulada
         </div>
         <div className="text-lg font-bold text-info tabular-nums">
-          {simulationClock.date} - {simulationClock.time} UTC
+          {simulationClock.date}
+        </div>
+      </div>
+      <div className="h-9 w-px bg-slate-700" />
+      <div>
+        <div className="text-[10px] text-slate-400 font-medium uppercase tracking-wider">
+          Hora simulada
+        </div>
+        <div className="text-lg font-bold text-info tabular-nums">
+          {simulationClock.time} UTC
+        </div>
+      </div>
+      <div className="h-9 w-px bg-slate-700" />
+      <div>
+        <div className="text-[10px] text-slate-400 font-medium uppercase tracking-wider">
+          Día de simulación
+        </div>
+        <div className="text-lg font-bold text-info tabular-nums">
           {displayedDay
-            ? ` - dia ${displayedDay}/${PERIOD_DAYS}`
+            ? `Dia ${displayedDay}/${PERIOD_DAYS}`
             : ""}
         </div>
       </div>
+      <div className="h-9 w-px bg-slate-700" />
+      <button
+        type="button"
+        onClick={() => setShowRouteLines((v) => !v)}
+        className={`rounded-lg px-3 py-1.5 text-sm font-medium transition-colors ${
+          showRouteLines
+            ? "bg-blue-600/20 text-blue-400 border border-blue-500/40 hover:bg-blue-600/30"
+            : "bg-surface-2 text-slate-400 border border-slate-700 hover:text-slate-200"
+        }`}
+      >
+        Mostrar líneas
+      </button>
+      <div className="h-9 w-px bg-slate-700" />
+      <button
+        type="button"
+        onClick={handleStop}
+        className="bg-danger/10 hover:bg-danger/20 text-danger border border-danger/40 rounded-lg px-3 py-1.5 transition-colors"
+        title="Detener"
+      >
+        <Square className="w-5 h-5" />
+      </button>
     </div>
-  ) : null;
-
-  const header = (
-    <div className="flex items-center gap-3 flex-wrap">
+  ) : (
+    <div className="bg-surface-2/85 m-4 backdrop-blur border border-slate-700 shadow-[0_12px_35px_rgba(0,0,0,0.45)] rounded-xl px-4 py-3 flex items-center justify-center gap-6">
       <div className="flex flex-col">
         <label
           htmlFor="period-start"
-          className="text-[10px] text-slate-400 uppercase tracking-wider font-medium"
+          className="text-[10px] text-slate-400 font-medium uppercase tracking-wider"
         >
           Fecha de inicio
         </label>
@@ -689,15 +754,14 @@ export default function PeriodSimulatorPage() {
           type="date"
           value={startDate}
           onChange={(e) => setStartDate(e.target.value)}
-          disabled={isSimulationLocked}
-          className="bg-surface-2 border border-slate-700 rounded-lg px-3 py-1.5 text-sm text-slate-200 outline-none focus:border-blue-500 disabled:opacity-50"
+          className="bg-surface-2 border border-slate-700 rounded-lg px-3 py-1.5 text-sm text-slate-200 outline-none focus:border-blue-500"
         />
       </div>
-
+      <div className="h-9 w-px bg-slate-700" />
       <div className="flex flex-col">
         <label
           htmlFor="period-start-time"
-          className="text-[10px] text-slate-400 uppercase tracking-wider font-medium"
+          className="text-[10px] text-slate-400 font-medium uppercase tracking-wider"
         >
           Hora de inicio
         </label>
@@ -706,93 +770,55 @@ export default function PeriodSimulatorPage() {
           type="time"
           value={startTime}
           onChange={(e) => setStartTime(e.target.value)}
-          disabled={isSimulationLocked}
-          className="bg-surface-2 border border-slate-700 rounded-lg px-3 py-1.5 text-sm text-slate-200 outline-none focus:border-blue-500 disabled:opacity-50"
+          className="bg-surface-2 border border-slate-700 rounded-lg px-3 py-1.5 text-sm text-slate-200 outline-none focus:border-blue-500"
         />
       </div>
+      <div className="h-9 w-px bg-slate-700" />
+      <button
+        type="button"
+        onClick={handleStart}
+        className="self-end bg-blue-600 hover:bg-blue-500 text-white px-4 py-2 rounded-lg flex items-center gap-2 font-medium text-sm transition-colors"
+      >
+        <Play className="w-4 h-4" /> Ejecutar
+      </button>
+    </div>
+  );
 
-      <div className="flex flex-col">
-        <span className="text-[10px] text-slate-400 uppercase tracking-wider font-medium">
-          Duración
-        </span>
-        <span className="px-3 py-1.5 bg-surface-2 border border-slate-700 rounded-lg text-sm font-bold text-success">
-          {PERIOD_DAYS} días
-        </span>
-      </div>
-
-      <label className="flex items-center gap-2 self-end px-3 py-2 bg-surface-2 border border-slate-700 rounded-lg text-sm text-slate-200 cursor-pointer select-none">
-        <input
-          type="checkbox"
-          checked={showRouteLines}
-          onChange={(e) => setShowRouteLines(e.target.checked)}
-          className="h-4 w-4 rounded border-slate-600 bg-surface-1 text-blue-500 focus:ring-blue-500"
-        />
-        <span>Mostrar líneas</span>
-      </label>
-
-      {simStatus === "idle" || simStatus === "done" ? (
-        <button
-          type="button"
-          onClick={handleStart}
-          className="self-end bg-blue-600 hover:bg-blue-500 text-white px-4 py-2 rounded-lg flex items-center gap-2 font-medium text-sm transition-colors"
-        >
-          <Play className="w-4 h-4" /> Ejecutar
-        </button>
-      ) : isStarting ? (
-        <button
-          type="button"
-          disabled
-          className="self-end bg-blue-600/60 text-white px-4 py-2 rounded-lg flex items-center gap-2 font-medium text-sm cursor-wait"
-        >
-          <Play className="w-4 h-4" /> Iniciando...
-        </button>
-      ) : simStatus === "paused" ? (
-        <>
-          <button
-            type="button"
-            onClick={handleResume}
-            className="self-end bg-blue-600 hover:bg-blue-500 text-white px-4 py-2 rounded-lg flex items-center gap-2 font-medium text-sm transition-colors"
-          >
-            <RotateCw className="w-4 h-4" /> Reanudar
-          </button>
-          <button
-            type="button"
-            onClick={handleStop}
-            className="self-end bg-danger/10 hover:bg-danger/20 text-danger border border-danger/40 px-4 py-2 rounded-lg flex items-center gap-2 font-medium text-sm transition-colors"
-          >
-            <Square className="w-4 h-4" /> Detener
-          </button>
-        </>
-      ) : (
-        <button
-          type="button"
-          onClick={handleStop}
-          className="self-end bg-danger/10 hover:bg-danger/20 text-danger border border-danger/40 px-4 py-2 rounded-lg flex items-center gap-2 font-medium text-sm transition-colors"
-        >
-          <Square className="w-4 h-4" /> Detener
-        </button>
-      )}
-
-      {simStatus !== "idle" && (
-        <div className="flex flex-col w-44 self-end">
-          <div className="flex justify-between text-[10px] text-slate-400 mb-1">
-            <span>Progreso</span>
-            <span>{progress.toFixed(0)}%</span>
+  const loadingModal = simStatus === "starting" ? (
+    <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/55 backdrop-blur-[2px]">
+      <div className="bg-surface-2 border border-slate-700 shadow-[0_12px_35px_rgba(0,0,0,0.45)] rounded-xl px-8 py-6 flex flex-col items-center gap-4 max-w-sm mx-4">
+        <div className="w-10 h-10 border-4 border-blue-500/30 border-t-blue-500 rounded-full animate-spin" />
+        <div className="text-center">
+          <div className="text-lg font-semibold text-slate-100">
+            Preparando simulación…
           </div>
-          <div className="h-2 bg-surface-2 rounded-full overflow-hidden border border-slate-700">
-            <div
-              className={`h-full transition-all ${simStatus === "done" ? "bg-success" : simStatus === "paused" ? "bg-warning" : "bg-info"}`}
-              style={{ width: `${progress}%` }}
-            />
+          <div className="text-sm text-slate-400 mt-1">
+            Planificando rutas iniciales, esto puede tomar unos segundos
           </div>
         </div>
-      )}
+      </div>
+    </div>
+  ) : null;
+
+  const header = (
+    <div className="flex items-center gap-3 flex-wrap">
+      {simStatus === "paused" ? (
+        <button
+          type="button"
+          onClick={handleResume}
+          className="self-end bg-blue-600 hover:bg-blue-500 text-white px-4 py-2 rounded-lg flex items-center gap-2 font-medium text-sm transition-colors"
+        >
+          <RotateCw className="w-4 h-4" /> Reanudar
+        </button>
+      ) : null}
     </div>
   );
 
   return (
-    <MapDashboard
-      title={`Simulación de Periodo · ${PERIOD_DAYS} días`}
+    <>
+      {loadingModal}
+      <MapDashboard
+      title=""
       header={header}
       mapOverlay={mapOverlay}
       showMapClock={false}
@@ -807,6 +833,9 @@ export default function PeriodSimulatorPage() {
       date={simulationClock.date}
       time={simulationClock.time}
       metrics={liveMetrics}
+      progress={progress}
+      simStatus={simStatus}
     />
+    </>
   );
 }

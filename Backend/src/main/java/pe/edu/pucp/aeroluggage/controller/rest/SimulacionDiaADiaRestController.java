@@ -7,16 +7,20 @@ import org.springframework.http.ResponseEntity;
 import org.springframework.web.bind.annotation.GetMapping;
 import org.springframework.web.bind.annotation.PathVariable;
 import org.springframework.web.bind.annotation.PostMapping;
+import org.springframework.web.bind.annotation.PutMapping;
+import org.springframework.web.bind.annotation.DeleteMapping;
 import org.springframework.web.bind.annotation.RequestBody;
 import org.springframework.web.bind.annotation.RequestMapping;
 import org.springframework.web.bind.annotation.RestController;
 import org.springframework.web.server.ResponseStatusException;
+import pe.edu.pucp.aeroluggage.dominio.entidades.Aeropuerto;
 import pe.edu.pucp.aeroluggage.dominio.entidades.Maleta;
 import pe.edu.pucp.aeroluggage.dominio.entidades.Pedido;
 import pe.edu.pucp.aeroluggage.dominio.entidades.Ruta;
 import pe.edu.pucp.aeroluggage.dominio.entidades.VueloInstancia;
 import pe.edu.pucp.aeroluggage.dominio.enums.EstadoMaleta;
 import pe.edu.pucp.aeroluggage.dominio.enums.EstadoRuta;
+import pe.edu.pucp.aeroluggage.dto.simulacion.rest.AeropuertoRequest;
 import pe.edu.pucp.aeroluggage.dto.simulacion.rest.AeropuertoResponse;
 import pe.edu.pucp.aeroluggage.dto.simulacion.rest.AlmacenContenidoResponse;
 import pe.edu.pucp.aeroluggage.dto.simulacion.rest.EnvioPanelResponse;
@@ -486,6 +490,56 @@ public class SimulacionDiaADiaRestController {
                         .withLongitud(a.getLongitud())
                         .build())
                 .toList();
+    }
+
+    @PostMapping("/{sessionId}/aeropuertos")
+    public AeropuertoResponse crearAeropuerto(@PathVariable final String sessionId,
+                                              @RequestBody final AeropuertoRequest request) {
+        if (!sessionId.equals(service.getSessionId())) {
+            throw new ResponseStatusException(HttpStatus.NOT_FOUND,
+                    "Sesion expirada o no encontrada: " + sessionId);
+        }
+        final Aeropuerto creado = service.crearAeropuerto(request);
+        return AeropuertoResponse.builder()
+                .withIdAeropuerto(creado.getIdAeropuerto())
+                .withCiudad(creado.getCiudad())
+                .withCapacidadAlmacen(creado.getCapacidadAlmacen())
+                .withMaletasActuales(creado.getMaletasActuales())
+                .withLatitud(creado.getLatitud())
+                .withLongitud(creado.getLongitud())
+                .withHusoGMT(creado.getHusoGMT())
+                .build();
+    }
+
+    @PutMapping("/{sessionId}/aeropuertos/{iata}")
+    public AeropuertoResponse actualizarAeropuerto(@PathVariable final String sessionId,
+                                                    @PathVariable final String iata,
+                                                    @RequestBody final AeropuertoRequest request) {
+        if (!sessionId.equals(service.getSessionId())) {
+            throw new ResponseStatusException(HttpStatus.NOT_FOUND,
+                    "Sesion expirada o no encontrada: " + sessionId);
+        }
+        final Aeropuerto actualizado = service.actualizarAeropuerto(iata, request);
+        return AeropuertoResponse.builder()
+                .withIdAeropuerto(actualizado.getIdAeropuerto())
+                .withCiudad(actualizado.getCiudad())
+                .withCapacidadAlmacen(actualizado.getCapacidadAlmacen())
+                .withMaletasActuales(actualizado.getMaletasActuales())
+                .withLatitud(actualizado.getLatitud())
+                .withLongitud(actualizado.getLongitud())
+                .withHusoGMT(actualizado.getHusoGMT())
+                .build();
+    }
+
+    @DeleteMapping("/{sessionId}/aeropuertos/{iata}")
+    public ResponseEntity<Void> eliminarAeropuerto(@PathVariable final String sessionId,
+                                                    @PathVariable final String iata) {
+        if (!sessionId.equals(service.getSessionId())) {
+            throw new ResponseStatusException(HttpStatus.NOT_FOUND,
+                    "Sesion expirada o no encontrada: " + sessionId);
+        }
+        service.eliminarAeropuerto(iata);
+        return ResponseEntity.noContent().build();
     }
 
     @GetMapping("/{sessionId}/pedidos")

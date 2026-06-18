@@ -17,8 +17,10 @@ import java.io.InputStream;
 import java.nio.file.Files;
 import java.nio.file.Path;
 import java.nio.file.StandardCopyOption;
+import java.time.LocalTime;
 import java.util.List;
 import java.util.Map;
+import java.util.Optional;
 
 @Service
 public class ServicioVueloProgramado {
@@ -57,5 +59,55 @@ public class ServicioVueloProgramado {
             vueloProgramadoRepositorio.insertar(vuelo);
         }
         return vuelos;
+    }
+
+    @Transactional
+    public List<VueloProgramado> listarTodos() {
+        return vueloProgramadoRepositorio.obtenerTodos();
+    }
+
+    @Transactional
+    public List<VueloProgramado> listarPorAeropuerto(final String iata) {
+        return vueloProgramadoRepositorio.obtenerPorAeropuerto(iata);
+    }
+
+    @Transactional
+    public Optional<VueloProgramado> obtenerPorId(final String id) {
+        return vueloProgramadoRepositorio.obtenerPorId(id);
+    }
+
+    @Transactional
+    public VueloProgramado crear(final VueloProgramado vuelo) {
+        if (vuelo.getCodigo() == null || vuelo.getCodigo().isBlank()) {
+            throw new IllegalArgumentException("El codigo del vuelo es requerido");
+        }
+        if (vuelo.getAeropuertoOrigen() == null || vuelo.getAeropuertoDestino() == null) {
+            throw new IllegalArgumentException("Los aeropuertos de origen y destino son requeridos");
+        }
+        vuelo.setActivo(true);
+        vueloProgramadoRepositorio.insertar(vuelo);
+        return vueloProgramadoRepositorio.obtenerPorId(vuelo.getIdVueloProgramado()).orElse(vuelo);
+    }
+
+    @Transactional
+    public Optional<VueloProgramado> actualizar(final String id, final VueloProgramado vuelo) {
+        final Optional<VueloProgramado> existente = vueloProgramadoRepositorio.obtenerPorId(id);
+        if (existente.isEmpty()) {
+            return Optional.empty();
+        }
+        vuelo.setIdVueloProgramado(id);
+        vuelo.setActivo(true);
+        vueloProgramadoRepositorio.actualizar(vuelo);
+        return vueloProgramadoRepositorio.obtenerPorId(id);
+    }
+
+    @Transactional
+    public boolean eliminar(final String id) {
+        final Optional<VueloProgramado> existente = vueloProgramadoRepositorio.obtenerPorId(id);
+        if (existente.isEmpty()) {
+            return false;
+        }
+        vueloProgramadoRepositorio.eliminar(id);
+        return true;
     }
 }
