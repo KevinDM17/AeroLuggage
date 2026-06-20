@@ -13,5 +13,6 @@ public class SimulacionComandoDTO {
 
     private String sessionId;
     private String idVueloInstancia;
+    private String idVueloProgramado;
     private List<String> idsMaletas;
 }

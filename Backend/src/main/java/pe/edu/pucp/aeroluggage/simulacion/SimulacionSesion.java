@@ -953,6 +953,10 @@ public class SimulacionSesion {
         return todos;
     }
 
+    public List<VueloProgramado> getVuelosProgramados() {
+        return vuelosProgramados;
+    }
+
     public List<VueloInstancia> getVuelosCalientes() {
         return vuelosCalientes;
     }
@@ -1529,9 +1533,13 @@ public class SimulacionSesion {
                     final String id = String.format("VI%08d", secuenciaBase + 1L);
 
                     final VueloInstancia vi = new VueloInstancia(
-                            id, vp.getCodigo(), salidaUtc, llegadaUtc,
-                            vp.getCapacidadMaxima(), vp.getCapacidadMaxima(),
-                            vp.getAeropuertoOrigen(), vp.getAeropuertoDestino(),
+                            id,
+                            vp,
+                            opDate,
+                            salidaUtc,
+                            llegadaUtc,
+                            vp.getCapacidadMaxima(),
+                            vp.getCapacidadMaxima(),
                             EstadoVuelo.PROGRAMADO
                     );
 

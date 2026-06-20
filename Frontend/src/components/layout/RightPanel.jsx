@@ -3,8 +3,8 @@ import { Virtuoso } from "react-virtuoso";
 import { useLocation } from "react-router-dom";
 import { Ban, Filter, PanelRightClose, MapPin, Globe, Info, ChevronDown, Plane, RefreshCw, Package, Luggage, ArrowDownUp, ArrowUp, ArrowDown, Route, X, Crosshair } from "lucide-react";
 import { useFetch } from "../../hooks/useFetch";
-import { useStompPublish } from "../../hooks/useStomp";
-import { cancelFlight, listFlights } from "../../api/flights";
+import { useStompPublish, useStompSubscribe } from "../../hooks/useStomp";
+import { cancelFlight, listFlightPlans, listFlights } from "../../api/flights";
 import { listOrders } from "../../api/orders";
 import { listAirports } from "../../api/airports";
 import { listMaletas } from "../../api/maletas";
@@ -12,6 +12,7 @@ import { listRutas } from "../../api/rutas";
 import { obtenerContenidoAlmacen, obtenerEnviosDiaADia, obtenerEnviosPanel, obtenerManifiestoVuelo, obtenerManifiestoVueloDiaADia, obtenerRutaMaleta, obtenerRutasEnvio, obtenerRutasEnvioDiaADia } from "../../api/simulator";
 import { apiGet, USE_MOCK } from "../../api/client";
 import { useMapFocus } from "../../context/MapFocusContext";
+import Modal from "../ui/Modal";
 import { LoadingState, EmptyState, ErrorState } from "../ui/States";
 import { useToast } from "../ui/Toast";
 
@@ -484,7 +485,15 @@ function EnvioSeccion({ title, envios, showOrigin = true, defaultOpen = false, m
   );
 }
 
-const AirportItem = memo(function AirportItem({ apt, loadContenido, onFocus, onDeselect, isSelected }) {
+const AirportItem = memo(function AirportItem({
+  apt,
+  loadContenido,
+  onFocus,
+  onDeselect,
+  isSelected,
+  onShowFlightPlans,
+  showFlightPlansAction = false,
+}) {
   const [expanded, setExpanded] = useState(false);
   const pct = apt.capacity > 0 ? Math.round((apt.used / apt.capacity) * 100) : 0;
 
@@ -570,6 +579,19 @@ const AirportItem = memo(function AirportItem({ apt, loadContenido, onFocus, onD
               </div>
             </div>
           </div>
+
+          {showFlightPlansAction && onShowFlightPlans ? (
+            <div className="mt-3">
+              <button
+                type="button"
+                onClick={() => onShowFlightPlans(apt)}
+                className="inline-flex items-center gap-2 rounded-lg border border-info/40 bg-info/10 px-3 py-2 text-xs font-semibold text-info transition-colors hover:bg-info/20"
+              >
+                <Plane className="h-3.5 w-3.5" />
+                Ver vuelos programados
+              </button>
+            </div>
+          ) : null}
 
           <div className="mt-3 space-y-3 border-t border-slate-800 pt-3 text-xs text-slate-400">
             {contenidoStatus === "loading" ? (
@@ -718,6 +740,45 @@ const AirportItem = memo(function AirportItem({ apt, loadContenido, onFocus, onD
   );
 });
 
+const ScheduledFlightPlanItem = memo(function ScheduledFlightPlanItem({
+  flightPlan,
+  simTime,
+  onCancel,
+  canceling,
+}) {
+  const timing = useMemo(
+    () => buildScheduledFlightTiming(flightPlan, simTime),
+    [flightPlan, simTime],
+  );
+
+  return (
+    <div className="rounded-xl border border-slate-800 bg-surface-2 px-4 py-3">
+      <div className="flex flex-col gap-3 sm:flex-row sm:items-start sm:justify-between">
+        <div className="min-w-0">
+          <div className="font-semibold text-slate-100">
+            {flightPlan.origin} {"->"} {flightPlan.dest}
+          </div>
+          <div className="mt-1 text-sm text-slate-400">
+            Sale a las {flightPlan.depTime || "--:--"}
+          </div>
+          <div className="mt-2 inline-flex rounded-md border border-slate-700 bg-surface-1 px-2.5 py-1 text-[11px] font-semibold text-slate-300">
+            {timing.statusLabel}
+          </div>
+        </div>
+        <button
+          type="button"
+          onClick={() => onCancel?.(flightPlan, timing)}
+          disabled={canceling || !timing.resolved}
+          className="inline-flex items-center justify-center gap-1.5 rounded-lg border border-danger/40 bg-danger/10 px-3 py-2 text-xs font-bold uppercase tracking-wide text-danger transition-colors hover:bg-danger/20 disabled:cursor-not-allowed disabled:opacity-60"
+        >
+          <Ban className="h-3.5 w-3.5" />
+          {canceling ? "Cancelando" : "Cancelar"}
+        </button>
+      </div>
+    </div>
+  );
+});
+
 function ColorLegend() {
   return (
     <details className="group border-t border-slate-800 bg-surface-1/95 px-4 py-3">
@@ -845,6 +906,67 @@ function normalizeFlightStatus(status) {
     .replace(/\s+/g, "_");
 }
 
+function formatLocalDateLabel(utcLikeMs) {
+  const date = new Date(utcLikeMs);
+  return `${padDatePart(date.getUTCDate())}/${padDatePart(date.getUTCMonth() + 1)}/${date.getUTCFullYear()}`;
+}
+
+function buildScheduledFlightTiming(flightPlan, simTime) {
+  const utcMs = parseUtcDateTime(simTime);
+  const gmtOrigin = Number(flightPlan?.gmtOrigin ?? 0);
+  const depRaw = String(flightPlan?.depTime ?? "").trim();
+  const departureLabel = depRaw ? depRaw.slice(0, 5) : "--:--";
+  const [depHourRaw, depMinuteRaw] = depRaw.split(":");
+  const depHour = Number(depHourRaw);
+  const depMinute = Number(depMinuteRaw);
+
+  if (!Number.isFinite(utcMs) || !Number.isFinite(depHour) || !Number.isFinite(depMinute)) {
+    return {
+      resolved: false,
+      departureLabel,
+      statusLabel: "Esperando hora simulada",
+      effectiveDateIso: null,
+      effectiveDateLabel: "--",
+      appliesToday: null,
+      cutoffLabel: "--:--",
+      confirmMessage: "",
+    };
+  }
+
+  const simAtOriginMs = utcMs + gmtOrigin * 60 * 60 * 1000;
+  const simAtOrigin = new Date(simAtOriginMs);
+  const departureTodayOriginMs = Date.UTC(
+    simAtOrigin.getUTCFullYear(),
+    simAtOrigin.getUTCMonth(),
+    simAtOrigin.getUTCDate(),
+    depHour,
+    depMinute,
+    0,
+    0,
+  );
+  const cutoffOriginMs = departureTodayOriginMs - 60 * 60 * 1000;
+  const appliesToday = simAtOriginMs <= cutoffOriginMs;
+  const effectiveOriginMs = departureTodayOriginMs + (appliesToday ? 0 : 24 * 60 * 60 * 1000);
+  const effectiveDate = new Date(effectiveOriginMs);
+  const effectiveDateIso = `${effectiveDate.getUTCFullYear()}-${padDatePart(effectiveDate.getUTCMonth() + 1)}-${padDatePart(effectiveDate.getUTCDate())}`;
+  const effectiveDateLabel = formatLocalDateLabel(effectiveOriginMs);
+  const cutoffLabel = `${padDatePart(Math.floor((((depHour * 60) + depMinute - 60 + (24 * 60)) % (24 * 60)) / 60))}:${padDatePart((((depHour * 60) + depMinute - 60 + (24 * 60)) % (24 * 60)) % 60)}`;
+  const statusLabel = appliesToday
+    ? `Aplica hoy · ${effectiveDateLabel}`
+    : `Aplica manana · ${effectiveDateLabel}`;
+
+  return {
+    resolved: true,
+    departureLabel,
+    statusLabel,
+    effectiveDateIso,
+    effectiveDateLabel,
+    appliesToday,
+    cutoffLabel,
+    confirmMessage: `Se cancelara la salida ${flightPlan.origin} -> ${flightPlan.dest} de las ${depRaw} para el ${effectiveDateLabel}. Regla aplicada: hasta ${cutoffLabel} afecta el mismo dia; despues de esa hora afecta el dia siguiente.`,
+  };
+}
+
 function airportOccupancyRatio(apt) {
   const cap = Number(apt?.capacity) || 0;
   const used = Number(apt?.used) || 0;
@@ -920,6 +1042,12 @@ export default function RightPanel({
   const [airportSemaforo, setAirportSemaforo] = useState("ALL");
   const [flightSemaforo, setFlightSemaforo] = useState("ALL");
   const [cancelingFlightId, setCancelingFlightId] = useState(null);
+  const [flightPlansModalAirport, setFlightPlansModalAirport] = useState(null);
+  const [airportFlightPlans, setAirportFlightPlans] = useState([]);
+  const [airportFlightPlansStatus, setAirportFlightPlansStatus] = useState("idle");
+  const [cancelingFlightPlanId, setCancelingFlightPlanId] = useState(null);
+  const [pendingFlightPlanCancellation, setPendingFlightPlanCancellation] = useState(null);
+  const [flightPlanConfirmation, setFlightPlanConfirmation] = useState(null);
   const publish = useStompPublish();
   const sessionId = simulationPanelData?.sessionId ?? null;
   const { mapHighlight, setMapHighlight, selected, setSelected, setMapFocus, panelFocus, setMapDim, setFlightManifestLoader } = useMapFocus();
@@ -927,6 +1055,8 @@ export default function RightPanel({
   const isDiaADia = location.pathname === "/";
   const isPeriodo = location.pathname === "/simulator/period";
   const isSimulator = location.pathname === "/" || location.pathname.startsWith("/simulator");
+  const statusTopic = !USE_MOCK && isPeriodo && sessionId ? `/topic/simulacion/${sessionId}/estado` : null;
+  const { data: periodStatusMessage } = useStompSubscribe(statusTopic, { enabled: Boolean(statusTopic) });
   const simulationLoaded = !isSimulator || simulationPanelData?.loaded === true;
   const activeTabLabel = PANEL_TABS.find((tab) => tab.id === activeTab)?.label ?? "";
 
@@ -969,6 +1099,12 @@ export default function RightPanel({
     resetAirportSort();
     clearEnvioFilters();
     setCancelingFlightId(null);
+    setFlightPlansModalAirport(null);
+    setAirportFlightPlans([]);
+    setAirportFlightPlansStatus("idle");
+    setCancelingFlightPlanId(null);
+    setPendingFlightPlanCancellation(null);
+    setFlightPlanConfirmation(null);
   }, [isSimulator, simulationLoaded]);
 
   const onTabChange = (tab) => {
@@ -985,6 +1121,74 @@ export default function RightPanel({
       setFlightStatusFilter("DEFAULT");
     }
   };
+
+  const closeFlightPlansModal = useCallback(() => {
+    setFlightPlansModalAirport(null);
+    setAirportFlightPlans([]);
+    setAirportFlightPlansStatus("idle");
+    setCancelingFlightPlanId(null);
+    setPendingFlightPlanCancellation(null);
+    setFlightPlanConfirmation(null);
+  }, []);
+
+  const openFlightPlansModal = useCallback((airport) => {
+    setFlightPlansModalAirport(airport ?? null);
+    setCancelingFlightPlanId(null);
+    setPendingFlightPlanCancellation(null);
+    setFlightPlanConfirmation(null);
+  }, []);
+
+  const loadFlightPlansForAirport = useCallback((airport) => {
+    if (!airport || !isPeriodo) return () => {};
+    let cancelled = false;
+
+    setAirportFlightPlansStatus("loading");
+    listFlightPlans(airport.iata ?? airport.idAeropuerto)
+      .then((data) => {
+        if (cancelled) return;
+        setAirportFlightPlans(Array.isArray(data) ? data : []);
+        setAirportFlightPlansStatus("ready");
+      })
+      .catch(() => {
+        if (cancelled) return;
+        setAirportFlightPlans([]);
+        setAirportFlightPlansStatus("error");
+      });
+
+    return () => {
+      cancelled = true;
+    };
+  }, [isPeriodo]);
+
+  useEffect(() => {
+    if (!flightPlansModalAirport || !isPeriodo) return;
+    return loadFlightPlansForAirport(flightPlansModalAirport);
+  }, [flightPlansModalAirport, isPeriodo, loadFlightPlansForAirport]);
+
+  useEffect(() => {
+    if (!pendingFlightPlanCancellation || !periodStatusMessage?.estado) return;
+
+    if (periodStatusMessage.estado === "VUELO_PROGRAMADO_CANCELADO") {
+      toast.push({
+        type: "warning",
+        title: "Vuelo cancelado",
+        message: pendingFlightPlanCancellation.toastMessage,
+      });
+      closeFlightPlansModal();
+      return;
+    }
+
+    if (periodStatusMessage.estado === "ERROR_CANCELACION_VUELO_PROGRAMADO") {
+      toast.push({
+        type: "error",
+        title: "No se pudo cancelar el vuelo",
+        message: periodStatusMessage.mensaje ?? "La cancelacion fue rechazada por el backend.",
+      });
+      setPendingFlightPlanCancellation(null);
+      setCancelingFlightPlanId(null);
+      setFlightPlanConfirmation(null);
+    }
+  }, [closeFlightPlansModal, pendingFlightPlanCancellation, periodStatusMessage, toast]);
 
   const flightsFetch = useFetch(() => (isSimulator ? Promise.resolve([]) : listFlights()), [isSimulator]);
   const ordersFetch = useFetch(() => (isSimulator ? Promise.resolve([]) : listOrders()), [isSimulator]);
@@ -1172,6 +1376,63 @@ export default function RightPanel({
     } finally {
       setCancelingFlightId(null);
     }
+  };
+
+  const executeFlightPlanCancellation = async (flightPlan, timing) => {
+    const flightPlanId = flightPlan?.idVueloProgramado ?? flightPlan?.id;
+    if (!flightPlanId) return;
+    setCancelingFlightPlanId(flightPlanId);
+
+    try {
+      if (USE_MOCK || !sessionId) {
+        toast.push({
+          type: "warning",
+          title: "Vuelo cancelado",
+          message: `${flightPlan.origin} -> ${flightPlan.dest} · ${timing.effectiveDateLabel}`,
+        });
+        closeFlightPlansModal();
+        return;
+      }
+
+      setPendingFlightPlanCancellation({
+        idVueloProgramado: flightPlanId,
+        toastMessage: `${flightPlan.origin} -> ${flightPlan.dest} · ${timing.effectiveDateLabel}`,
+      });
+      await publish("/app/simulacion/periodo/cancelar-vuelo-programado", {
+        sessionId,
+        idVueloProgramado: flightPlanId,
+      });
+    } catch (err) {
+      setPendingFlightPlanCancellation(null);
+      setCancelingFlightPlanId(null);
+      toast.push({
+        type: "error",
+        title: "No se pudo cancelar el vuelo",
+        message: err.message,
+      });
+    }
+  };
+
+  const handleCancelFlightPlan = (flightPlan, timing) => {
+    const flightPlanId = flightPlan?.idVueloProgramado ?? flightPlan?.id;
+    if (!flightPlanId) return;
+    if (!timing?.resolved) {
+      toast.push({
+        type: "warning",
+        title: "Hora simulada no disponible",
+        message: "Espera a que la simulacion tenga una hora simulada para resolver si la cancelacion aplica hoy o manana.",
+      });
+      return;
+    }
+
+    setFlightPlanConfirmation({ flightPlan, timing });
+  };
+
+  const confirmFlightPlanCancellation = async () => {
+    if (!flightPlanConfirmation) return;
+    const { flightPlan, timing } = flightPlanConfirmation;
+    setFlightPlanConfirmation(null);
+    await executeFlightPlanCancellation(flightPlan, timing);
   };
 
   const simTime = simulationPanelData?.simTime;
@@ -1629,11 +1890,149 @@ export default function RightPanel({
             onFocus={focusAirportOnMap}
             onDeselect={() => setSelected(null)}
             isSelected={selected?.kind === "airport" && selected.id === (a.iata ?? a.idAeropuerto)}
+            onShowFlightPlans={openFlightPlansModal}
+            showFlightPlansAction={isPeriodo}
           />
         )}
       />
     ),
   }[activeTab];
+
+  const flightPlansModal = (
+    <Modal
+      open={Boolean(flightPlansModalAirport)}
+      onClose={closeFlightPlansModal}
+      title={`Vuelos programados de ${flightPlansModalAirport?.iata ?? flightPlansModalAirport?.idAeropuerto ?? ""}`}
+      maxWidth="max-w-4xl"
+    >
+      <div className="flex max-h-[80vh] flex-col">
+        <div className="border-b border-slate-800 px-6 py-5 pr-16">
+          <h3 className="text-lg font-semibold text-slate-100">
+            Vuelos programados de {flightPlansModalAirport?.iata ?? flightPlansModalAirport?.idAeropuerto ?? "--"}
+          </h3>
+          <p className="mt-2 text-sm leading-relaxed text-slate-400">
+            Selecciona un vuelo programado para registrar su cancelacion. La interfaz te indicara si la cancelacion aplica al vuelo de hoy o al del dia siguiente segun la hora simulada actual.
+          </p>
+        </div>
+
+        <div className="overflow-y-auto px-6 py-5">
+          {airportFlightPlansStatus === "loading" ? (
+            <LoadingState label="Cargando vuelos programados..." />
+          ) : airportFlightPlansStatus === "error" ? (
+            <ErrorState
+              error={{ message: "No se pudieron cargar los vuelos programados de este aeropuerto." }}
+              onRetry={() => loadFlightPlansForAirport(flightPlansModalAirport)}
+            />
+          ) : airportFlightPlans.length === 0 ? (
+            <EmptyState title="Sin vuelos programados" message="Este aeropuerto no tiene vuelos programados registrados." />
+          ) : (
+            <div className="space-y-3">
+              {airportFlightPlans.map((flightPlan, index) => {
+                const key = flightPlan.idVueloProgramado ?? flightPlan.id ?? `${flightPlan.origin}-${flightPlan.dest}-${index}`;
+                return (
+                  <ScheduledFlightPlanItem
+                    key={key}
+                    flightPlan={flightPlan}
+                    simTime={simTime}
+                    onCancel={handleCancelFlightPlan}
+                    canceling={cancelingFlightPlanId === (flightPlan.idVueloProgramado ?? flightPlan.id)}
+                  />
+                );
+              })}
+            </div>
+          )}
+        </div>
+      </div>
+    </Modal>
+  );
+
+  const flightPlanConfirmationModal = (
+    <Modal
+      open={Boolean(flightPlanConfirmation)}
+      onClose={() => {
+        if (cancelingFlightPlanId) return;
+        setFlightPlanConfirmation(null);
+      }}
+      title="Confirmar cancelacion de vuelo programado"
+      maxWidth="max-w-2xl"
+    >
+      <div className="flex max-h-[80vh] flex-col">
+        <div className="border-b border-slate-800 px-6 py-5 pr-16">
+          <p className="text-xs font-semibold uppercase tracking-[0.24em] text-warning">
+            Confirmacion
+          </p>
+          <h3 className="mt-2 text-2xl font-semibold text-slate-100">
+            Cancelar vuelo programado
+          </h3>
+          <p className="mt-3 text-sm leading-relaxed text-slate-400">
+            La cancelacion se registrara sobre la siguiente ocurrencia aplicable del vuelo segun la hora simulada actual.
+          </p>
+        </div>
+
+        <div className="space-y-5 overflow-y-auto px-6 py-5">
+          <div className="rounded-2xl border border-slate-700/80 bg-slate-900/40 p-5">
+            <div className="text-xs font-semibold uppercase tracking-[0.2em] text-slate-400">
+              Vuelo seleccionado
+            </div>
+            <div className="mt-3 flex flex-wrap items-center gap-3 text-lg font-semibold text-white">
+              <span>{flightPlanConfirmation?.flightPlan?.origin ?? "--"}</span>
+              <span className="text-slate-500">{"->"}</span>
+              <span>{flightPlanConfirmation?.flightPlan?.dest ?? "--"}</span>
+            </div>
+
+            <div className="mt-4 grid gap-3 sm:grid-cols-2">
+              <div className="rounded-xl border border-slate-700/70 bg-surface-2/70 p-4">
+                <div className="text-xs uppercase tracking-wide text-slate-400">Hora de salida</div>
+                <div className="mt-1 text-lg font-semibold text-white">
+                  {flightPlanConfirmation?.timing?.departureLabel ?? "--:--"} UTC
+                </div>
+              </div>
+
+              <div className="rounded-xl border border-slate-700/70 bg-surface-2/70 p-4">
+                <div className="text-xs uppercase tracking-wide text-slate-400">Fecha afectada</div>
+                <div className="mt-1 text-lg font-semibold text-white">
+                  {flightPlanConfirmation?.timing?.effectiveDateLabel ?? "--"}
+                </div>
+                <div className="mt-1 text-sm text-info">
+                  {flightPlanConfirmation?.timing?.appliesToday ? "Afecta el vuelo de hoy" : "Afecta el vuelo del dia siguiente"}
+                </div>
+              </div>
+            </div>
+          </div>
+
+          <div className="rounded-2xl border border-warning/30 bg-warning/10 p-5">
+            <div className="text-sm font-semibold text-warning">Regla aplicada</div>
+            <p className="mt-2 text-sm leading-relaxed text-slate-200">
+              Si registras la cancelacion hasta las{" "}
+              <span className="font-semibold text-white">
+                {flightPlanConfirmation?.timing?.cutoffLabel ?? "--:--"} UTC
+              </span>
+              , afecta el mismo dia. Despues de esa hora, afecta el dia siguiente.
+            </p>
+          </div>
+        </div>
+
+        <div className="flex flex-col-reverse gap-3 border-t border-slate-800 px-6 py-5 sm:flex-row sm:justify-end">
+          <button
+            type="button"
+            onClick={() => setFlightPlanConfirmation(null)}
+            disabled={Boolean(cancelingFlightPlanId)}
+            className="inline-flex items-center justify-center rounded-lg border border-slate-700 bg-surface-2 px-4 py-2.5 text-sm font-semibold text-slate-200 transition-colors hover:bg-slate-800 disabled:cursor-not-allowed disabled:opacity-60"
+          >
+            Volver
+          </button>
+          <button
+            type="button"
+            onClick={confirmFlightPlanCancellation}
+            disabled={Boolean(cancelingFlightPlanId)}
+            className="inline-flex items-center justify-center rounded-lg border border-danger/50 bg-danger/15 px-4 py-2.5 text-sm font-semibold text-danger transition-colors hover:bg-danger/20 disabled:cursor-not-allowed disabled:opacity-60"
+          >
+            {cancelingFlightPlanId ? "Cancelando..." : "Confirmar cancelacion"}
+          </button>
+        </div>
+      </div>
+    </Modal>
+  );
 
   return (
     <div className="w-[min(360px,90vw)] lg:w-[360px] shrink-0 bg-surface-1 border-l border-slate-800 h-screen flex flex-col relative z-[9999]">
@@ -1972,6 +2371,8 @@ export default function RightPanel({
       </div>
 
       <ColorLegend />
+      {flightPlansModal}
+      {flightPlanConfirmationModal}
     </div>
   );
 }

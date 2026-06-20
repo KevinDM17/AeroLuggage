@@ -14,4 +14,6 @@ public class SimulacionEstadoDTO {
     private Integer aeropuertosColapsados;
     private Integer vuelosColapsados;
     private Integer maletasEvaluadasSinRuta;
+    private String aeropuertoColapsadoDetalle;
+    private String vueloColapsadoDetalle;
 }

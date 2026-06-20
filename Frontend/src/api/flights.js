@@ -11,8 +11,13 @@ import {
 
 const adaptFlight = (f) => ({
   id:       f.codigo ?? f.idVueloProgramado,
-  origin:   typeof f.aeropuertoOrigen === "string"  ? f.aeropuertoOrigen  : f?.aeropuertoOrigen?.idAeropuerto  ?? "",
-  dest:     typeof f.aeropuertoDestino === "string" ? f.aeropuertoDestino : f?.aeropuertoDestino?.idAeropuerto ?? "",
+  idVueloProgramado: f.idVueloProgramado ?? f.codigo,
+  origin:   f.idAeropuertoOrigen
+    ?? (typeof f.aeropuertoOrigen === "string" ? f.aeropuertoOrigen : f?.aeropuertoOrigen?.idAeropuerto)
+    ?? "",
+  dest:     f.idAeropuertoDestino
+    ?? (typeof f.aeropuertoDestino === "string" ? f.aeropuertoDestino : f?.aeropuertoDestino?.idAeropuerto)
+    ?? "",
   destCity: f.nombreCiudadDestino ?? "",
   destCont: f.continenteDestino ?? "",
   depTime:  f.horaSalida ?? "",

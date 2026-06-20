@@ -10,6 +10,7 @@ import org.springframework.messaging.simp.SimpMessagingTemplate;
 import org.springframework.stereotype.Controller;
 import pe.edu.pucp.aeroluggage.simulacion.SimulacionSesionManager;
 import pe.edu.pucp.aeroluggage.dto.simulacion.ws.SimulacionComandoDTO;
+import pe.edu.pucp.aeroluggage.dto.simulacion.ws.SimulacionEstadoDTO;
 
 @Slf4j
 @Controller
@@ -50,6 +51,25 @@ public class SimulacionPeriodoWsController {
                 comando.getSessionId(), comando.getIdVueloInstancia(), idsMaletas, wsSessionId);
         sesionManager.registrarWsSession(wsSessionId, comando.getSessionId());
         sesionManager.cancelarVuelo(comando.getSessionId(), comando.getIdVueloInstancia(), idsMaletas, broker);
+    }
+
+    @MessageMapping("/simulacion/periodo/cancelar-vuelo-programado")
+    public void cancelarVueloProgramado(final SimulacionComandoDTO comando, final SimpMessageHeaderAccessor accessor) {
+        final String wsSessionId = accessor.getSessionId();
+        log.info("[AeroLuggage/Simulacion] - WS/cancelar-vuelo-programado: sessionId: {}, vueloProgramado: {}, wsSession: {}",
+                comando.getSessionId(), comando.getIdVueloProgramado(), wsSessionId);
+        sesionManager.registrarWsSession(wsSessionId, comando.getSessionId());
+        final SimulacionEstadoDTO resultado = sesionManager.cancelarVueloProgramado(
+                comando.getSessionId(),
+                comando.getIdVueloProgramado(),
+                broker
+        );
+        if (resultado != null) {
+            broker.convertAndSend(
+                    String.format("/topic/simulacion/%s/estado", comando.getSessionId()),
+                    resultado
+            );
+        }
     }
 
     @MessageMapping("/simulacion/periodo/iniciar-tick")

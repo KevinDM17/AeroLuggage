@@ -14,6 +14,7 @@ import pe.edu.pucp.aeroluggage.dominio.entidades.Pedido;
 import pe.edu.pucp.aeroluggage.dominio.entidades.Aeropuerto;
 import pe.edu.pucp.aeroluggage.dominio.entidades.Ruta;
 import pe.edu.pucp.aeroluggage.dominio.entidades.VueloInstancia;
+import pe.edu.pucp.aeroluggage.dominio.entidades.VueloProgramado;
 import pe.edu.pucp.aeroluggage.dominio.enums.EstadoMaleta;
 import pe.edu.pucp.aeroluggage.dominio.enums.EstadoPedido;
 import pe.edu.pucp.aeroluggage.dominio.enums.EstadoRuta;
@@ -66,6 +67,7 @@ public class SimulacionSesionManager {
     private static final String TOPIC_TICKS = "/topic/simulacion/";
     private static final String TOPIC_ESTADO = "/topic/simulacion/%s/estado";
     private static final DateTimeFormatter FORMATO_FECHA_HORA = DateTimeFormatter.ISO_LOCAL_DATE_TIME;
+    private static final DateTimeFormatter FORMATO_FECHA = DateTimeFormatter.ofPattern("dd/MM/yyyy");
 
     private static final String ESTADO_INICIADA = "INICIADA";
     private static final String ESTADO_PAUSADA = "PAUSADA";
@@ -75,6 +77,8 @@ public class SimulacionSesionManager {
     private static final String ESTADO_PLANIFICACION_COMPLETADA = "PLANIFICACION_COMPLETADA";
     private static final String ESTADO_ERROR = "ERROR";
     private static final String ESTADO_COLAPSO = "COLAPSO";
+    private static final String ESTADO_VUELO_PROGRAMADO_CANCELADO = "VUELO_PROGRAMADO_CANCELADO";
+    private static final String ESTADO_ERROR_CANCELACION_VUELO_PROGRAMADO = "ERROR_CANCELACION_VUELO_PROGRAMADO";
     private static final long WS_DISCONNECT_GRACE_MS = 15_000L;
 
     private final SimulacionPeriodoService periodoService;
@@ -126,7 +130,9 @@ public class SimulacionSesionManager {
             String simTime,
             int aeropuertosColapsados,
             int vuelosColapsados,
-            int maletasEvaluadasSinRuta
+            int maletasEvaluadasSinRuta,
+            String aeropuertoColapsadoDetalle,
+            String vueloColapsadoDetalle
     ) {
     }
 
@@ -1149,10 +1155,118 @@ public class SimulacionSesionManager {
         }
     }
 
+    public SimulacionEstadoDTO cancelarVueloProgramado(final String sessionId,
+                                                       final String idVueloProgramado,
+                                                       final SimpMessagingTemplate broker) {
+        final SimulacionSesion sesion = sesionesActivas.get(sessionId);
+        if (sesion == null) {
+            return buildCancelacionProgramadoError(sessionId, "No existe una simulacion activa para esta sesion.");
+        }
+        if (idVueloProgramado == null || idVueloProgramado.isBlank()) {
+            return buildCancelacionProgramadoError(sessionId, "Debes indicar un vuelo programado valido.");
+        }
+
+        final VueloProgramado vueloProgramado = sesion.getVuelosProgramados().stream()
+                .filter(v -> v != null && idVueloProgramado.equals(v.getIdVueloProgramado()))
+                .findFirst()
+                .orElse(null);
+        if (vueloProgramado == null) {
+            return buildCancelacionProgramadoError(sessionId,
+                    "No se encontro el vuelo programado " + idVueloProgramado + " en la simulacion actual.");
+        }
+        if (vueloProgramado.getHoraSalida() == null) {
+            return buildCancelacionProgramadoError(sessionId,
+                    "El vuelo programado " + idVueloProgramado + " no tiene una hora de salida valida.");
+        }
+
+        final LocalDateTime simTime = sesion.getCurrentSimTimeUtc().get();
+        if (simTime == null) {
+            return buildCancelacionProgramadoError(sessionId,
+                    "La simulacion todavia no tiene una hora simulada disponible para resolver la cancelacion.");
+        }
+
+        final LocalDate fechaOperacion = resolverFechaOperacionCancelacion(vueloProgramado, simTime);
+        asegurarInstanciasParaCancelacion(sesion);
+
+        final VueloInstancia instancia = buscarVueloProgramado(sesion, idVueloProgramado, fechaOperacion);
+        if (instancia == null) {
+            return buildCancelacionProgramadoError(
+                    sessionId,
+                    "No se encontro una ocurrencia del vuelo programado para la fecha " + fechaOperacion.format(FORMATO_FECHA) + "."
+            );
+        }
+        if (!esVueloCancelable(instancia)) {
+            return buildCancelacionProgramadoError(
+                    sessionId,
+                    "La ocurrencia " + instancia.getIdVueloInstancia() + " ya no puede cancelarse por su estado actual: "
+                            + instancia.getEstado() + "."
+            );
+        }
+
+        cancelarVuelo(sessionId, instancia.getIdVueloInstancia(), null, broker);
+        return SimulacionEstadoDTO.builder()
+                .withSessionId(sessionId)
+                .withEstado(ESTADO_VUELO_PROGRAMADO_CANCELADO)
+                .withMensaje("Se cancelo el vuelo programado " + vueloProgramado.getCodigo()
+                        + " para la fecha operativa " + fechaOperacion.format(FORMATO_FECHA) + ".")
+                .withSimTime(simTime.format(FORMATO_FECHA_HORA))
+                .build();
+    }
+
     private static VueloInstancia buscarVuelo(final SimulacionSesion sesion, final String idVuelo) {
         return sesion.getVuelosInstancia().stream()
                 .filter(v -> v != null && idVuelo.equals(v.getIdVueloInstancia()))
                 .findFirst().orElse(null);
+    }
+
+    private static VueloInstancia buscarVueloProgramado(final SimulacionSesion sesion,
+                                                        final String idVueloProgramado,
+                                                        final LocalDate fechaOperacion) {
+        return sesion.getVuelosInstancia().stream()
+                .filter(v -> v != null
+                        && v.getVueloProgramado() != null
+                        && idVueloProgramado.equals(v.getVueloProgramado().getIdVueloProgramado())
+                        && fechaOperacion.equals(v.getFechaOperacion()))
+                .findFirst()
+                .orElse(null);
+    }
+
+    private static boolean esVueloCancelable(final VueloInstancia vuelo) {
+        final EstadoVuelo estado = vuelo.getEstado();
+        return estado != EstadoVuelo.EN_PROGRESO
+                && estado != EstadoVuelo.FINALIZADO
+                && estado != EstadoVuelo.CONFIRMADO
+                && estado != EstadoVuelo.CANCELADO;
+    }
+
+    private static LocalDate resolverFechaOperacionCancelacion(final VueloProgramado vueloProgramado,
+                                                               final LocalDateTime simTimeUtc) {
+        final int gmtOrigen = vueloProgramado.getAeropuertoOrigen() != null
+                ? vueloProgramado.getAeropuertoOrigen().getHusoGMT() : 0;
+        final LocalDateTime simTimeOrigen = simTimeUtc.plusHours(gmtOrigen);
+        final LocalDateTime salidaOrigenHoy = LocalDateTime.of(simTimeOrigen.toLocalDate(), vueloProgramado.getHoraSalida());
+        final LocalDateTime cutoffOrigen = salidaOrigenHoy.minusHours(1);
+        return !simTimeOrigen.isAfter(cutoffOrigen)
+                ? simTimeOrigen.toLocalDate()
+                : simTimeOrigen.toLocalDate().plusDays(1);
+    }
+
+    private static SimulacionEstadoDTO buildCancelacionProgramadoError(final String sessionId,
+                                                                       final String message) {
+        return SimulacionEstadoDTO.builder()
+                .withSessionId(sessionId)
+                .withEstado(ESTADO_ERROR_CANCELACION_VUELO_PROGRAMADO)
+                .withMensaje(message)
+                .build();
+    }
+
+    private static void asegurarInstanciasParaCancelacion(final SimulacionSesion sesion) {
+        final SimulacionVentana ventana = sesion.getCurrentWindow().get();
+        if (ventana == null) {
+            return;
+        }
+        final long bucketActual = SimulacionSesion.parseBucket(ventana.getWindowId());
+        sesion.asegurarVuelosParaBanda(bucketActual, bucketActual + 24L);
     }
 
     private static boolean contieneVuelo(final Ruta ruta, final String idVuelo) {
@@ -1738,6 +1852,8 @@ public class SimulacionSesionManager {
                         .withAeropuertosColapsados(colapso.aeropuertosColapsados())
                         .withVuelosColapsados(colapso.vuelosColapsados())
                         .withMaletasEvaluadasSinRuta(colapso.maletasEvaluadasSinRuta())
+                        .withAeropuertoColapsadoDetalle(colapso.aeropuertoColapsadoDetalle())
+                        .withVueloColapsadoDetalle(colapso.vueloColapsadoDetalle())
                         .build()
         );
         return true;
@@ -1749,6 +1865,8 @@ public class SimulacionSesionManager {
         int aeropuertosColapsados = 0;
         int vuelosColapsados = 0;
         int maletasEvaluadasSinRuta = 0;
+        String aeropuertoColapsadoDetalle = null;
+        String vueloColapsadoDetalle = null;
         final List<String> motivos = new ArrayList<>();
 
         for (final Aeropuerto aeropuerto : sesion.getAeropuertos()) {
@@ -1757,8 +1875,12 @@ public class SimulacionSesionManager {
             }
             if (aeropuerto.getMaletasActuales() > aeropuerto.getCapacidadAlmacen()) {
                 aeropuertosColapsados++;
-                motivos.add("Aeropuerto " + aeropuerto.getIdAeropuerto() + " excedio capacidad ("
-                        + aeropuerto.getMaletasActuales() + "/" + aeropuerto.getCapacidadAlmacen() + ")");
+                final String detalleAeropuerto = "Aeropuerto " + aeropuerto.getIdAeropuerto() + " excedio capacidad ("
+                        + aeropuerto.getMaletasActuales() + "/" + aeropuerto.getCapacidadAlmacen() + ")";
+                if (aeropuertoColapsadoDetalle == null) {
+                    aeropuertoColapsadoDetalle = detalleAeropuerto;
+                }
+                motivos.add(detalleAeropuerto);
             }
         }
 
@@ -1769,7 +1891,11 @@ public class SimulacionSesionManager {
             final int capacidadUsada = vuelo.getCapacidadMaxima() - vuelo.getCapacidadDisponible();
             if (vuelo.getCapacidadDisponible() < 0 || capacidadUsada > vuelo.getCapacidadMaxima()) {
                 vuelosColapsados++;
-                motivos.add("Vuelo " + vuelo.getIdVueloInstancia() + " excedio capacidad");
+                final String detalleVuelo = "Vuelo " + vuelo.getIdVueloInstancia() + " excedio capacidad";
+                if (vueloColapsadoDetalle == null) {
+                    vueloColapsadoDetalle = detalleVuelo;
+                }
+                motivos.add(detalleVuelo);
             }
         }
 
@@ -1806,7 +1932,9 @@ public class SimulacionSesionManager {
                 simTime != null ? simTime.format(FORMATO_FECHA_HORA) : null,
                 aeropuertosColapsados,
                 vuelosColapsados,
-                maletasEvaluadasSinRuta
+                maletasEvaluadasSinRuta,
+                aeropuertoColapsadoDetalle,
+                vueloColapsadoDetalle
         );
     }
 
