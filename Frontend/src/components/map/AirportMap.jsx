@@ -147,13 +147,20 @@ function AirportMap({
    * - manifest: pedidos/maletas a bordo, pedidos al back cuando se abre.
    * Se limpia al clickear fondo vacio del mapa. */
   const [clickedFlightId, setClickedFlightId] = useState(null);
+  const [clickedAirportId, setClickedAirportId] = useState(null);
   const [hoveredPlaneId, setHoveredPlaneId] = useState(null);
+  const [hoveredAirportId, setHoveredAirportId] = useState(null);
   const [manifest, setManifest] = useState({ status: "idle", pedidos: 0, maletas: 0 });
 
   const clickedFlight = useMemo(() => {
     if (!clickedFlightId) return null;
     return (flights ?? []).find((f) => (f.id ?? f.idVueloInstancia) === clickedFlightId) ?? null;
   }, [clickedFlightId, flights]);
+
+  const clickedAirport = useMemo(() => {
+    if (!clickedAirportId) return null;
+    return airportsByIata.get(clickedAirportId) ?? null;
+  }, [clickedAirportId, airportsByIata]);
 
   useEffect(() => {
     if (!clickedFlightId || !flightManifestLoader) {
@@ -181,7 +188,9 @@ function AirportMap({
   const handleDeckClick = useCallback((info) => {
     if (!info?.object) {
       setClickedFlightId(null);
+      setClickedAirportId(null);
       setHoveredPlaneId(null);
+      setHoveredAirportId(null);
       setSelected(null);
     }
   }, [setSelected]);
@@ -378,18 +387,38 @@ function AirportMap({
 
       ls.push(
         new ScatterplotLayer({
+          id: "airport-hitbox",
+          data: airportList,
+          getPosition: (a) => [a.lng, a.lat],
+          getRadius: 18,
+          radiusUnits: "pixels",
+          getFillColor: [0, 0, 0, 0],
+          pickable: true,
+          onClick: (info) => {
+            if (info?.object?.iata) {
+              selectFromMap({ kind: "airport", id: info.object.iata });
+              setClickedAirportId(info.object.iata);
+              return true;
+            }
+            return false;
+          },
+        })
+      );
+
+      ls.push(
+        new ScatterplotLayer({
           id: "airport-glow",
           data: airportList,
           getPosition: (a) => [a.lng, a.lat],
           getFillColor: (a) => {
-            if (a.iata === selectedAirportId) return hexToRgba(tokens.info, 110);
+            if (a.iata === selectedAirportId || a.iata === hoveredAirportId) return hexToRgba(tokens.info, 110);
             const s = occupancyStatus(a.used, a.capacity);
             return hexToRgba(STATUS_HEX[s], airportDimmed(a) ? 10 : 90);
           },
           getRadius: 14,
           radiusUnits: "pixels",
           stroked: false,
-          updateTriggers: { getFillColor: [mapDim.airports, selectedAirportId] },
+          updateTriggers: { getFillColor: [mapDim.airports, selectedAirportId, hoveredAirportId] },
         })
       );
 
@@ -401,21 +430,14 @@ function AirportMap({
           getPosition: (a) => [a.lng, a.lat],
           getFillColor: (a) => {
             if (a.iata === selectedAirportId) return hexToRgba(tokens.info, 255);
+            if (a.iata === hoveredAirportId) return hexToRgba(tokens.info, 255);
             const s = occupancyStatus(a.used, a.capacity);
             return hexToRgba(STATUS_HEX[s], airportDimmed(a) ? 35 : 255);
           },
-          getRadius: 6,
+          getRadius: (a) => (a.iata === hoveredAirportId || a.iata === selectedAirportId) ? 8 : 6,
           radiusUnits: "pixels",
           stroked: false,
-          pickable: true,
-          onClick: (info) => {
-            if (info?.object?.iata) {
-              selectFromMap({ kind: "airport", id: info.object.iata });
-              return true;
-            }
-            return false;
-          },
-          updateTriggers: { getFillColor: [mapDim.airports, selectedAirportId] },
+          updateTriggers: { getFillColor: [mapDim.airports, selectedAirportId, hoveredAirportId] },
         })
       );
 
@@ -562,7 +584,7 @@ function AirportMap({
   }, [
     showFlights, showRouteLines, routesGeometry, airportList, planes,
     highlightGeometry, highlightAirports, mapDim, selected, selectedAirport, selectedFlightLine, selectFromMap,
-    hoveredPlaneId,
+    hoveredPlaneId, hoveredAirportId,
   ]);
 
   return (
@@ -583,8 +605,13 @@ function AirportMap({
           onHover={(info) => {
             if (info?.object && info.layer?.id === "planes-hitbox") {
               setHoveredPlaneId(info.object.id);
+              setHoveredAirportId(null);
+            } else if (info?.object && info.layer?.id === "airport-hitbox") {
+              setHoveredAirportId(info.object.iata);
+              setHoveredPlaneId(null);
             } else {
               setHoveredPlaneId(null);
+              setHoveredAirportId(null);
             }
           }}
         />
@@ -594,6 +621,12 @@ function AirportMap({
           flight={clickedFlight}
           manifest={manifest}
           onClose={() => setClickedFlightId(null)}
+        />
+      )}
+      {clickedAirport && (
+        <AirportInfoCard
+          airport={clickedAirport}
+          onClose={() => setClickedAirportId(null)}
         />
       )}
     </div>
@@ -653,6 +686,40 @@ function FlightInfoCard({ flight, manifest, onClose }) {
           <div className="uppercase text-[9px] tracking-wider text-slate-500">Llegada</div>
           <div className="text-slate-200 font-medium">{fmt(flight.arrTime)}</div>
         </div>
+      </div>
+    </div>
+  );
+}
+
+function AirportInfoCard({ airport, onClose }) {
+  const used = Number(airport.used ?? 0);
+  const cap = Number(airport.capacity ?? 0);
+  const pct = cap > 0 ? Math.round((used / cap) * 100) : 0;
+  const free = Math.max(cap - used, 0);
+  return (
+    <div className="absolute top-1/2 left-3 -translate-y-1/2 z-[3500] w-64 rounded-xl border border-blue-400/40 bg-surface-1/95 backdrop-blur px-4 py-3 shadow-lg shadow-blue-400/10 text-slate-200">
+      <div className="flex items-start justify-between gap-2">
+        <div>
+          <div className="text-[10px] uppercase tracking-wider text-blue-400 font-semibold">Aeropuerto</div>
+          <div className="font-bold text-base text-white">{airport.iata}</div>
+          <div className="text-xs text-slate-400 mt-0.5">{airport.name}</div>
+          <div className="text-[10px] text-slate-500">{airport.city} · {airport.continent}</div>
+        </div>
+        <button
+          type="button"
+          onClick={onClose}
+          aria-label="Cerrar"
+          className="rounded-md border border-slate-700 bg-surface-2/60 p-1 text-slate-300 hover:text-white hover:bg-surface-2"
+        >
+          <span className="block leading-none text-xs px-1">×</span>
+        </button>
+      </div>
+
+      <div className="mt-3 grid grid-cols-2 gap-2 text-xs">
+        <Stat label="Maletas" value={`${used}/${cap}`} tone="info" />
+        <Stat label="Ocupacion" value={`${pct}%`} tone={pct >= 85 ? "danger" : pct >= 60 ? "warning" : "success"} />
+        <Stat label="Capacidad libre" value={String(free)} tone={free === 0 ? "danger" : "success"} />
+        <Stat label="GMT" value={airport.gmt != null ? (airport.gmt > 0 ? `+${airport.gmt}` : String(airport.gmt)) : "—"} tone="info" />
       </div>
     </div>
   );
