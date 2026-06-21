@@ -1062,9 +1062,9 @@ export default function RightPanel({
   const sessionId = simulationPanelData?.sessionId ?? null;
   const { mapHighlight, setMapHighlight, selected, setSelected, setMapFocus, panelFocus, setMapDim, setFlightManifestLoader } = useMapFocus();
   const location = useLocation();
-  const isDiaADia = location.pathname === "/";
+  const isDiaADia = location.pathname === "/operaciones";
   const isPeriodo = location.pathname === "/simulator/period";
-  const isSimulator = location.pathname === "/" || location.pathname.startsWith("/simulator");
+  const isSimulator = location.pathname === "/operaciones" || location.pathname.startsWith("/simulator");
   const statusTopic = !USE_MOCK && isPeriodo && sessionId ? `/topic/simulacion/${sessionId}/estado` : null;
   const { data: periodStatusMessage } = useStompSubscribe(statusTopic, { enabled: Boolean(statusTopic) });
   const simulationLoaded = !isSimulator || simulationPanelData?.loaded === true;
