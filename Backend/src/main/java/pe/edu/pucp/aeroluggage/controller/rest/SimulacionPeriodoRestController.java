@@ -37,6 +37,8 @@ import pe.edu.pucp.aeroluggage.dominio.enums.EstadoVuelo;
 import pe.edu.pucp.aeroluggage.servicios.query.SimulacionInicioQueryService;
 import pe.edu.pucp.aeroluggage.simulacion.SimulacionSesion;
 import pe.edu.pucp.aeroluggage.simulacion.SimulacionSesionManager;
+import pe.edu.pucp.aeroluggage.repositorio.RutaRepositorio;
+import pe.edu.pucp.aeroluggage.repositorio.VueloInstanciaRepositorio;
 
 import java.time.LocalDateTime;
 import java.time.format.DateTimeFormatter;
@@ -63,6 +65,8 @@ public class SimulacionPeriodoRestController {
     private final SimulacionSesionManager sesionManager;
     private final SimpMessagingTemplate broker;
     private final SimulacionInicioQueryService simulacionInicioQueryService;
+    private final RutaRepositorio rutaRepositorio;
+    private final VueloInstanciaRepositorio vueloInstanciaRepositorio;
 
     @PostMapping("/iniciar")
     public SimulacionEstadoDTO iniciar(@RequestBody final SimulacionIniciarRequest params) {
@@ -181,11 +185,17 @@ public class SimulacionPeriodoRestController {
         if (sesion == null) {
             throw new ResponseStatusException(NOT_FOUND, "Sesion no encontrada: " + sessionId);
         }
-        final Ruta ruta = sesion.getRutaPorMaleta(idMaleta);
-        if (ruta == null) {
-            throw new ResponseStatusException(NOT_FOUND, "Ruta no encontrada para la maleta: " + idMaleta);
+        final Ruta ruta = rutaRepositorio.obtenerPorId(idMaleta)
+                .orElseThrow(() -> new ResponseStatusException(NOT_FOUND,
+                        "Ruta no encontrada para la maleta: " + idMaleta));
+        final List<VueloInstancia> vuelos = vueloInstanciaRepositorio.obtenerPorIds(ruta.getSubrutaIds());
+        final Map<String, VueloInstancia> vueloIndex = new HashMap<>();
+        for (final VueloInstancia v : vuelos) {
+            if (v != null && v.getIdVueloInstancia() != null) {
+                vueloIndex.put(v.getIdVueloInstancia(), v);
+            }
         }
-        return mapearRutaPorIds(ruta, sesion.getVueloIndex());
+        return mapearRutaPorIds(ruta, vueloIndex);
     }
 
     @GetMapping("/{sessionId}/envio/{idPedido}/rutas")

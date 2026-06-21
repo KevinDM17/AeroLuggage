@@ -297,7 +297,10 @@ export function useOperationsSession({ enabled, setSimulationPanelData, resetSim
         maletaStateMap,
         ENUM_MALETA,
         "estado",
-        (st, bag) => (st.e === 2 ? { fechaLlegada: bag.fechaLlegada ?? tick.simTime } : {}),
+        (st, bag) => ({
+          ...(st.e === 2 ? { fechaLlegada: bag.fechaLlegada ?? tick.simTime } : {}),
+          ubicacionActual: st.u ?? null,
+        }),
       );
       const updatedRoutes = updateEstadosOnly(prev.routes, rutaStateMap, ENUM_RUTA, "estado");
       for (const [id, bag] of updatedBags) {

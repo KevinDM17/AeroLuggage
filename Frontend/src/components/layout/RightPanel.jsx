@@ -9,7 +9,7 @@ import { listOrders } from "../../api/orders";
 import { listAirports } from "../../api/airports";
 import { listMaletas } from "../../api/maletas";
 import { listRutas } from "../../api/rutas";
-import { obtenerContenidoAlmacen, obtenerEnviosOperacionesDiaADia, obtenerEnviosPanel, obtenerManifiestoVuelo, obtenerManifiestoVueloOperacionesDiaADia, obtenerRutaMaleta, obtenerRutasEnvio, obtenerRutasEnvioOperacionesDiaADia } from "../../api/simulator";
+import { obtenerContenidoAlmacen, obtenerEnviosOperacionesDiaADia, obtenerEnviosPanel, obtenerManifiestoVuelo, obtenerManifiestoVueloOperacionesDiaADia, obtenerRutaMaleta, obtenerRutaMaletaOperacionesDiaADia, obtenerRutasEnvio, obtenerRutasEnvioOperacionesDiaADia } from "../../api/simulator";
 import { apiGet, USE_MOCK } from "../../api/client";
 import { useMapFocus } from "../../context/MapFocusContext";
 import Modal from "../ui/Modal";
@@ -50,7 +50,7 @@ const occupancyColor = (pct) => pct >= 85 ? "bg-danger" : pct >= 60 ? "bg-warnin
 const bagStatusColor = (s) => {
   switch (s) {
     case "EN_ALMACEN": return "bg-slate-300 text-slate-800";
-    case "EN_TRASLADO": return "bg-warning text-yellow-900";
+    case "EN_TRANSITO": return "bg-warning text-yellow-900";
     case "EN_VUELO": return "bg-info text-slate-900";
     case "ENTREGADA": return "bg-success text-emerald-900";
     case "EXTRAVIADA": return "bg-danger text-white";
@@ -1677,7 +1677,9 @@ export default function RightPanel({
     async (idMaleta) => {
       if (!idMaleta || !sessionId || USE_MOCK) return;
       try {
-        const ruta = await obtenerRutaMaleta(sessionId, idMaleta);
+        const ruta = isOperacionesDiaADia
+          ? await obtenerRutaMaletaOperacionesDiaADia(idMaleta)
+          : await obtenerRutaMaleta(sessionId, idMaleta);
         const escalas = (ruta?.vuelos ?? []).map(toEscala);
         if (escalas.length === 0) {
           toast.push({ type: "warning", title: "Sin ruta", message: `La maleta ${idMaleta} no tiene ruta asignada.` });
@@ -1694,10 +1696,14 @@ export default function RightPanel({
         const c = centroideDe(codes);
         if (c) setMapFocus({ ...c, zoom: 3.5, ts: Date.now() });
       } catch (err) {
+        if (err?.status === 404) {
+          toast.push({ type: "warning", title: "Sin ruta", message: `La maleta ${idMaleta} no tiene ruta asignada.` });
+          return;
+        }
         toast.push({ type: "error", title: "No se pudo cargar la ruta", message: err.message });
       }
     },
-    [sessionId, setMapHighlight, setMapFocus, centroideDe, toast]
+    [sessionId, isOperacionesDiaADia, setMapHighlight, setMapFocus, centroideDe, toast]
   );
 
   // Resalta en el mapa las rutas de un envio por su ID (req 3/4).

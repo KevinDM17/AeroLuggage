@@ -479,9 +479,11 @@ public class OperacionesDiaADiaService {
             final EstadoMaleta estado = m.getEstado();
             if (estado == EstadoMaleta.EN_ALMACEN) almacen++;
             else if (estado == EstadoMaleta.EN_TRANSITO) enTransito++;
+            final String ubicacion = obtenerUbicacionMaleta(m, estado);
             estadosMaletas.add(EstadoMaletaDTO.builder()
                     .withId(m.getIdMaleta())
                     .withE(estado != null ? estado.ordinal() : 0)
+                    .withU(ubicacion)
                     .build());
             if (estado == EstadoMaleta.EN_ALMACEN || estado == EstadoMaleta.EN_TRANSITO) {
                 final Ruta r = rutasPorMaleta.get(m.getIdMaleta());
@@ -546,6 +548,24 @@ public class OperacionesDiaADiaService {
                 .withEstadosVuelos(estadosVuelos)
                 .withAeropuertos(aeropuertosDTO)
                 .build();
+    }
+
+    private String obtenerUbicacionMaleta(final Maleta m, final EstadoMaleta estado) {
+        if (estado == EstadoMaleta.EN_ALMACEN || estado == EstadoMaleta.ENTREGADA) {
+            return m.getAeropuertoActual();
+        }
+        if (estado == EstadoMaleta.EN_TRANSITO) {
+            final Ruta r = rutasPorMaleta.get(m.getIdMaleta());
+            if (r != null && r.getSubrutaIds() != null) {
+                for (final String subId : r.getSubrutaIds()) {
+                    final VueloInstancia v = vuelosInstancia.get(subId);
+                    if (v != null && v.getEstado() == pe.edu.pucp.aeroluggage.dominio.enums.EstadoVuelo.EN_PROGRESO) {
+                        return v.getCodigo();
+                    }
+                }
+            }
+        }
+        return null;
     }
 
     private void generarVuelosParaFecha(final LocalDate fecha) {
@@ -1280,7 +1300,12 @@ public class OperacionesDiaADiaService {
         if (r != null) return r;
         return rutaRepositorio.obtenerPorId(idMaleta).orElse(null);
     }
-    public Maleta getMaleta(final String idMaleta) { touchSession(); return maletasPorId.get(idMaleta); }
+    public Maleta getMaleta(final String idMaleta) {
+        touchSession();
+        final Maleta m = maletasPorId.get(idMaleta);
+        if (m != null) return m;
+        return maletaRepositorio.obtenerPorId(idMaleta).orElse(null);
+    }
     public int getTickActual() { touchSession(); return tickActual.get(); }
     public List<VueloInstancia> getVuelosCalientes() { touchSession(); return new ArrayList<>(vuelosInstancia.values()); }
 
