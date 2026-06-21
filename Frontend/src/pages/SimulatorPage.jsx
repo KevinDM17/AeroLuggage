@@ -4,7 +4,7 @@ import { Plus } from "lucide-react";
 import MapDashboard from "../components/simulator/MapDashboard";
 import PedidoModal from "../components/simulator/PedidoModal";
 import { useToast } from "../components/ui/Toast";
-import { procesarPedidoDiaADia, obtenerPedidosDiaADia, obtenerMaletasDiaADia, obtenerRutasDiaADia } from "../api/simulator";
+import { procesarPedidoOperacionesDiaADia, obtenerPedidosOperacionesDiaADia, obtenerMaletasOperacionesDiaADia, obtenerRutasOperacionesDiaADia } from "../api/simulator";
 
 function formatLimaTime(utcIsoString) {
   if (!utcIsoString) return { date: "--", time: "--:--:--" };
@@ -56,11 +56,11 @@ export default function SimulatorPage() {
   const handlePedidoSubmit = async (pedido) => {
     setPedidoLoading(true);
     try {
-      await procesarPedidoDiaADia(pedido);
+      await procesarPedidoOperacionesDiaADia(pedido);
       const [pedidosData, maletasData, rutasData] = await Promise.all([
-        obtenerPedidosDiaADia().catch(() => []),
-        obtenerMaletasDiaADia().catch(() => []),
-        obtenerRutasDiaADia().catch(() => []),
+        obtenerPedidosOperacionesDiaADia().catch(() => []),
+        obtenerMaletasOperacionesDiaADia().catch(() => []),
+        obtenerRutasOperacionesDiaADia().catch(() => []),
       ]);
       setSimulationPanelData((prev) => {
         const orders = new Map(prev.orders);

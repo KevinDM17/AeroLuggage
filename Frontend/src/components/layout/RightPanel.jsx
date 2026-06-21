@@ -9,7 +9,7 @@ import { listOrders } from "../../api/orders";
 import { listAirports } from "../../api/airports";
 import { listMaletas } from "../../api/maletas";
 import { listRutas } from "../../api/rutas";
-import { obtenerContenidoAlmacen, obtenerEnviosDiaADia, obtenerEnviosPanel, obtenerManifiestoVuelo, obtenerManifiestoVueloDiaADia, obtenerRutaMaleta, obtenerRutasEnvio, obtenerRutasEnvioDiaADia } from "../../api/simulator";
+import { obtenerContenidoAlmacen, obtenerEnviosOperacionesDiaADia, obtenerEnviosPanel, obtenerManifiestoVuelo, obtenerManifiestoVueloOperacionesDiaADia, obtenerRutaMaleta, obtenerRutasEnvio, obtenerRutasEnvioOperacionesDiaADia } from "../../api/simulator";
 import { apiGet, USE_MOCK } from "../../api/client";
 import { useMapFocus } from "../../context/MapFocusContext";
 import Modal from "../ui/Modal";
@@ -1062,7 +1062,7 @@ export default function RightPanel({
   const sessionId = simulationPanelData?.sessionId ?? null;
   const { mapHighlight, setMapHighlight, selected, setSelected, setMapFocus, panelFocus, setMapDim, setFlightManifestLoader } = useMapFocus();
   const location = useLocation();
-  const isDiaADia = location.pathname === "/operaciones";
+  const isOperacionesDiaADia = location.pathname === "/operaciones";
   const isPeriodo = location.pathname === "/simulator/period";
   const isSimulator = location.pathname === "/operaciones" || location.pathname.startsWith("/simulator");
   const statusTopic = !USE_MOCK && isPeriodo && sessionId ? `/topic/simulacion/${sessionId}/estado` : null;
@@ -1547,8 +1547,8 @@ export default function RightPanel({
     }
     setEnviosStatus("loading");
 
-    if (isDiaADia) {
-      return obtenerEnviosDiaADia()
+    if (isOperacionesDiaADia) {
+      return obtenerEnviosOperacionesDiaADia()
         .then((data) => {
           setEnviosData({
             planificados: data?.planificados ?? [],
@@ -1574,11 +1574,11 @@ export default function RightPanel({
         setEnviosData({ planificados: [], enVuelos: [] });
         setEnviosStatus("error");
       });
-  }, [sessionId, isDiaADia, isPeriodo]);
+  }, [sessionId, isOperacionesDiaADia, isPeriodo]);
 
   useEffect(() => {
-    if ((isPeriodo || isDiaADia) && activeTab === "orders") fetchEnvios();
-  }, [isPeriodo, isDiaADia, activeTab, fetchEnvios]);
+    if ((isPeriodo || isOperacionesDiaADia) && activeTab === "orders") fetchEnvios();
+  }, [isPeriodo, isOperacionesDiaADia, activeTab, fetchEnvios]);
 
   const enviosAirportOptions = useMemo(() => {
     const origins = new Set();
@@ -1626,11 +1626,11 @@ export default function RightPanel({
       if (USE_MOCK || !sessionId || !flightKey) {
         return Promise.resolve({ maletas: [], pedidos: [] });
       }
-      return isDiaADia
-        ? obtenerManifiestoVueloDiaADia(flightKey)
+      return isOperacionesDiaADia
+        ? obtenerManifiestoVueloOperacionesDiaADia(flightKey)
         : obtenerManifiestoVuelo(sessionId, flightKey);
     },
-    [sessionId, isDiaADia]
+    [sessionId, isOperacionesDiaADia]
   );
 
   // Publicamos el loader al contexto para que el mapa pueda usarlo al hacer
@@ -1656,7 +1656,7 @@ export default function RightPanel({
           totalMaletasEntran: 0, totalMaletasSalen: 0,
         });
       }
-      if (isDiaADia) {
+      if (isOperacionesDiaADia) {
         return apiGet(`/operations/${sessionId}/almacen/${encodeURIComponent(idAeropuerto)}/contenido`)
           .catch(() => ({
             pedidosDestinoFinal: [], pedidosEnTransito: [],
@@ -1705,8 +1705,8 @@ export default function RightPanel({
     async (idPedido) => {
       if (!idPedido || !sessionId || USE_MOCK) return;
       try {
-        const rutas = isDiaADia
-          ? await obtenerRutasEnvioDiaADia(idPedido)
+        const rutas = isOperacionesDiaADia
+          ? await obtenerRutasEnvioOperacionesDiaADia(idPedido)
           : await obtenerRutasEnvio(sessionId, idPedido);
         const rutasVistas = new Set();
         const rutasNorm = [];
@@ -1745,7 +1745,7 @@ export default function RightPanel({
         toast.push({ type: "error", title: "No se pudieron cargar las rutas", message: err.message });
       }
     },
-    [sessionId, isDiaADia, setMapHighlight, setMapFocus, centroideDe, toast]
+    [sessionId, isOperacionesDiaADia, setMapHighlight, setMapFocus, centroideDe, toast]
   );
 
   // Enfocar un almacen (req 5) o una UT (req 7) en el mapa desde el panel.

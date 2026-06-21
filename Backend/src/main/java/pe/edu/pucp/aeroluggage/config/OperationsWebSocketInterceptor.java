@@ -7,14 +7,14 @@ import org.springframework.messaging.simp.stomp.StompCommand;
 import org.springframework.messaging.simp.stomp.StompHeaderAccessor;
 import org.springframework.messaging.support.ChannelInterceptor;
 import org.springframework.stereotype.Component;
-import pe.edu.pucp.aeroluggage.simulacion.SimulacionDiaADiaService;
+import pe.edu.pucp.aeroluggage.simulacion.OperacionesDiaADiaService;
 
 @Component
 public class OperationsWebSocketInterceptor implements ChannelInterceptor {
 
-    private final SimulacionDiaADiaService service;
+    private final OperacionesDiaADiaService service;
 
-    public OperationsWebSocketInterceptor(@Lazy final SimulacionDiaADiaService service) {
+    public OperationsWebSocketInterceptor(@Lazy final OperacionesDiaADiaService service) {
         this.service = service;
     }
 

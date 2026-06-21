@@ -6,10 +6,10 @@ import {
   mockStartCollapseSim,
   mockStopCollapseSim,
   mockGetCollapseSimState,
-  mockIniciarDiaADia,
-  mockDetenerDiaADia,
-  mockProcesarPedidoDiaADia,
-  mockProcesarPedidosBulkDiaADia,
+  mockIniciarOperacionesDiaADia,
+  mockDetenerOperacionesDiaADia,
+  mockProcesarPedidoOperacionesDiaADia,
+  mockProcesarPedidosBulkOperacionesDiaADia,
   mockCrearAeropuerto,
   mockActualizarAeropuerto,
   mockEliminarAeropuerto,
@@ -90,8 +90,8 @@ export const getPeriodSimState = () =>
   USE_MOCK ? mockGetPeriodSimState() : Promise.reject(new Error("Usar WS /topic/simulacion/{sessionId}/estado"));
 
 /* =========================================================================
- * SIMULACION DIA A DIA
- * Back: SimulacionDiaADiaService + SimulacionDiaADiaRestController
+ * OPERACIONES DIA A DIA
+ * Back: OperacionesDiaADiaService + OperacionesDiaADiaRestController
  * =========================================================================
  *
  * REST:
@@ -154,7 +154,7 @@ async function getOrCreateSession() {
       return currentSessionId;
     }
     const result = USE_MOCK
-      ? await mockIniciarDiaADia()
+      ? await mockIniciarOperacionesDiaADia()
       : await apiPost("/operations/iniciar");
     currentSessionId = result.sessionId;
     notifySessionChange(currentSessionId);
@@ -182,78 +182,78 @@ async function withReconnect(apiFn) {
   }
 }
 
-export const iniciarSimulacionDiaADia = async () => {
+export const iniciarOperacionesDiaADia = async () => {
   const sid = await getOrCreateSession();
   return { sessionId: sid };
 };
 
-export const detenerSimulacionDiaADia = (sessionId) =>
+export const detenerOperacionesDiaADia = (sessionId) =>
   USE_MOCK
-    ? mockDetenerDiaADia()
+    ? mockDetenerOperacionesDiaADia()
     : apiPost(`/operations/${sessionId}/detener`);
 
-export const procesarPedidoDiaADia = (pedido) =>
+export const procesarPedidoOperacionesDiaADia = (pedido) =>
   USE_MOCK
-    ? mockProcesarPedidoDiaADia(pedido)
+    ? mockProcesarPedidoOperacionesDiaADia(pedido)
     : withReconnect((sid) => apiPost(`/operations/${sid}/pedido`, pedido));
 
-export const procesarPedidosBulkDiaADia = (icaoOrigen, content) =>
+export const procesarPedidosBulkOperacionesDiaADia = (icaoOrigen, content) =>
   USE_MOCK
-    ? mockProcesarPedidosBulkDiaADia(icaoOrigen, content)
+    ? mockProcesarPedidosBulkOperacionesDiaADia(icaoOrigen, content)
     : withReconnect((sid) => apiPost(`/operations/${sid}/pedidos-bulk`, { icaoOrigen, content }));
 
-export const obtenerEstadoDiaADia = () =>
+export const obtenerEstadoOperacionesDiaADia = () =>
   withReconnect((sid) => apiGet(`/operations/${sid}/estado`));
 
-export const obtenerVuelosDiaADia = () =>
+export const obtenerVuelosOperacionesDiaADia = () =>
   withReconnect((sid) => apiGet(`/operations/${sid}/vuelos`));
 
-export const obtenerAeropuertosDiaADia = () =>
+export const obtenerAeropuertosOperacionesDiaADia = () =>
   withReconnect((sid) => apiGet(`/operations/${sid}/aeropuertos`));
 
-export const crearAeropuertoDiaADia = (payload) =>
+export const crearAeropuertoOperacionesDiaADia = (payload) =>
   USE_MOCK
     ? mockCrearAeropuerto(payload)
     : withReconnect((sid) => apiPost(`/operations/${sid}/aeropuertos`, payload));
 
-export const actualizarAeropuertoDiaADia = (iata, payload) =>
+export const actualizarAeropuertoOperacionesDiaADia = (iata, payload) =>
   USE_MOCK
     ? mockActualizarAeropuerto(iata, payload)
     : withReconnect((sid) => apiPut(`/operations/${sid}/aeropuertos/${encodeURIComponent(iata)}`, payload));
 
-export const eliminarAeropuertoDiaADia = (iata) =>
+export const eliminarAeropuertoOperacionesDiaADia = (iata) =>
   USE_MOCK
     ? mockEliminarAeropuerto(iata)
     : withReconnect((sid) => apiDelete(`/operations/${sid}/aeropuertos/${encodeURIComponent(iata)}`));
 
-export const obtenerPedidosDiaADia = () =>
+export const obtenerPedidosOperacionesDiaADia = () =>
   withReconnect((sid) => apiGet(`/operations/${sid}/pedidos`));
 
-export const obtenerEnviosDiaADia = () =>
+export const obtenerEnviosOperacionesDiaADia = () =>
   withReconnect((sid) => apiGet(`/operations/${sid}/envios`));
 
-export const obtenerMaletasDiaADia = () =>
+export const obtenerMaletasOperacionesDiaADia = () =>
   withReconnect((sid) => apiGet(`/operations/${sid}/maletas`));
 
-export const obtenerManifiestoVueloDiaADia = (idVuelo) =>
+export const obtenerManifiestoVueloOperacionesDiaADia = (idVuelo) =>
   withReconnect((sid) => apiGet(`/operations/${sid}/vuelo/${encodeURIComponent(idVuelo)}/manifiesto`));
 
-export const obtenerRutaMaletaDiaADia = (idMaleta) =>
+export const obtenerRutaMaletaOperacionesDiaADia = (idMaleta) =>
   withReconnect((sid) => apiGet(`/operations/${sid}/maleta/${encodeURIComponent(idMaleta)}/ruta`));
 
-export const obtenerRutasEnvioDiaADia = (idPedido) =>
+export const obtenerRutasEnvioOperacionesDiaADia = (idPedido) =>
   withReconnect((sid) => apiGet(`/operations/${sid}/envio/${encodeURIComponent(idPedido)}/rutas`));
 
-export const obtenerRutasDiaADia = () =>
+export const obtenerRutasOperacionesDiaADia = () =>
   withReconnect((sid) => apiGet(`/operations/${sid}/rutas`));
 
-export const confirmarConexionDiaADia = () =>
+export const confirmarConexionOperacionesDiaADia = () =>
   withReconnect((sid) => apiPost(`/operations/${sid}/confirmar-conexion`));
 
-export const obtenerVuelosNuevosDiaADia = () =>
+export const obtenerVuelosNuevosOperacionesDiaADia = () =>
   withReconnect((sid) => apiGet(`/operations/${sid}/vuelos-nuevos`));
 
-export const obtenerEstadoActualDiaADia = () =>
+export const obtenerEstadoActualOperacionesDiaADia = () =>
   apiGet("/operations/estado-actual");
 
 /* =========================================================================

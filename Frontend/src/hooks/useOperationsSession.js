@@ -5,20 +5,20 @@ import { useElapsedTimer } from "./useElapsedTimer";
 import { isStompConnected, subscribeToReconnects } from "../api/stomp";
 import { USE_MOCK } from "../api/client";
 import {
-  iniciarSimulacionDiaADia,
-  obtenerAeropuertosDiaADia,
-  obtenerVuelosDiaADia,
-  obtenerMaletasDiaADia,
-  obtenerRutasDiaADia,
-  obtenerEstadoDiaADia,
-  obtenerEstadoActualDiaADia,
+  iniciarOperacionesDiaADia,
+  obtenerAeropuertosOperacionesDiaADia,
+  obtenerVuelosOperacionesDiaADia,
+  obtenerMaletasOperacionesDiaADia,
+  obtenerRutasOperacionesDiaADia,
+  obtenerEstadoOperacionesDiaADia,
+  obtenerEstadoActualOperacionesDiaADia,
   onSessionChange,
-  confirmarConexionDiaADia,
-  obtenerVuelosNuevosDiaADia,
+  confirmarConexionOperacionesDiaADia,
+  obtenerVuelosNuevosOperacionesDiaADia,
 } from "../api/simulator";
 import { adaptAirport } from "../api/airports";
 import { adaptFlightInstance } from "../api/flightInstances";
-import { getMockDiaADiaState } from "../api/mock";
+import { getMockOperacionesDiaADiaState } from "../api/mock";
 
 const ENUM_RUTA = ["PLANIFICADA", "ACTIVA", "COMPLETADA", "REPLANIFICADA"];
 
@@ -83,7 +83,7 @@ export function useOperationsSession({ enabled, setSimulationPanelData, resetSim
   const { data: tick } = useStompSubscribe(tickTopic);
   const { data: estadoMessage } = useStompSubscribe(statusTopic);
 
-  const { data: mockState } = usePolling(getMockDiaADiaState, {
+  const { data: mockState } = usePolling(getMockOperacionesDiaADiaState, {
     enabled: USE_MOCK && simStatus === "running",
     intervalMs: REFRESH_MS,
   });
@@ -115,14 +115,14 @@ export function useOperationsSession({ enabled, setSimulationPanelData, resetSim
   const inicializarSesion = useCallback(
     async (esInicial) => {
       try {
-        const result = await iniciarSimulacionDiaADia();
+        const result = await iniciarOperacionesDiaADia();
         const newSessionId = result.sessionId;
         setSessionId(newSessionId);
         setRunId((c) => c + 1);
 
         let aeropuertosData, vuelosData;
         try {
-          const snapshot = await obtenerEstadoActualDiaADia();
+          const snapshot = await obtenerEstadoActualOperacionesDiaADia();
           if (snapshot && snapshot.activa) {
             aeropuertosData = snapshot.aeropuertos;
             vuelosData = snapshot.vuelos;
@@ -132,8 +132,8 @@ export function useOperationsSession({ enabled, setSimulationPanelData, resetSim
         }
         if (!aeropuertosData || !vuelosData) {
           [aeropuertosData, vuelosData] = await Promise.all([
-            obtenerAeropuertosDiaADia(),
-            obtenerVuelosDiaADia(),
+            obtenerAeropuertosOperacionesDiaADia(),
+            obtenerVuelosOperacionesDiaADia(),
           ]);
         }
         const adaptedAirports = Array.isArray(aeropuertosData)
@@ -147,8 +147,8 @@ export function useOperationsSession({ enabled, setSimulationPanelData, resetSim
           flights.set(f.idVueloInstancia ?? f.id, { ...f, ticksAusente: 0 });
 
         const [rutasData, maletasData] = await Promise.all([
-          obtenerRutasDiaADia().catch(() => []),
-          obtenerMaletasDiaADia().catch(() => []),
+          obtenerRutasOperacionesDiaADia().catch(() => []),
+          obtenerMaletasOperacionesDiaADia().catch(() => []),
         ]);
 
         const routes = new Map();
@@ -181,7 +181,7 @@ export function useOperationsSession({ enabled, setSimulationPanelData, resetSim
         datosBaseCargadosRef.current = true;
         ultimoTickRef.current = Date.now();
         if (!USE_MOCK) {
-          await confirmarConexionDiaADia();
+          await confirmarConexionOperacionesDiaADia();
         }
         if (esInicial && toast) {
           toast.push({
@@ -212,7 +212,7 @@ export function useOperationsSession({ enabled, setSimulationPanelData, resetSim
       if (Date.now() - ultimoTickRef.current < 5000) return;
       if (!isStompConnected()) return;
       try {
-        await obtenerEstadoDiaADia();
+        await obtenerEstadoOperacionesDiaADia();
       } catch {
         // withReconnect handles session renewal
       }
@@ -336,7 +336,7 @@ export function useOperationsSession({ enabled, setSimulationPanelData, resetSim
   useEffect(() => {
     if (!enabled || USE_MOCK || !hasActiveRun) return;
     if (tickCountRef.current % 60 !== 0) return;
-    obtenerVuelosNuevosDiaADia()
+    obtenerVuelosNuevosOperacionesDiaADia()
       .then((nuevos) => {
         if (!nuevos?.length) return;
         const adapted = nuevos.map(adaptFlightInstance);

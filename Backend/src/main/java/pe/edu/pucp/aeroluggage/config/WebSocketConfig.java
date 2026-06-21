@@ -23,12 +23,12 @@ public class WebSocketConfig implements WebSocketMessageBrokerConfigurer {
     private final Dotenv dotenv;
     private final SimulacionSubscribeInterceptor subscribeInterceptor;
     private final OperationsWebSocketInterceptor operationsInterceptor;
-    private final SimulacionDiaADiaParams params;
+    private final OperacionesDiaADiaParams params;
 
     public WebSocketConfig(final Dotenv dotenv,
                            final SimulacionSubscribeInterceptor subscribeInterceptor,
                            final OperationsWebSocketInterceptor operationsInterceptor,
-                           final SimulacionDiaADiaParams params) {
+                           final OperacionesDiaADiaParams params) {
         this.dotenv = dotenv;
         this.subscribeInterceptor = subscribeInterceptor;
         this.operationsInterceptor = operationsInterceptor;

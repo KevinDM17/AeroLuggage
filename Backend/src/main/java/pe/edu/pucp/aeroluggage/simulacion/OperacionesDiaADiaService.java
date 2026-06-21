@@ -9,7 +9,7 @@ import pe.edu.pucp.aeroluggage.algoritmo.Solucion;
 import pe.edu.pucp.aeroluggage.algoritmo.alns.ALNS;
 import pe.edu.pucp.aeroluggage.algoritmo.alns.ALNSUtil;
 import pe.edu.pucp.aeroluggage.config.ALNSConfig;
-import pe.edu.pucp.aeroluggage.config.SimulacionDiaADiaParams;
+import pe.edu.pucp.aeroluggage.config.OperacionesDiaADiaParams;
 import pe.edu.pucp.aeroluggage.config.SistemaConfiguracion;
 import pe.edu.pucp.aeroluggage.dominio.entidades.Aeropuerto;
 import pe.edu.pucp.aeroluggage.dominio.entidades.Ciudad;
@@ -66,7 +66,7 @@ import java.util.stream.Collectors;
 
 @Slf4j
 @Service
-public class SimulacionDiaADiaService {
+public class OperacionesDiaADiaService {
 
     private static final DateTimeFormatter FORMATO_FECHA_HORA = DateTimeFormatter.ISO_LOCAL_DATE_TIME;
     private static final String TOPIC_SIM = "/topic/operations/";
@@ -83,7 +83,7 @@ public class SimulacionDiaADiaService {
     private final MaletaRepositorio maletaRepositorio;
     private final RutaRepositorio rutaRepositorio;
     private final VueloInstanciaRepositorio vueloInstanciaRepositorio;
-    private final SimulacionDiaADiaParams params;
+    private final OperacionesDiaADiaParams params;
     private final SistemaConfiguracion sistemaConfiguracion;
     private final ALNSConfig alnsConfig;
     private final SimpMessagingTemplate broker;
@@ -132,14 +132,14 @@ public class SimulacionDiaADiaService {
 
     record EventoSim(TipoEventoSim tipo, String idEntidad, String idAeropuerto, int delta) {}
 
-    public SimulacionDiaADiaService(final AeropuertoRepositorio aeropuertoRepositorio,
+    public OperacionesDiaADiaService(final AeropuertoRepositorio aeropuertoRepositorio,
                                     final JdbcTemplate jdbcTemplate,
                                     final VueloProgramadoRepositorio vueloProgramadoRepositorio,
                                     final PedidoRepositorio pedidoRepositorio,
                                     final MaletaRepositorio maletaRepositorio,
                                     final RutaRepositorio rutaRepositorio,
                                     final VueloInstanciaRepositorio vueloInstanciaRepositorio,
-                                    final SimulacionDiaADiaParams params,
+                                    final OperacionesDiaADiaParams params,
                                     final SistemaConfiguracion sistemaConfiguracion,
                                     final ALNSConfig alnsConfig,
                                     final SimpMessagingTemplate broker) {
@@ -160,7 +160,7 @@ public class SimulacionDiaADiaService {
         synchronized (lock) {
             if (activa && sessionId != null) {
                 lastAccessTime = System.currentTimeMillis();
-                log.info("[AeroLuggage/DiaADia] - SESION EXISTENTE: sessionId={}", sessionId);
+                log.info("[AeroLuggage/OperacionesDiaADia] - SESION EXISTENTE: sessionId={}", sessionId);
                 return sessionId;
             }
 
@@ -261,7 +261,7 @@ public class SimulacionDiaADiaService {
             maletasPorId.clear();
             rutasPorMaleta.clear();
 
-            log.info("[AeroLuggage/DiaADia] - INICIADA: sessionId={}, fecha={}, aeropuertos={}, vuelosProgramados={}, vuelosInstancia={}",
+            log.info("[AeroLuggage/OperacionesDiaADia] - INICIADA: sessionId={}, fecha={}, aeropuertos={}, vuelosProgramados={}, vuelosInstancia={}",
                     sessionId, hoy, aeropuertos.size(), vuelosProgramados.size(), vuelosInstancia.size());
 
             return sessionId;
@@ -276,7 +276,7 @@ public class SimulacionDiaADiaService {
 
             if (ticksActivos && tickTask != null && !tickTask.isCancelled()) {
                 lastAccessTime = System.currentTimeMillis();
-                log.info("[AeroLuggage/DiaADia] - CONEXION RENOVADA: sessionId={}", sessionId);
+                log.info("[AeroLuggage/OperacionesDiaADia] - CONEXION RENOVADA: sessionId={}", sessionId);
                 return;
             }
 
@@ -285,13 +285,13 @@ public class SimulacionDiaADiaService {
             final long tickIntervalMs = Math.max(100L, params.getTickIntervalMs());
             tickTask = scheduler.scheduleWithFixedDelay(
                     this::ejecutarTick, tickIntervalMs, tickIntervalMs, TimeUnit.MILLISECONDS);
-            log.info("[AeroLuggage/DiaADia] - CONEXION CONFIRMADA: sessionId={}", sessionId);
+            log.info("[AeroLuggage/OperacionesDiaADia] - CONEXION CONFIRMADA: sessionId={}", sessionId);
             broker.convertAndSend(
                     String.format(TOPIC_ESTADO, sessionId),
                     SimulacionEstadoDTO.builder()
                             .withSessionId(sessionId)
                             .withEstado(ESTADO_INICIADA)
-                            .withMensaje("Simulacion dia a dia iniciada")
+                            .withMensaje("Operaciones dia a dia iniciada")
                             .build());
         }
     }
@@ -309,13 +309,13 @@ public class SimulacionDiaADiaService {
                 tickTask = null;
             }
             limpiarEstado();
-            log.info("[AeroLuggage/DiaADia] - DETENIDA: sessionId={}", sessionId);
+            log.info("[AeroLuggage/OperacionesDiaADia] - DETENIDA: sessionId={}", sessionId);
             broker.convertAndSend(
                     String.format(TOPIC_ESTADO, sessionId),
                     SimulacionEstadoDTO.builder()
                             .withSessionId(sessionId)
                             .withEstado(ESTADO_DETENIDA)
-                            .withMensaje("Simulacion dia a dia detenida")
+                            .withMensaje("Operaciones dia a dia detenida")
                             .build());
         }
     }
@@ -368,7 +368,7 @@ public class SimulacionDiaADiaService {
                 nuevasMaletas.add(maleta);
             }
 
-            log.info("[AeroLuggage/DiaADia] - PEDIDO: id={}, origen={}, destino={}, maletas={}",
+            log.info("[AeroLuggage/OperacionesDiaADia] - PEDIDO: id={}, origen={}, destino={}, maletas={}",
                     idPedido, icaoOrigen, icaoDestino, request.getCantidadMaletas());
 
             planificarPendientes();
@@ -415,7 +415,7 @@ public class SimulacionDiaADiaService {
             }
             if (clientesConectados.isEmpty()
                     && System.currentTimeMillis() - lastAccessTime > params.getTimeoutMs()) {
-                log.warn("[AeroLuggage/DiaADia] - TIMEOUT: sesion expirada por inactividad de {}ms", params.getTimeoutMs());
+                log.warn("[AeroLuggage/OperacionesDiaADia] - TIMEOUT: sesion expirada por inactividad de {}ms", params.getTimeoutMs());
                 detener();
                 return;
             }
@@ -427,7 +427,7 @@ public class SimulacionDiaADiaService {
                 generarVuelosParaFecha(hoy);
                 ultimoDiaGenerado = hoy;
             planificarPendientes();
-            log.info("[AeroLuggage/DiaADia] - NUEVO DIA: fecha={}, vuelosInstancia={}",
+            log.info("[AeroLuggage/OperacionesDiaADia] - NUEVO DIA: fecha={}, vuelosInstancia={}",
                         hoy, vuelosInstancia.size());
             }
 
@@ -448,7 +448,7 @@ public class SimulacionDiaADiaService {
                         case CANCELADO -> x++;
                     }
                 }
-                log.info("[AeroLuggage/DiaADia] - TICK {}: vuelos(P={},C={},E={},F={},X={}), maletas={}, rutas={}, pedidos={}",
+                log.info("[AeroLuggage/OperacionesDiaADia] - TICK {}: vuelos(P={},C={},E={},F={},X={}), maletas={}, rutas={}, pedidos={}",
                         tick, p, c, e, f, x, maletasPorId.size(), rutasPorMaleta.size(), pedidos.size());
             }
 
@@ -631,7 +631,7 @@ public class SimulacionDiaADiaService {
         vuelosInstancia.values().removeIf(v -> v.getEstado() == EstadoVuelo.PROGRAMADO
                 && v.getFechaSalida() != null
                 && v.getFechaSalida().isAfter(corte));
-        log.info("[AeroLuggage/DiaADia] - DEPURA: vuelosInstancia={}", vuelosInstancia.size());
+        log.info("[AeroLuggage/OperacionesDiaADia] - DEPURA: vuelosInstancia={}", vuelosInstancia.size());
     }
 
     private void aplicarEventoAhora(final EventoSim e) {
@@ -788,7 +788,7 @@ public class SimulacionDiaADiaService {
 
     private void planificarPendientes() {
         if (vuelosInstancia.isEmpty()) {
-            log.warn("[AeroLuggage/DiaADia] - PLAN: sin vuelos instancia disponibles");
+            log.warn("[AeroLuggage/OperacionesDiaADia] - PLAN: sin vuelos instancia disponibles");
             return;
         }
         final LocalDateTime ahora = LocalDateTime.now(ZoneOffset.UTC);
@@ -799,7 +799,7 @@ public class SimulacionDiaADiaService {
                         && v.getEstado() != EstadoVuelo.CANCELADO)
                 .collect(Collectors.toList());
         if (vuelosFuturos.isEmpty()) {
-            log.warn("[AeroLuggage/DiaADia] - PLAN: no hay vuelos futuros disponibles");
+            log.warn("[AeroLuggage/OperacionesDiaADia] - PLAN: no hay vuelos futuros disponibles");
             return;
         }
         final Set<String> maletasConRutaValida = new HashSet<>();
@@ -818,10 +818,10 @@ public class SimulacionDiaADiaService {
             pendientes.add(m);
         }
         if (pendientes.isEmpty()) {
-            log.info("[AeroLuggage/DiaADia] - PLAN: sin maletas pendientes");
+            log.info("[AeroLuggage/OperacionesDiaADia] - PLAN: sin maletas pendientes");
             return;
         }
-        log.info("[AeroLuggage/DiaADia] - PLAN: iniciando planificacion para {} maletas en {} vuelos",
+        log.info("[AeroLuggage/OperacionesDiaADia] - PLAN: iniciando planificacion para {} maletas en {} vuelos",
                 pendientes.size(), vuelosFuturos.size());
         final ALNS alns = new ALNS(alnsConfig.toParametrosALNS());
         try {
@@ -876,7 +876,7 @@ public class SimulacionDiaADiaService {
             alns.ejecutar(copia);
             final Solucion solucion = alns.getMejorSolucion();
             if (solucion == null || solucion.getSolucion().isEmpty()) {
-                log.warn("[AeroLuggage/DiaADia] - PLAN: ALNS no encontro solucion para {} maletas",
+                log.warn("[AeroLuggage/OperacionesDiaADia] - PLAN: ALNS no encontro solucion para {} maletas",
                         pendientes.size());
                 return;
             }
@@ -891,10 +891,10 @@ public class SimulacionDiaADiaService {
             for (final Ruta r : nuevasRutas) {
                 onRutaAgregada(r);
             }
-            log.info("[AeroLuggage/DiaADia] - PLAN: {} maletas enrutadas exitosamente",
+            log.info("[AeroLuggage/OperacionesDiaADia] - PLAN: {} maletas enrutadas exitosamente",
                     nuevasRutas.size());
         } catch (final Exception exception) {
-            log.error("[AeroLuggage/DiaADia] - PLAN: error durante planificacion: {}",
+            log.error("[AeroLuggage/OperacionesDiaADia] - PLAN: error durante planificacion: {}",
                     exception.getMessage());
         } finally {
             alns.limpiarInstancia();
@@ -1117,7 +1117,7 @@ public class SimulacionDiaADiaService {
             if (p == null) continue;
             pedidos.put(p.getIdPedido(), p);
         }
-        log.info("[AeroLuggage/DiaADia] - PEDIDOS DESDE BD: {}", pedidos.size());
+        log.info("[AeroLuggage/OperacionesDiaADia] - PEDIDOS DESDE BD: {}", pedidos.size());
     }
 
     private void cargarMaletasDesdeBD() {
@@ -1126,7 +1126,7 @@ public class SimulacionDiaADiaService {
             if (m == null) continue;
             maletasPorId.put(m.getIdMaleta(), m);
         }
-        log.info("[AeroLuggage/DiaADia] - MALETAS DESDE BD: {}", maletasBD.size());
+        log.info("[AeroLuggage/OperacionesDiaADia] - MALETAS DESDE BD: {}", maletasBD.size());
     }
 
     private void recalcularOcupacionAeropuertos() {
@@ -1224,7 +1224,7 @@ public class SimulacionDiaADiaService {
             rutaRepositorio.actualizar(r);
             rutasPersistidas++;
         }
-        log.info("[AeroLuggage/DiaADia] - ESTADOS BD: maletas={}, pedidos={}, rutas={}",
+        log.info("[AeroLuggage/OperacionesDiaADia] - ESTADOS BD: maletas={}, pedidos={}, rutas={}",
                 maletasPersistidas, pedidosPersistidos, rutasPersistidas);
     }
 
@@ -1232,14 +1232,14 @@ public class SimulacionDiaADiaService {
         final boolean nuevo = clientesConectados.add(wsSessionId);
         if (nuevo) {
             lastAccessTime = System.currentTimeMillis();
-            log.info("[AeroLuggage/DiaADia] - CLIENTE REGISTRADO: wsSessionId={}, total={}",
+            log.info("[AeroLuggage/OperacionesDiaADia] - CLIENTE REGISTRADO: wsSessionId={}, total={}",
                     wsSessionId, clientesConectados.size());
         }
     }
 
     public void desregistrarCliente(final String wsSessionId) {
         clientesConectados.remove(wsSessionId);
-        log.info("[AeroLuggage/DiaADia] - CLIENTE DESREGISTRADO: wsSessionId={}, total={}",
+        log.info("[AeroLuggage/OperacionesDiaADia] - CLIENTE DESREGISTRADO: wsSessionId={}, total={}",
                 wsSessionId, clientesConectados.size());
     }
 
@@ -1306,7 +1306,7 @@ public class SimulacionDiaADiaService {
             }
         }
         idsVuelosRecienConfirmados.clear();
-        log.info("[AeroLuggage/DiaADia] - VUELOS_NUEVOS: {} vuelos", resultado.size());
+        log.info("[AeroLuggage/OperacionesDiaADia] - VUELOS_NUEVOS: {} vuelos", resultado.size());
         return resultado;
     }
 

@@ -1,20 +1,19 @@
 import { useState } from "react";
 import { useOutletContext } from "react-router-dom";
-import { FileUp, Plus, Pencil } from "lucide-react";
+import { FileUp, Plus } from "lucide-react";
 import PedidoModal from "../components/simulator/PedidoModal";
 import AirportFormModal from "../components/simulator/AirportFormModal";
 import Modal from "../components/ui/Modal";
 import { LoadingState, EmptyState, ErrorState } from "../components/ui/States";
 import { useToast } from "../components/ui/Toast";
 import {
-  procesarPedidoDiaADia,
-  procesarPedidosBulkDiaADia,
-  obtenerPedidosDiaADia,
-  obtenerMaletasDiaADia,
-  crearAeropuertoDiaADia,
-  actualizarAeropuertoDiaADia,
-  eliminarAeropuertoDiaADia,
-  obtenerAeropuertosDiaADia,
+  procesarPedidoOperacionesDiaADia,
+  procesarPedidosBulkOperacionesDiaADia,
+  obtenerPedidosOperacionesDiaADia,
+  obtenerMaletasOperacionesDiaADia,
+  crearAeropuertoOperacionesDiaADia,
+  eliminarAeropuertoOperacionesDiaADia,
+  obtenerAeropuertosOperacionesDiaADia,
 } from "../api/simulator";
 import { adaptAirport } from "../api/airports";
 
@@ -40,16 +39,15 @@ export default function AirportsPage() {
   const [bulkFile, setBulkFile] = useState(null);
 
   const [formOpen, setFormOpen] = useState(false);
-  const [editingAirport, setEditingAirport] = useState(null);
   const [formLoading, setFormLoading] = useState(false);
 
   const handlePedidoSubmit = async (pedido) => {
     setPedidoLoading(true);
     try {
-      await procesarPedidoDiaADia(pedido);
+      await procesarPedidoOperacionesDiaADia(pedido);
       const [pedidosData, maletasData] = await Promise.all([
-        obtenerPedidosDiaADia().catch(() => []),
-        obtenerMaletasDiaADia().catch(() => []),
+        obtenerPedidosOperacionesDiaADia().catch(() => []),
+        obtenerMaletasOperacionesDiaADia().catch(() => []),
       ]);
       setSimulationPanelData((prev) => {
         const orders = new Map(prev.orders);
@@ -76,10 +74,10 @@ export default function AirportsPage() {
     setBulkLoading(true);
     try {
       const text = await bulkFile.text();
-      const result = await procesarPedidosBulkDiaADia(bulkAirport.iata, text);
+      const result = await procesarPedidosBulkOperacionesDiaADia(bulkAirport.iata, text);
       const [pedidosData, maletasData] = await Promise.all([
-        obtenerPedidosDiaADia().catch(() => []),
-        obtenerMaletasDiaADia().catch(() => []),
+        obtenerPedidosOperacionesDiaADia().catch(() => []),
+        obtenerMaletasOperacionesDiaADia().catch(() => []),
       ]);
       setSimulationPanelData((prev) => {
         const orders = new Map(prev.orders);
@@ -114,24 +112,14 @@ export default function AirportsPage() {
   };
 
   const openCreate = () => {
-    setEditingAirport(null);
-    setFormOpen(true);
-  };
-
-  const openEdit = (airport) => {
-    setEditingAirport(airport);
     setFormOpen(true);
   };
 
   const handleFormSubmit = async (payload) => {
     setFormLoading(true);
     try {
-      if (editingAirport) {
-        await actualizarAeropuertoDiaADia(editingAirport.iata, payload);
-      } else {
-        await crearAeropuertoDiaADia(payload);
-      }
-      const raw = await obtenerAeropuertosDiaADia().catch(() => []);
+      await crearAeropuertoOperacionesDiaADia(payload);
+      const raw = await obtenerAeropuertosOperacionesDiaADia().catch(() => []);
       const aeropuertos = Array.isArray(raw) ? raw.map(adaptAirport) : [];
       setSimulationPanelData((prev) => ({
         ...prev,
@@ -140,8 +128,8 @@ export default function AirportsPage() {
       setFormOpen(false);
       toast.push({
         type: "success",
-        title: editingAirport ? "Aeropuerto actualizado" : "Aeropuerto creado",
-        message: `${payload.idAeropuerto} ${editingAirport ? "actualizado" : "creado"} correctamente`,
+        title: "Aeropuerto creado",
+        message: `${payload.idAeropuerto} creado correctamente`,
       });
     } catch (err) {
       toast.push({ type: "error", title: "Error", message: err.message });
@@ -153,8 +141,8 @@ export default function AirportsPage() {
   const handleDelete = async (airport) => {
     if (!window.confirm(`Eliminar ${airport.iata} - ${airport.city}?`)) return;
     try {
-      await eliminarAeropuertoDiaADia(airport.iata);
-      const raw = await obtenerAeropuertosDiaADia().catch((e) => { console.error("[handleDelete] fetch error:", e); return []; });
+      await eliminarAeropuertoOperacionesDiaADia(airport.iata);
+      const raw = await obtenerAeropuertosOperacionesDiaADia().catch((e) => { console.error("[handleDelete] fetch error:", e); return []; });
       console.log("[handleDelete] raw response:", raw);
       const aeropuertos = Array.isArray(raw) ? raw.map(adaptAirport) : [];
       console.log("[handleDelete] adapted:", aeropuertos);
@@ -234,14 +222,6 @@ export default function AirportsPage() {
                       <div className="flex justify-end gap-1 opacity-60 sm:opacity-0 sm:group-hover:opacity-100 transition-opacity">
                         <button
                           type="button"
-                          onClick={() => openEdit(apt)}
-                          title="Editar aeropuerto"
-                          className="p-2 rounded-lg hover:bg-surface-2 hover:text-blue-400 transition-colors text-slate-400"
-                        >
-                          <Pencil className="w-4 h-4" />
-                        </button>
-                        <button
-                          type="button"
                           onClick={() => openBulk(apt)}
                           title="Carga masiva de pedidos"
                           className="p-2 rounded-lg hover:bg-surface-2 hover:text-blue-400 transition-colors text-slate-400"
@@ -277,7 +257,7 @@ export default function AirportsPage() {
 
       <AirportFormModal
         open={formOpen}
-        initialData={editingAirport}
+        initialData={null}
         onClose={() => setFormOpen(false)}
         onSubmit={handleFormSubmit}
         loading={formLoading}
