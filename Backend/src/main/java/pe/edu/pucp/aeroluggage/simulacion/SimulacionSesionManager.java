@@ -371,11 +371,9 @@ public class SimulacionSesionManager {
                                    final long bucketInicial) {
         final String segundaVentana = "W" + String.format("%04d", bucketInicial + 1L);
         sesion.iniciarPlanificacion();
+        ejecutarPlanificacionDoble(sesion, primeraVentana, segundaVentana, broker);
         sesion.marcarVentanaPlanificada(primeraVentana);
-        planningPool.submit(() -> {
-            ejecutarPlanificacionDoble(sesion, primeraVentana, segundaVentana, broker);
-            sesion.marcarVentanaPlanificada(segundaVentana);
-        });
+        sesion.marcarVentanaPlanificada(segundaVentana);
     }
 
     private void ejecutarPlanificacionDoble(final SimulacionSesion sesion,

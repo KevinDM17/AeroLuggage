@@ -185,17 +185,12 @@ public class SimulacionPeriodoRestController {
         if (sesion == null) {
             throw new ResponseStatusException(NOT_FOUND, "Sesion no encontrada: " + sessionId);
         }
-        final Ruta ruta = rutaRepositorio.obtenerPorId(idMaleta)
-                .orElseThrow(() -> new ResponseStatusException(NOT_FOUND,
-                        "Ruta no encontrada para la maleta: " + idMaleta));
-        final List<VueloInstancia> vuelos = vueloInstanciaRepositorio.obtenerPorIds(ruta.getSubrutaIds());
-        final Map<String, VueloInstancia> vueloIndex = new HashMap<>();
-        for (final VueloInstancia v : vuelos) {
-            if (v != null && v.getIdVueloInstancia() != null) {
-                vueloIndex.put(v.getIdVueloInstancia(), v);
-            }
+        final Ruta ruta = sesion.getRutaPorMaleta(idMaleta);
+        if (ruta == null) {
+            throw new ResponseStatusException(NOT_FOUND,
+                    "Ruta no encontrada para la maleta: " + idMaleta);
         }
-        return mapearRutaPorIds(ruta, vueloIndex);
+        return mapearRutaPorIds(ruta, sesion.getVueloIndex());
     }
 
     @GetMapping("/{sessionId}/envio/{idPedido}/rutas")
@@ -241,6 +236,18 @@ public class SimulacionPeriodoRestController {
                 .withEstado(ruta.getEstado() != null ? ruta.getEstado().name() : null)
                 .withVuelos(vuelos)
                 .build();
+    }
+
+    private String obtenerHoraLlegadaEstimada(final String idMaleta,
+                                              final Map<String, VueloInstancia> vueloIndex,
+                                              final Map<String, Ruta> rutasPorMaleta) {
+        final Ruta r = rutasPorMaleta.get(idMaleta);
+        if (r == null) return null;
+        final List<String> ids = r.getSubrutas();
+        if (ids == null || ids.isEmpty()) return null;
+        final VueloInstancia ultimo = vueloIndex.get(ids.get(ids.size() - 1));
+        if (ultimo == null || ultimo.getFechaLlegada() == null) return null;
+        return ultimo.getFechaLlegada().format(FORMATO_FECHA_HORA);
     }
 
     @GetMapping("/{sessionId}/almacen/{idAeropuerto}/contenido")
@@ -708,6 +715,15 @@ public class SimulacionPeriodoRestController {
         final java.util.LinkedHashMap<String, PedidoSimulacionResponse> pedidosMap = new java.util.LinkedHashMap<>();
         final List<RutaSimulacionResponse> rutasDTO = new ArrayList<>();
 
+        final Map<String, VueloInstancia> vueloIndex = sesion.getVueloIndex();
+
+        final Map<String, Ruta> rutasPorMaleta = new HashMap<>();
+        for (final Ruta r : sesion.getRutas()) {
+            if (r != null && r.getIdMaleta() != null) {
+                rutasPorMaleta.put(r.getIdMaleta(), r);
+            }
+        }
+
         final var maletas = sesion.getMaletasPorVentana().get(windowId);
         if (maletas != null) {
             for (final var m : maletas) {
@@ -718,6 +734,8 @@ public class SimulacionPeriodoRestController {
                         .withFechaRegistro(m.getFechaRegistro() != null
                                 ? m.getFechaRegistro().format(FORMATO_FECHA_HORA) : null)
                         .withEstado(m.getEstado() != null ? m.getEstado().name() : null)
+                        .withUbicacionActual(m.getAeropuertoActual())
+                        .withHoraLlegadaEstimada(obtenerHoraLlegadaEstimada(m.getIdMaleta(), vueloIndex, rutasPorMaleta))
                         .build());
                 if (m.getPedido() != null && !pedidosMap.containsKey(m.getPedido().getIdPedido())) {
                     final var p = m.getPedido();
@@ -746,7 +764,6 @@ public class SimulacionPeriodoRestController {
                         .filter(Objects::nonNull).collect(java.util.stream.Collectors.toSet())
                 : java.util.Set.of();
         final var rutas = sesion.getRutas();
-        final Map<String, VueloInstancia> vueloIndex = sesion.getVueloIndex();
         for (final var r : rutas) {
             if (r == null || r.getIdMaleta() == null || !idMaletasVentana.contains(r.getIdMaleta())) continue;
             final List<String> ids = r.getSubrutas();

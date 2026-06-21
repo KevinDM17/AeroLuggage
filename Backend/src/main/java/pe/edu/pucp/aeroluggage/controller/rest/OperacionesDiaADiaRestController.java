@@ -579,6 +579,7 @@ public class OperacionesDiaADiaRestController {
                     "Sesion expirada o no encontrada: " + sessionId);
         }
         final List<MaletaSimulacionResponse> result = new ArrayList<>();
+        final Map<String, VueloInstancia> vueloIndex = service.getVueloIndex();
         for (final Maleta m : service.getMaletas()) {
             if (m == null) continue;
             result.add(MaletaSimulacionResponse.builder()
@@ -590,9 +591,21 @@ public class OperacionesDiaADiaRestController {
                             ? m.getFechaLlegada().format(FORMATO_FECHA_HORA) : null)
                     .withEstado(m.getEstado() != null ? m.getEstado().name() : null)
                     .withUbicacionActual(m.getAeropuertoActual())
+                    .withHoraLlegadaEstimada(obtenerHoraLlegadaEstimada(m.getIdMaleta(), vueloIndex))
                     .build());
         }
         return result;
+    }
+
+    private String obtenerHoraLlegadaEstimada(final String idMaleta,
+                                              final Map<String, VueloInstancia> vueloIndex) {
+        final Ruta r = service.getRutaPorMaleta(idMaleta);
+        if (r == null) return null;
+        final List<String> ids = r.getSubrutas();
+        if (ids == null || ids.isEmpty()) return null;
+        final VueloInstancia ultimo = vueloIndex.get(ids.get(ids.size() - 1));
+        if (ultimo == null || ultimo.getFechaLlegada() == null) return null;
+        return ultimo.getFechaLlegada().format(FORMATO_FECHA_HORA);
     }
 
     private RutaSimulacionResponse mapearRutaPorIds(

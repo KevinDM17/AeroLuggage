@@ -359,6 +359,7 @@ export default function PeriodSimulatorPage() {
     }
     if (estadoMessage.estado === "PLANIFICACION_COMPLETADA"
         && pendienteIniciarTickRef.current) {
+      console.log("[PeriodStart] PLANIFICACION_COMPLETADA recibido, enviando iniciar-tick");
       const sid = pendienteIniciarTickRef.current;
       pendienteIniciarTickRef.current = null;
       if (planCompletionTimeoutRef.current) {
@@ -425,8 +426,28 @@ export default function PeriodSimulatorPage() {
             }
           }
           const bags = new Map(prev.bags);
+          const bagOrigen = new Map();
+          const bagDestino = new Map();
+          const pedidoMap = new Map();
+          for (const p of ventanaData.pedidos ?? []) {
+            pedidoMap.set(p.id ?? p.idPedido, p);
+          }
+          for (const r of ventanaData.rutas ?? []) {
+            const first = r?.vuelos?.[0];
+            const last = r?.vuelos?.[r.vuelos.length - 1];
+            if (r.idMaleta) {
+              if (first?.aeropuertoOrigen) bagOrigen.set(r.idMaleta, first.aeropuertoOrigen);
+              if (last?.aeropuertoDestino) bagDestino.set(r.idMaleta, last.aeropuertoDestino);
+            }
+          }
           for (const b of ventanaData.maletas ?? []) {
-            bags.set(b.idMaleta, { ...b, ticksAusente: 0 });
+            const pedido = pedidoMap.get(b.idPedido);
+            bags.set(b.idMaleta, {
+              ...b,
+              origen: bagOrigen.get(b.idMaleta) ?? pedido?.origin ?? null,
+              destino: bagDestino.get(b.idMaleta) ?? pedido?.dest ?? null,
+              ticksAusente: 0,
+            });
           }
           const routes = new Map(prev.routes);
           for (const r of ventanaData.rutas ?? []) {
@@ -542,7 +563,10 @@ export default function PeriodSimulatorPage() {
       flightMetadataRef.current = metadata;
 
       const updatedBags = updateEstadosOnly(prev.bags, maletaStateMap, ENUM_MALETA, "estado",
-        (st, bag) => (st.e === 2 ? { fechaLlegada: bag.fechaLlegada ?? tick.simTime } : {}));
+        (st, bag) => ({
+          ...(st.e === 2 ? { fechaLlegada: bag.fechaLlegada ?? tick.simTime } : {}),
+          ubicacionActual: st.u ?? bag.ubicacionActual ?? null,
+        }));
 
       const updatedRoutes = updateEstadosOnly(prev.routes, rutaStateMap, ENUM_RUTA, "estado");
 
@@ -779,11 +803,14 @@ export default function PeriodSimulatorPage() {
   const enviarIniciarTick = async (targetSessionId) => {
     setSimStatus("running");
     cancelarWatchdogIniciarTick();
+    console.log("[PeriodStart] enviarIniciarTick", targetSessionId);
     try {
       await publish("/app/simulacion/periodo/iniciar-tick", {
         sessionId: targetSessionId,
       });
+      console.log("[PeriodStart] iniciar-tick enviado OK");
     } catch (err) {
+      console.warn("[PeriodStart] iniciar-tick fallo, reintentando...", err);
       // fall through to retry logic
     }
     iniciarTickWatchdogRef.current = setTimeout(async () => {
@@ -809,6 +836,8 @@ export default function PeriodSimulatorPage() {
   };
 
   const handleStart = async () => {
+    const t0 = performance.now();
+    console.log("[PeriodStart] iniciando simulacion...");
     const startDateTime = `${startDate}T${startTime || "00:00"}:00`;
     setSimStatus("starting");
     setSessionId(null);
@@ -828,6 +857,7 @@ export default function PeriodSimulatorPage() {
         fechaHoraInicio: startDateTime,
         totalDias: PERIOD_DAYS,
       });
+      console.log("[PeriodStart] POST /iniciar OK", (performance.now() - t0).toFixed(0), "ms");
       const newSessionId = result.sessionId;
       setSessionId(newSessionId);
       setCancelledFlightIds(new Set());
@@ -835,6 +865,7 @@ export default function PeriodSimulatorPage() {
       setRunId((current) => current + 1);
 
       const base = await obtenerBaseSimulacion(newSessionId);
+      console.log("[PeriodStart] GET /base OK", (performance.now() - t0).toFixed(0), "ms");
       const adaptedAirports = Array.isArray(base.aeropuertos)
         ? base.aeropuertos.map(adaptAirport)
         : [];
@@ -848,6 +879,7 @@ export default function PeriodSimulatorPage() {
         obtenerVentanaSimulacion(newSessionId, primeraVentana),
         obtenerVuelosSimulacion(newSessionId, primeraVentana, primeraVentana),
       ]);
+      console.log("[PeriodStart] GET /ventana + /vuelos OK", (performance.now() - t0).toFixed(0), "ms");
       ventanasCargadasRef.current.add(primeraVentana);
       const adaptedFlights = (vuelosData ?? []).map(adaptFlightInstance);
       const metadata = new Map();
@@ -862,8 +894,28 @@ export default function PeriodSimulatorPage() {
         if (statusFilter(f)) initialFlights.set(id, f);
       }
       const initialBags = new Map();
+      const bagOrigen = new Map();
+      const bagDestino = new Map();
+      const pedidoMapInit = new Map();
+      for (const p of ventana1.pedidos ?? []) {
+        pedidoMapInit.set(p.id ?? p.idPedido, p);
+      }
+      for (const r of ventana1.rutas ?? []) {
+        const first = r?.vuelos?.[0];
+        const last = r?.vuelos?.[r.vuelos.length - 1];
+        if (r.idMaleta) {
+          if (first?.aeropuertoOrigen) bagOrigen.set(r.idMaleta, first.aeropuertoOrigen);
+          if (last?.aeropuertoDestino) bagDestino.set(r.idMaleta, last.aeropuertoDestino);
+        }
+      }
       for (const b of ventana1.maletas ?? []) {
-        initialBags.set(b.idMaleta, { ...b, ticksAusente: 0 });
+        const pedido = pedidoMapInit.get(b.idPedido);
+        initialBags.set(b.idMaleta, {
+          ...b,
+          origen: bagOrigen.get(b.idMaleta) ?? pedido?.origin ?? null,
+          destino: bagDestino.get(b.idMaleta) ?? pedido?.dest ?? null,
+          ticksAusente: 0,
+        });
       }
       const initialRoutes = new Map();
       for (const r of ventana1.rutas ?? []) {
@@ -882,6 +934,7 @@ export default function PeriodSimulatorPage() {
           routes: ventana1.rutas ?? [],
         }),
       );
+      console.log("[PeriodStart] datos procesados", (performance.now() - t0).toFixed(0), "ms");
       setSimulationPanelData({
         airports: adaptedAirports,
         flights: initialFlights,
@@ -894,17 +947,14 @@ export default function PeriodSimulatorPage() {
 
       tickReceivedRef.current = false;
       iniciarTickRetriesRef.current = 0;
-      pendienteIniciarTickRef.current = newSessionId;
+      pendienteIniciarTickRef.current = null;
       cancelarWatchdogIniciarTick();
       if (planCompletionTimeoutRef.current) {
         clearTimeout(planCompletionTimeoutRef.current);
+        planCompletionTimeoutRef.current = null;
       }
-      planCompletionTimeoutRef.current = setTimeout(() => {
-        if (!pendienteIniciarTickRef.current) return;
-        const sid = pendienteIniciarTickRef.current;
-        pendienteIniciarTickRef.current = null;
-        enviarIniciarTick(sid);
-      }, 30000);
+      console.log("[PeriodStart] planificacion sincrona completada, enviando iniciar-tick");
+      enviarIniciarTick(newSessionId);
 
       toast.push({
         type: "info",

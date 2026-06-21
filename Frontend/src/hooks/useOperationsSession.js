@@ -151,14 +151,12 @@ export function useOperationsSession({ enabled, setSimulationPanelData, resetSim
           obtenerMaletasOperacionesDiaADia().catch(() => []),
         ]);
 
-        const bagLlegadaEstimada = new Map();
         const bagOrigen = new Map();
         const bagDestino = new Map();
         for (const r of rutasData) {
-          const last = r?.vuelos?.[r.vuelos.length - 1];
           const first = r?.vuelos?.[0];
+          const last = r?.vuelos?.[r.vuelos.length - 1];
           if (r.idMaleta) {
-            if (last?.fechaLlegada) bagLlegadaEstimada.set(r.idMaleta, last.fechaLlegada);
             if (first?.aeropuertoOrigen) bagOrigen.set(r.idMaleta, first.aeropuertoOrigen);
             if (last?.aeropuertoDestino) bagDestino.set(r.idMaleta, last.aeropuertoDestino);
           }
@@ -169,7 +167,6 @@ export function useOperationsSession({ enabled, setSimulationPanelData, resetSim
         const bags = new Map();
         for (const m of maletasData) bags.set(m.idMaleta, {
           ...m,
-          horaLlegadaEstimada: bagLlegadaEstimada.get(m.idMaleta) ?? null,
           origen: bagOrigen.get(m.idMaleta) ?? null,
           destino: bagDestino.get(m.idMaleta) ?? null,
           ticksAusente: 0,
