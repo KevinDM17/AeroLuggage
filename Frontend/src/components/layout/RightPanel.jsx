@@ -374,10 +374,12 @@ const BagItem = memo(function BagItem({ bag, onShowRoute }) {
       </div>
       {expanded && (
         <div className="cursor-default mt-2" onClick={(e) => e.stopPropagation()}>
-          {bag.ubicacionActual && <div className="text-base font-bold text-slate-300 mb-2">{bag.ubicacionActual}</div>}
           <div className="text-xs text-slate-400 flex flex-col gap-0.5">
             <div>Pedido: <span className="text-slate-200">{bag.idPedido}</span></div>
             <div>Registro: <span className="text-slate-200">{(bag.fechaRegistro ?? "").replace("T", " ").slice(0, 16)}</span></div>
+            {(bag.ubicacionActual || bag.origen) && <div>Ubicacion: <span className="text-slate-200 font-semibold">{bag.ubicacionActual || bag.origen}</span></div>}
+            {bag.origen && bag.destino && <div>Ruta: <span className="text-slate-200">{bag.origen} → {bag.destino}</span></div>}
+            {bag.horaLlegadaEstimada && <div>Llegada est.: <span className="text-slate-200">{bag.horaLlegadaEstimada.replace("T", " ").slice(0, 16)}</span></div>}
             {bag.fechaLlegada && <div>Entregada: <span className="text-slate-200">{bag.fechaLlegada.replace("T", " ").slice(0, 16)}</span></div>}
           </div>
         </div>

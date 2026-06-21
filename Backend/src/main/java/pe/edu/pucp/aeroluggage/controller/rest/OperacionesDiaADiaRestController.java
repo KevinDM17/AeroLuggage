@@ -181,7 +181,7 @@ public class OperacionesDiaADiaRestController {
         final List<VueloInstanciaResponse> vuelos = new ArrayList<>();
         for (final VueloInstancia v : service.getVuelosFrontend()) {
             if (v == null) continue;
-            vuelos.add(toVueloResponse(v));
+            vuelos.add(toVueloResponse(v, service.getOcupacionVuelo(v.getIdVueloInstancia())));
         }
         estado.put("aeropuertos", aeropuertos);
         estado.put("vuelos", vuelos);
@@ -216,7 +216,7 @@ public class OperacionesDiaADiaRestController {
         final List<VueloInstanciaResponse> result = new ArrayList<>();
         for (final VueloInstancia v : service.getVuelosFrontend()) {
             if (v == null) continue;
-            result.add(toVueloResponse(v));
+            result.add(toVueloResponse(v, service.getOcupacionVuelo(v.getIdVueloInstancia())));
         }
         log.info("[AeroLuggage/OperacionesDiaADiaRest] - RESPUESTA/vuelos: {} vuelos (CONFIRMADO+EN_PROGRESO)", result.size());
         return result;
@@ -231,7 +231,7 @@ public class OperacionesDiaADiaRestController {
         final List<VueloInstanciaResponse> result = new ArrayList<>();
         for (final VueloInstancia v : service.getVuelosNuevos()) {
             if (v == null) continue;
-            result.add(toVueloResponse(v));
+            result.add(toVueloResponse(v, service.getOcupacionVuelo(v.getIdVueloInstancia())));
         }
         log.info("[AeroLuggage/OperacionesDiaADiaRest] - RESPUESTA/vuelos-nuevos: {} vuelos", result.size());
         return result;
@@ -692,7 +692,8 @@ public class OperacionesDiaADiaRestController {
         return vuelo.getCodigo() != null && vuelo.getCodigo().equals(objetivo.getCodigo());
     }
 
-    private static VueloInstanciaResponse toVueloResponse(final VueloInstancia v) {
+    private static VueloInstanciaResponse toVueloResponse(final VueloInstancia v, final int usado) {
+        final int capDisp = Math.max(0, v.getCapacidadMaxima() - usado);
         return VueloInstanciaResponse.builder()
                 .withIdVueloInstancia(v.getIdVueloInstancia())
                 .withCodigo(v.getCodigo())
@@ -705,8 +706,8 @@ public class OperacionesDiaADiaRestController {
                 .withFechaLlegada(v.getFechaLlegada() != null
                         ? v.getFechaLlegada().format(FORMATO_FECHA_HORA) : null)
                 .withCapacidadMaxima(v.getCapacidadMaxima())
-                .withCapacidadDisponible(v.getCapacidadDisponible())
-                .withCapacidadUsada(Math.max(0, v.getCapacidadMaxima() - v.getCapacidadDisponible()))
+                .withCapacidadDisponible(capDisp)
+                .withCapacidadUsada(Math.max(0, v.getCapacidadMaxima() - capDisp))
                 .withEstado(v.getEstado() != null ? v.getEstado().name() : null)
                 .build();
     }

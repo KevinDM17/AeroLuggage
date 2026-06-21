@@ -151,10 +151,29 @@ export function useOperationsSession({ enabled, setSimulationPanelData, resetSim
           obtenerMaletasOperacionesDiaADia().catch(() => []),
         ]);
 
+        const bagLlegadaEstimada = new Map();
+        const bagOrigen = new Map();
+        const bagDestino = new Map();
+        for (const r of rutasData) {
+          const last = r?.vuelos?.[r.vuelos.length - 1];
+          const first = r?.vuelos?.[0];
+          if (r.idMaleta) {
+            if (last?.fechaLlegada) bagLlegadaEstimada.set(r.idMaleta, last.fechaLlegada);
+            if (first?.aeropuertoOrigen) bagOrigen.set(r.idMaleta, first.aeropuertoOrigen);
+            if (last?.aeropuertoDestino) bagDestino.set(r.idMaleta, last.aeropuertoDestino);
+          }
+        }
+
         const routes = new Map();
         for (const r of rutasData) routes.set(r.idRuta, { ...r, ticksAusente: 0 });
         const bags = new Map();
-        for (const m of maletasData) bags.set(m.idMaleta, { ...m, ticksAusente: 0 });
+        for (const m of maletasData) bags.set(m.idMaleta, {
+          ...m,
+          horaLlegadaEstimada: bagLlegadaEstimada.get(m.idMaleta) ?? null,
+          origen: bagOrigen.get(m.idMaleta) ?? null,
+          destino: bagDestino.get(m.idMaleta) ?? null,
+          ticksAusente: 0,
+        });
 
         if (!esInicial) {
           setSimulationPanelData((prev) => ({
@@ -299,7 +318,7 @@ export function useOperationsSession({ enabled, setSimulationPanelData, resetSim
         "estado",
         (st, bag) => ({
           ...(st.e === 2 ? { fechaLlegada: bag.fechaLlegada ?? tick.simTime } : {}),
-          ubicacionActual: st.u ?? null,
+          ubicacionActual: st.u ?? bag.ubicacionActual ?? null,
         }),
       );
       const updatedRoutes = updateEstadosOnly(prev.routes, rutaStateMap, ENUM_RUTA, "estado");
@@ -346,7 +365,12 @@ export function useOperationsSession({ enabled, setSimulationPanelData, resetSim
         setSimulationPanelData((prev) => {
           const flights = new Map(prev.flights);
           for (const f of adapted) {
-            flights.set(f.idVueloInstancia ?? f.id, { ...f, ticksAusente: 0 });
+            const existing = flights.get(f.idVueloInstancia ?? f.id);
+            flights.set(f.idVueloInstancia ?? f.id, {
+              ...f,
+              used: existing?.used ?? f.used ?? 0,
+              ticksAusente: 0,
+            });
           }
           return { ...prev, flights };
         });
