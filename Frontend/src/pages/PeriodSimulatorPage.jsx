@@ -184,6 +184,7 @@ export default function PeriodSimulatorPage() {
     simulationPanelData,
     setSimulationPanelData,
     resetSimulationPanelData,
+    collapseSidebars,
     cancelledFlightIds,
     setCancelledFlightIds,
   } = useOutletContext();
@@ -910,6 +911,7 @@ export default function PeriodSimulatorPage() {
         title: "Simulación iniciada",
         message: `Inicio: ${startDate} ${startTime || "00:00"} · ${PERIOD_DAYS} días`,
       });
+      collapseSidebars();
     } catch (err) {
       setSimStatus("idle");
       setSessionId(null);

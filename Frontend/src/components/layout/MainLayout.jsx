@@ -58,6 +58,11 @@ export default function MainLayout() {
     setMapDim({ airports: null, flights: null });
   }, []);
 
+  const collapseSidebars = useCallback(() => {
+    setLeftOpen(false);
+    setRightOpen(false);
+  }, []);
+
   const ops = useOperationsSession({
     enabled: isOperations,
     setSimulationPanelData,
@@ -117,11 +122,12 @@ export default function MainLayout() {
       simulationPanelData,
       setSimulationPanelData,
       resetSimulationPanelData,
+      collapseSidebars,
       cancelledFlightIds,
       setCancelledFlightIds,
       ops,
     }),
-    [simulationPanelData, resetSimulationPanelData, cancelledFlightIds, ops],
+    [simulationPanelData, resetSimulationPanelData, collapseSidebars, cancelledFlightIds, ops],
   );
 
   return (
