@@ -359,7 +359,6 @@ export default function PeriodSimulatorPage() {
     }
     if (estadoMessage.estado === "PLANIFICACION_COMPLETADA"
         && pendienteIniciarTickRef.current) {
-      console.log("[PeriodStart] PLANIFICACION_COMPLETADA recibido, enviando iniciar-tick");
       const sid = pendienteIniciarTickRef.current;
       pendienteIniciarTickRef.current = null;
       if (planCompletionTimeoutRef.current) {
@@ -803,14 +802,11 @@ export default function PeriodSimulatorPage() {
   const enviarIniciarTick = async (targetSessionId) => {
     setSimStatus("running");
     cancelarWatchdogIniciarTick();
-    console.log("[PeriodStart] enviarIniciarTick", targetSessionId);
     try {
       await publish("/app/simulacion/periodo/iniciar-tick", {
         sessionId: targetSessionId,
       });
-      console.log("[PeriodStart] iniciar-tick enviado OK");
     } catch (err) {
-      console.warn("[PeriodStart] iniciar-tick fallo, reintentando...", err);
       // fall through to retry logic
     }
     iniciarTickWatchdogRef.current = setTimeout(async () => {
@@ -836,8 +832,6 @@ export default function PeriodSimulatorPage() {
   };
 
   const handleStart = async () => {
-    const t0 = performance.now();
-    console.log("[PeriodStart] iniciando simulacion...");
     const startDateTime = `${startDate}T${startTime || "00:00"}:00`;
     setSimStatus("starting");
     setSessionId(null);
@@ -857,7 +851,6 @@ export default function PeriodSimulatorPage() {
         fechaHoraInicio: startDateTime,
         totalDias: PERIOD_DAYS,
       });
-      console.log("[PeriodStart] POST /iniciar OK", (performance.now() - t0).toFixed(0), "ms");
       const newSessionId = result.sessionId;
       setSessionId(newSessionId);
       setCancelledFlightIds(new Set());
@@ -865,7 +858,6 @@ export default function PeriodSimulatorPage() {
       setRunId((current) => current + 1);
 
       const base = await obtenerBaseSimulacion(newSessionId);
-      console.log("[PeriodStart] GET /base OK", (performance.now() - t0).toFixed(0), "ms");
       const adaptedAirports = Array.isArray(base.aeropuertos)
         ? base.aeropuertos.map(adaptAirport)
         : [];
@@ -879,7 +871,6 @@ export default function PeriodSimulatorPage() {
         obtenerVentanaSimulacion(newSessionId, primeraVentana),
         obtenerVuelosSimulacion(newSessionId, primeraVentana, primeraVentana),
       ]);
-      console.log("[PeriodStart] GET /ventana + /vuelos OK", (performance.now() - t0).toFixed(0), "ms");
       ventanasCargadasRef.current.add(primeraVentana);
       const adaptedFlights = (vuelosData ?? []).map(adaptFlightInstance);
       const metadata = new Map();
@@ -934,7 +925,6 @@ export default function PeriodSimulatorPage() {
           routes: ventana1.rutas ?? [],
         }),
       );
-      console.log("[PeriodStart] datos procesados", (performance.now() - t0).toFixed(0), "ms");
       setSimulationPanelData({
         airports: adaptedAirports,
         flights: initialFlights,
@@ -953,7 +943,6 @@ export default function PeriodSimulatorPage() {
         clearTimeout(planCompletionTimeoutRef.current);
         planCompletionTimeoutRef.current = null;
       }
-      console.log("[PeriodStart] planificacion sincrona completada, enviando iniciar-tick");
       enviarIniciarTick(newSessionId);
 
       toast.push({

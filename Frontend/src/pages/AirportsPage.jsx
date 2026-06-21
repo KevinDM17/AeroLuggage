@@ -142,17 +142,14 @@ export default function AirportsPage() {
     if (!window.confirm(`Eliminar ${airport.iata} - ${airport.city}?`)) return;
     try {
       await eliminarAeropuertoOperacionesDiaADia(airport.iata);
-      const raw = await obtenerAeropuertosOperacionesDiaADia().catch((e) => { console.error("[handleDelete] fetch error:", e); return []; });
-      console.log("[handleDelete] raw response:", raw);
+      const raw = await obtenerAeropuertosOperacionesDiaADia().catch(() => []);
       const aeropuertos = Array.isArray(raw) ? raw.map(adaptAirport) : [];
-      console.log("[handleDelete] adapted:", aeropuertos);
       setSimulationPanelData((prev) => ({
         ...prev,
         airports: aeropuertos,
       }));
       toast.push({ type: "success", title: "Aeropuerto eliminado", message: airport.iata });
     } catch (err) {
-      console.error("[handleDelete] error:", err);
       toast.push({ type: "error", title: "Error al eliminar", message: err.message });
     }
   };
