@@ -545,6 +545,19 @@ export default function PeriodSimulatorPage() {
 
       const updatedRoutes = updateEstadosOnly(prev.routes, rutaStateMap, ENUM_RUTA, "estado");
 
+      for (const [id, bag] of updatedBags) {
+        if (bag.estado === "ENTREGADA") updatedBags.delete(id);
+      }
+      for (const [id, route] of updatedRoutes) {
+        if (route.estado === "COMPLETADA") updatedRoutes.delete(id);
+      }
+      for (const [id, order] of prev.orders) {
+        const s = String(order.status ?? "").toUpperCase();
+        if (s === "ENTREGADO" || s === "FINALIZADO" || s === "ENVIADO") {
+          prev.orders.delete(id);
+        }
+      }
+
       return {
         ...prev,
         simTime: tick.simTime,
