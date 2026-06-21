@@ -25,6 +25,7 @@ export default function SimulatorPage() {
 
   const [pedidoOpen, setPedidoOpen] = useState(false);
   const [pedidoLoading, setPedidoLoading] = useState(false);
+  const [showRouteLines, setShowRouteLines] = useState(true);
 
   const normalizeFlightStatus = (status) =>
     String(status ?? "").trim().toUpperCase().replace(/\s+/g, "_");
@@ -92,6 +93,18 @@ export default function SimulatorPage() {
         <div className="text-lg font-bold text-info tabular-nums">{limaTime.time}</div>
       </div>
       <div className="h-9 w-px bg-slate-700 shrink-0" />
+      <button
+        type="button"
+        onClick={() => setShowRouteLines((v) => !v)}
+        className={`rounded-lg px-3 py-1.5 text-sm font-medium whitespace-nowrap transition-colors ${
+          showRouteLines
+            ? "bg-blue-600/20 text-blue-400 border border-blue-500/40 hover:bg-blue-600/30"
+            : "bg-surface-2 text-slate-400 border border-slate-700 hover:text-slate-200"
+        }`}
+      >
+        Mostrar lineas
+      </button>
+      <div className="h-9 w-px bg-slate-700 shrink-0" />
       <button type="button" onClick={() => setPedidoOpen(true)} className="self-center bg-blue-600 hover:bg-blue-500 text-white px-5 py-2.5 rounded-lg flex items-center gap-2 font-medium text-sm leading-none transition-colors shrink-0">
         <Plus className="w-4 h-4" /> Agregar Pedido
       </button>
@@ -106,7 +119,7 @@ export default function SimulatorPage() {
         mapOverlay={mapOverlay}
         showMapClock={false}
         showMapFlights={hasActiveRun}
-        showMapRouteLines={hasActiveRun}
+        showMapRouteLines={hasActiveRun && showRouteLines}
         animateMapFlights={simStatus === "running"}
         mapAutoload={false}
         airports={mapAirports ?? []}
