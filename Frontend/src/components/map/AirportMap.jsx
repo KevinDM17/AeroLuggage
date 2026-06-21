@@ -620,13 +620,13 @@ function AirportMap({
         <FlightInfoCard
           flight={clickedFlight}
           manifest={manifest}
-          onClose={() => setClickedFlightId(null)}
+          onClose={() => { setClickedFlightId(null); setSelected(null); }}
         />
       )}
       {clickedAirport && (
         <AirportInfoCard
           airport={clickedAirport}
-          onClose={() => setClickedAirportId(null)}
+          onClose={() => { setClickedAirportId(null); setSelected(null); }}
         />
       )}
     </div>

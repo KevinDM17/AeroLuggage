@@ -107,7 +107,7 @@ const FlightItem = memo(function FlightItem({ flight, onCancel, canceling, loadM
   }, [expanded, flightKey, loadManifest]);
 
   return (
-    <div className={`flex flex-col border-b border-slate-800/50 h-full cursor-pointer ${isSelected ? "rounded-lg ring-1 ring-info/70 bg-info/5" : ""}`} onClick={() => setExpanded(!expanded)}>
+    <div className={`flex flex-col border-b border-slate-800/50 h-full cursor-pointer transition-colors duration-200 ${isSelected ? "rounded-lg ring-1 ring-info/70 bg-info/5 hover:bg-info/[7]" : "hover:bg-slate-800"}`} onClick={() => setExpanded(!expanded)}>
       <div className="flex justify-between items-start mb-2">
         <div>
           <h4 className="font-bold text-lg text-slate-200">{flight.id}</h4>
@@ -260,7 +260,7 @@ const OrderItem = memo(function OrderItem({ order }) {
   const time = order.time ?? fallbackTime.slice(0, 5);
 
   return (
-    <div className="flex flex-col border-b border-slate-800/50 h-full cursor-pointer" onClick={() => setExpanded(!expanded)}>
+    <div className="flex flex-col border-b border-slate-800/50 h-full cursor-pointer hover:bg-slate-800 transition-colors duration-200" onClick={() => setExpanded(!expanded)}>
       <div className="flex justify-between items-center mb-2">
         <h4 className="font-bold text-lg text-slate-200">{id}</h4>
         <span className="text-xs text-slate-400">{bags} maleta{bags !== 1 ? "s" : ""}</span>
@@ -295,7 +295,7 @@ const RouteItem = memo(function RouteItem({ route, onShowRoute }) {
   }, [vuelos]);
 
   return (
-    <div className="flex flex-col border-b border-slate-800/50 h-full cursor-pointer" onClick={() => setExpanded(!expanded)}>
+    <div className="flex flex-col border-b border-slate-800/50 h-full cursor-pointer hover:bg-slate-800 transition-colors duration-200" onClick={() => setExpanded(!expanded)}>
       <div className="flex justify-between items-center mb-2">
         <div>
           <h4 className="font-bold text-lg text-slate-200">{route.idRuta}</h4>
@@ -349,7 +349,7 @@ const BagItem = memo(function BagItem({ bag, onShowRoute }) {
   const [expanded, setExpanded] = useState(false);
   const label = bagStatusLabel(bag.estado);
   return (
-    <div className="flex flex-col border-b border-slate-800/50 h-full cursor-pointer" onClick={() => setExpanded(!expanded)}>
+    <div className="flex flex-col border-b border-slate-800/50 h-full cursor-pointer hover:bg-slate-800 transition-colors duration-200" onClick={() => setExpanded(!expanded)}>
       <div className="flex justify-between items-start mb-2 gap-2">
         <h4 className="font-bold text-sm text-slate-200 break-all pr-2">{bag.idMaleta}</h4>
         <div className="flex shrink-0 flex-col items-end gap-1.5">
@@ -433,7 +433,7 @@ const EnvioItem = memo(function EnvioItem({ envio, showOrigin = true, onShowRout
   const uts = envio.uts ?? [];
   const utResumen = uts.length === 0 ? "sin asignar" : uts.length <= 2 ? uts.join(", ") : `${uts[0]} +${uts.length - 1}`;
   return (
-    <div className="flex flex-col border-b border-slate-800/50 h-full cursor-pointer" onClick={() => setExpanded(!expanded)}>
+    <div className="flex flex-col border-b border-slate-800/50 h-full cursor-pointer hover:bg-slate-800 transition-colors duration-200" onClick={() => setExpanded(!expanded)}>
       <div className="flex items-start justify-between gap-2">
         <div className="min-w-0">
           <h4 className="truncate text-sm font-bold text-slate-200">{envio.id}</h4>
@@ -536,7 +536,7 @@ const AirportItem = memo(function AirportItem({
   }, [expanded, airportKey, loadContenido]);
 
   return (
-    <div className={`flex flex-col border-b border-slate-800/50 h-full cursor-pointer ${isSelected ? "rounded-lg ring-1 ring-info/70 bg-info/5" : ""}`} onClick={() => setExpanded(!expanded)}>
+    <div className={`flex flex-col border-b border-slate-800/50 h-full cursor-pointer transition-colors duration-200 ${isSelected ? "rounded-lg ring-1 ring-info/70 bg-info/5 hover:bg-info/[7]" : "hover:bg-slate-800"}`} onClick={() => setExpanded(!expanded)}>
       <div className="flex justify-between items-center gap-2">
         <h4 className="font-bold text-lg text-slate-200">{apt.iata}</h4>
         <div className="flex items-center gap-2 shrink-0">
@@ -565,21 +565,20 @@ const AirportItem = memo(function AirportItem({
           )}
         </div>
       </div>
+      <div className="mt-2 flex justify-between items-start gap-3 pt-1">
+        <div className="flex flex-col gap-0.5">
+          <div className="flex items-center gap-1 text-[10px] text-slate-400"><MapPin className="w-3 h-3 shrink-0" /> {apt.city}</div>
+          <div className="flex items-center gap-1 text-[10px] text-slate-400"><Globe className="w-3 h-3 shrink-0" /> {apt.continent}</div>
+        </div>
+        <div className="flex flex-col items-end min-w-0">
+          <div className="text-[10px] text-slate-400 mb-1">{apt.used} / {apt.capacity} maletas</div>
+          <div className="w-24 h-1.5 bg-surface-2 rounded-full overflow-hidden border border-slate-800">
+            <div className={`h-full ${occupancyColor(pct)}`} style={{ width: `${pct}%` }} />
+          </div>
+        </div>
+      </div>
       {expanded && (
         <div className="cursor-default" onClick={(e) => e.stopPropagation()}>
-          <div className="mt-4 flex justify-between items-start">
-            <div className="flex flex-col gap-1 w-1/2">
-              <div className="flex items-center gap-1 text-[10px] text-slate-400"><MapPin className="w-3 h-3" /> {apt.city}</div>
-              <div className="flex items-center gap-1 text-[10px] text-slate-400"><Globe className="w-3 h-3" /> {apt.continent}</div>
-            </div>
-            <div className="flex flex-col w-1/2 pt-1">
-              <div className="text-[10px] text-slate-400 mb-2">{apt.used} de {apt.capacity} maletas</div>
-              <div className="w-full h-2 bg-surface-2 rounded-full overflow-hidden border border-slate-800">
-                <div className={`h-full ${occupancyColor(pct)}`} style={{ width: `${pct}%` }} />
-              </div>
-            </div>
-          </div>
-
           {showFlightPlansAction && onShowFlightPlans ? (
             <div className="mt-3">
               <button
@@ -999,7 +998,9 @@ function sortAirports(rows = [], key = "occupancy", dir = "desc", nextTimes = ne
   const factor = dir === "desc" ? -1 : 1;
   return [...rows].sort((left, right) => {
     let cmp;
-    if (key === "nextDep" || key === "nextArr") {
+    if (key === "name") {
+      cmp = String(left?.iata ?? "").localeCompare(String(right?.iata ?? ""));
+    } else if (key === "nextDep" || key === "nextArr") {
       const field = key === "nextDep" ? "dep" : "arr";
       const lv = nextTimes.get(left?.iata)?.[field] ?? Infinity;
       const rv = nextTimes.get(right?.iata)?.[field] ?? Infinity;
@@ -1030,8 +1031,8 @@ export default function RightPanel({
   const [flightSortDir, setFlightSortDir] = useState("asc");
   const [airportRegionFilter, setAirportRegionFilter] = useState("ALL");
   const [airportCodePattern, setAirportCodePattern] = useState("");
-  const [airportSortKey, setAirportSortKey] = useState("occupancy");
-  const [airportSortDir, setAirportSortDir] = useState("desc");
+  const [airportSortKey, setAirportSortKey] = useState("name");
+  const [airportSortDir, setAirportSortDir] = useState("asc");
   const [envioOriginFilter, setEnvioOriginFilter] = useState("ALL");
   const [envioDestFilter, setEnvioDestFilter] = useState("ALL");
   const [enviosData, setEnviosData] = useState({ planificados: [], enVuelos: [] });
@@ -1076,8 +1077,8 @@ export default function RightPanel({
   };
 
   const resetAirportSort = () => {
-    setAirportSortKey("occupancy");
-    setAirportSortDir("desc");
+    setAirportSortKey("name");
+    setAirportSortDir("asc");
   };
 
   const clearEnvioFilters = () => {
@@ -2215,6 +2216,7 @@ export default function RightPanel({
                   aria-label="Ordenar almacenes por"
                   className="w-full appearance-none rounded-lg border border-slate-800 bg-surface-2 py-1.5 pl-9 pr-8 text-sm text-slate-200 focus:border-slate-600 focus:outline-none"
                 >
+                  <option value="name">Ordenar: alfabetico</option>
                   <option value="occupancy">Ordenar: ocupacion</option>
                   <option value="nextDep">Ordenar: proxima salida (UT)</option>
                   <option value="nextArr">Ordenar: proxima llegada (UT)</option>
