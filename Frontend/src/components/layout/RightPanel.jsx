@@ -73,7 +73,7 @@ const routeStatusColor = (s) => {
 
 const EMPTY_MANIFEST = { bags: [], orders: [] };
 
-const FlightItem = memo(function FlightItem({ flight, onCancel, canceling, loadManifest, onFocus, onDeselect, isSelected }) {
+const FlightItem = memo(function FlightItem({ flight, onCancel, canceling, loadManifest, onFocus, onDeselect, isSelected, onExpand, onCollapse }) {
   const [expanded, setExpanded] = useState(false);
   const pct = flight.capacity > 0 ? Math.round((flight.used / flight.capacity) * 100) : 0;
   const normalizedStatus = normalizeFlightStatus(flight.status);
@@ -107,7 +107,12 @@ const FlightItem = memo(function FlightItem({ flight, onCancel, canceling, loadM
   }, [expanded, flightKey, loadManifest]);
 
   return (
-    <div className={`flex flex-col border-b border-slate-800/50 h-full cursor-pointer transition-colors duration-200 ${isSelected ? "rounded-lg ring-1 ring-info/70 bg-info/5 hover:bg-info/[7]" : "hover:bg-slate-800"}`} onClick={() => setExpanded(!expanded)}>
+    <div className={`flex flex-col border-b border-slate-800/50 h-full cursor-pointer transition-colors duration-200 ${isSelected ? "rounded-lg ring-1 ring-info/70 bg-info/5 hover:bg-info/[7]" : "hover:bg-slate-800"}`} onClick={() => {
+      const next = !expanded;
+      setExpanded(next);
+      if (next) onExpand?.(flight.idVueloInstancia ?? flight.id);
+      else onCollapse?.();
+    }}>
       <div className="flex justify-between items-start mb-2">
         <div>
           <h4 className="font-bold text-lg text-slate-200">{flight.id}</h4>
@@ -493,6 +498,8 @@ const AirportItem = memo(function AirportItem({
   isSelected,
   onShowFlightPlans,
   showFlightPlansAction = false,
+  onExpand,
+  onCollapse,
 }) {
   const [expanded, setExpanded] = useState(false);
   const pct = apt.capacity > 0 ? Math.round((apt.used / apt.capacity) * 100) : 0;
@@ -536,7 +543,12 @@ const AirportItem = memo(function AirportItem({
   }, [expanded, airportKey, loadContenido]);
 
   return (
-    <div className={`flex flex-col border-b border-slate-800/50 h-full cursor-pointer transition-colors duration-200 ${isSelected ? "rounded-lg ring-1 ring-info/70 bg-info/5 hover:bg-info/[7]" : "hover:bg-slate-800"}`} onClick={() => setExpanded(!expanded)}>
+    <div className={`flex flex-col border-b border-slate-800/50 h-full cursor-pointer transition-colors duration-200 ${isSelected ? "rounded-lg ring-1 ring-info/70 bg-info/5 hover:bg-info/[7]" : "hover:bg-slate-800"}`} onClick={() => {
+      const next = !expanded;
+      setExpanded(next);
+      if (next) onExpand?.(apt.iata ?? apt.idAeropuerto);
+      else onCollapse?.();
+    }}>
       <div className="flex justify-between items-center gap-2">
         <h4 className="font-bold text-lg text-slate-200">{apt.iata}</h4>
         <div className="flex items-center gap-2 shrink-0">
@@ -1784,6 +1796,14 @@ export default function RightPanel({
     }
   }, [activeTab, visibleFlights, flightSemaforo, flightOriginFilter, flightDestFilter, flightCodePattern, query, flightStatusFilter, setMapDim]);
 
+  const handleItemExpand = useCallback((entity) => {
+    setSelected(entity);
+  }, [setSelected]);
+
+  const handleItemCollapse = useCallback(() => {
+    setSelected(null);
+  }, [setSelected]);
+
   const tabContent = {
     flights: (
       <TabBody
@@ -1799,6 +1819,8 @@ export default function RightPanel({
             loadManifest={loadFlightManifest}
             onFocus={focusFlightOnMap}
             onDeselect={() => setSelected(null)}
+            onExpand={(id) => handleItemExpand({ kind: "flight", id })}
+            onCollapse={handleItemCollapse}
             isSelected={selected?.kind === "flight" && selected.id === (f.idVueloInstancia ?? f.id)}
           />
         )}
@@ -1854,6 +1876,8 @@ export default function RightPanel({
             loadContenido={loadAirportContenido}
             onFocus={focusAirportOnMap}
             onDeselect={() => setSelected(null)}
+            onExpand={(id) => handleItemExpand({ kind: "airport", id })}
+            onCollapse={handleItemCollapse}
             isSelected={selected?.kind === "airport" && selected.id === (a.iata ?? a.idAeropuerto)}
             onShowFlightPlans={openFlightPlansModal}
             showFlightPlansAction={isPeriodo}
