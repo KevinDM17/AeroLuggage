@@ -40,12 +40,12 @@ export default function MainLayout() {
   const toast = useToast();
 
   const isOperations =
-    location.pathname === "/" ||
+    location.pathname === "/operaciones" ||
     location.pathname === "/airports" ||
     location.pathname.startsWith("/flights") ||
     location.pathname === "/orders";
 
-  const showRightPanel = location.pathname === "/" || location.pathname.startsWith("/simulator");
+  const showRightPanel = location.pathname === "/operaciones" || location.pathname.startsWith("/simulator");
 
   const resetSimulationPanelData = useCallback(() => {
     setSimulationPanelData({ ...EMPTY_SIMULATION_PANEL_DATA });

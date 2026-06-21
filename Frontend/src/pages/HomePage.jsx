@@ -14,7 +14,7 @@ import {
 
 const QUICK_ACCESS = [
   {
-    to: "/",
+    to: "/operaciones",
     icon: RotateCw,
     title: "Operaciones día a día",
     desc: "Monitorea en tiempo real el flujo de maletas, vuelos y almacenes.",
@@ -104,7 +104,7 @@ export default function HomePage() {
 
           <button
             type="button"
-            onClick={() => navigate("/")}
+            onClick={() => navigate("/operaciones")}
             className="inline-flex items-center gap-2 rounded-lg bg-blue-600 px-5 py-2.5 text-sm font-semibold text-white transition-colors hover:bg-blue-500"
           >
             Ir a operaciones día a día

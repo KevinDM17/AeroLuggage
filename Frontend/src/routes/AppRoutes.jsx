@@ -13,9 +13,10 @@ export default function AppRoutes() {
   return (
     <Routes>
       <Route path="/" element={<MainLayout />}>
-        <Route index element={<SimulatorPage />} />
-        <Route path="inicio" element={<HomePage />} />
-        <Route path="simulator" element={<Navigate to="/" replace />} />
+        <Route index element={<HomePage />} />
+        <Route path="inicio" element={<Navigate to="/" replace />} />
+        <Route path="operaciones" element={<SimulatorPage />} />
+        <Route path="simulator" element={<Navigate to="/operaciones" replace />} />
         <Route path="simulator/period" element={<PeriodSimulatorPage />} />
         <Route path="simulator/collapse" element={<CollapseSimulatorPage />} />
 

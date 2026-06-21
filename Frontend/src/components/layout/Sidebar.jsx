@@ -84,8 +84,8 @@ export default function Sidebar({ onClose, closeOnNavigate = false }) {
 
         <button
           type="button"
-          onClick={() => handleNavigate("/")}
-          className={navItemClass(location.pathname === "/")}
+          onClick={() => handleNavigate("/operaciones")}
+          className={navItemClass(location.pathname === "/operaciones")}
         >
           <RotateCw className="w-4 h-4" />
           <span className="font-medium text-sm">Operaciones dia a dia</span>
