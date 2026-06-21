@@ -66,7 +66,7 @@ const FEATURES = [
   {
     icon: Activity,
     title: "Métricas en tiempo real",
-    desc: "Sigue maletas en tránsito, entregadas, no asignadas y la capacidad libre de la red.",
+    desc: "Sigue maletas en transito, entregadas y la capacidad de aeropuertos y vuelos.",
   },
   {
     icon: Boxes,

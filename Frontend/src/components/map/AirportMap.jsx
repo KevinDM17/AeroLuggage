@@ -147,6 +147,7 @@ function AirportMap({
    * - manifest: pedidos/maletas a bordo, pedidos al back cuando se abre.
    * Se limpia al clickear fondo vacio del mapa. */
   const [clickedFlightId, setClickedFlightId] = useState(null);
+  const [hoveredPlaneId, setHoveredPlaneId] = useState(null);
   const [manifest, setManifest] = useState({ status: "idle", pedidos: 0, maletas: 0 });
 
   const clickedFlight = useMemo(() => {
@@ -178,9 +179,9 @@ function AirportMap({
   }, [clickedFlightId, flightManifestLoader]);
 
   const handleDeckClick = useCallback((info) => {
-    // info.object es null cuando el click cae sobre el fondo (sin layer pickable).
     if (!info?.object) {
       setClickedFlightId(null);
+      setHoveredPlaneId(null);
       setSelected(null);
     }
   }, [setSelected]);
@@ -437,13 +438,35 @@ function AirportMap({
       );
     }
 
-    /* Aviones — IconLayer pintado por la GPU. */
+    /* Aviones — hitbox invisible (captura clicks en radio amplio) + IconLayer visual. */
     if (showFlights && planes.length > 0) {
       const iconUrl = getPlaneIconUrl();
+      const flightDimmed = (d) => mapDim.flights && !mapDim.flights.has(d.id);
+      const selectedFlightId = selected?.kind === "flight" ? selected.id : null;
+      const selectedColor = hexToRgba(tokens.info, 255);
+
+      ls.push(
+        new ScatterplotLayer({
+          id: "planes-hitbox",
+          data: planes,
+          getPosition: (d) => [d.lng, d.lat],
+          getRadius: 20,
+          radiusUnits: "pixels",
+          getFillColor: [0, 0, 0, 0],
+          pickable: true,
+          onClick: (info) => {
+            if (info?.object?.id) {
+              selectFromMap({ kind: "flight", id: info.object.id });
+              setClickedFlightId(info.object.id);
+              return true;
+            }
+            return false;
+          },
+          updateTriggers: { getPosition: planes },
+        })
+      );
+
       if (iconUrl) {
-        const flightDimmed = (d) => mapDim.flights && !mapDim.flights.has(d.id);
-        const selectedFlightId = selected?.kind === "flight" ? selected.id : null;
-        const selectedColor = hexToRgba(tokens.info, 255);
         ls.push(
           new IconLayer({
             id: "planes",
@@ -452,34 +475,25 @@ function AirportMap({
             iconMapping: PLANE_ICON_MAPPING,
             getIcon: () => "plane",
             getPosition: (d) => [d.lng, d.lat],
-            // El SVG del avión apunta al noreste (45° desde el norte).
-            // Para que apunte al destino: rotar CW por (bearing - 45).
-            // Pero deck.gl mide CCW → invertir signo → 45 - bearing.
             getAngle: (d) => 45 - d.angle,
             getColor: (d) => {
               if (d.id === selectedFlightId) return selectedColor;
+              if (d.id === hoveredPlaneId) return selectedColor;
               if (flightDimmed(d)) return [d.color[0], d.color[1], d.color[2], 45];
               return d.color;
             },
-            getSize: 18,
+            getSize: (d) => (d.id === hoveredPlaneId || d.id === selectedFlightId) ? 22 : 18,
             sizeUnits: "pixels",
-            pickable: true,
-            onClick: (info) => {
-              if (info?.object?.id) {
-                selectFromMap({ kind: "flight", id: info.object.id });
-                setClickedFlightId(info.object.id);
-                return true;
-              }
-              return false;
-            },
             updateTriggers: {
               getPosition: planes,
               getAngle: planes,
-              getColor: [planes, mapDim.flights, selectedFlightId],
+              getColor: [planes, mapDim.flights, selectedFlightId, hoveredPlaneId],
+              getSize: [hoveredPlaneId, selectedFlightId],
             },
           })
         );
       }
+
     }
 
     /* Ruta resaltada (a demanda): lineas gruesas + nodos enfatizados, encima de todo. */
@@ -548,6 +562,7 @@ function AirportMap({
   }, [
     showFlights, showRouteLines, routesGeometry, airportList, planes,
     highlightGeometry, highlightAirports, mapDim, selected, selectedAirport, selectedFlightLine, selectFromMap,
+    hoveredPlaneId,
   ]);
 
   return (
@@ -560,7 +575,19 @@ function AirportMap({
         renderWorldCopies={false}
         style={{ width: "100%", height: "100%", background: tokens.canvas }}
       >
-        <DeckGLOverlay layers={layers} interleaved onClick={handleDeckClick} />
+        <DeckGLOverlay
+          layers={layers}
+          interleaved
+          onClick={handleDeckClick}
+          getCursor={({ isDragging, object }) => (object ? "pointer" : "grab")}
+          onHover={(info) => {
+            if (info?.object && info.layer?.id === "planes-hitbox") {
+              setHoveredPlaneId(info.object.id);
+            } else {
+              setHoveredPlaneId(null);
+            }
+          }}
+        />
       </MapGL>
       {clickedFlight && (
         <FlightInfoCard
@@ -585,7 +612,7 @@ function FlightInfoCard({ flight, manifest, onClose }) {
     return d.toISOString().slice(11, 16) + " UTC";
   };
   return (
-    <div className="absolute top-3 right-3 z-[3500] w-72 rounded-xl border border-info/40 bg-surface-1/95 backdrop-blur px-4 py-3 shadow-lg shadow-info/10 text-slate-200">
+    <div className="absolute top-1/2 right-3 -translate-y-1/2 z-[3500] w-72 rounded-xl border border-info/40 bg-surface-1/95 backdrop-blur px-4 py-3 shadow-lg shadow-info/10 text-slate-200">
       <div className="flex items-start justify-between gap-2">
         <div>
           <div className="text-[10px] uppercase tracking-wider text-info font-semibold">Vuelo seleccionado</div>

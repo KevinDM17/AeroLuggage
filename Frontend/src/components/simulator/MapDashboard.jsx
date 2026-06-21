@@ -1,4 +1,4 @@
-import { CheckCircle2, ChevronDown, ChevronUp, CircleAlert, Luggage, Plane, Warehouse } from "lucide-react";
+import { Building, CheckCircle2, ChevronDown, ChevronUp, Luggage, Plane, Warehouse } from "lucide-react";
 import { useState } from "react";
 import { useLocation } from "react-router-dom";
 import AirportMap from "../map/AirportMap";
@@ -23,13 +23,15 @@ export default function MapDashboard({
   const {
     bagsInTransit = 0,
     bagsDelivered = 0,
-    bagsUnassigned = 0,
     activeFlights = 0,
-    freeCapacityPct = 0,
+    airportCapacityPct = 0,
+    flightCapacityPct = 0,
   } = metrics;
 
-  const capacityTone =
-    freeCapacityPct < 15 ? "danger" : freeCapacityPct < 35 ? "warning" : "success";
+  const airportCapacityTone =
+    airportCapacityPct >= 85 ? "danger" : airportCapacityPct >= 65 ? "warning" : "success";
+  const flightCapacityTone =
+    flightCapacityPct >= 85 ? "danger" : flightCapacityPct >= 65 ? "warning" : "success";
 
   const [showKpis, setShowKpis] = useState(true);
   const [showBottom, setShowBottom] = useState(true);
@@ -96,22 +98,22 @@ export default function MapDashboard({
                 tone="success"
               />
               <Kpi
-                icon={CircleAlert}
-                label="Maletas No Asignadas"
-                value={bagsUnassigned.toLocaleString()}
-                tone={bagsUnassigned > 0 ? "danger" : "success"}
-              />
-              <Kpi
                 icon={Plane}
                 label="Vuelos Activos"
                 value={activeFlights}
                 tone="fuchsia"
               />
               <Kpi
+                icon={Building}
+                label="Ocupación Aeropuertos"
+                value={`${airportCapacityPct}%`}
+                tone={airportCapacityTone}
+              />
+              <Kpi
                 icon={Warehouse}
-                label="Capacidad Libre Global"
-                value={`${freeCapacityPct}%`}
-                tone={capacityTone}
+                label="Ocupación Vuelos"
+                value={`${flightCapacityPct}%`}
+                tone={flightCapacityTone}
               />
             </div>
             <button

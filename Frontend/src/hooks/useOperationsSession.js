@@ -33,9 +33,9 @@ const ESTADO_BACK_A_LOCAL = {
 const emptyMetrics = {
   bagsInTransit: 0,
   bagsDelivered: 0,
-  bagsUnassigned: 0,
   activeFlights: 0,
-  freeCapacityPct: 0,
+  airportCapacityPct: 0,
+  flightCapacityPct: 0,
 };
 
 function updateEstadosOnly(oldMap, stateMap, enumArr, statusField, extraFields) {
@@ -74,6 +74,8 @@ export function useOperationsSession({ enabled, setSimulationPanelData, resetSim
   const tickCountRef = useRef(0);
   const reiniciarTokenRef = useRef(0);
   const startSimMsRef = useRef(null);
+  const flightAggRef = useRef({ totalCap: 0, totalUsed: 0 });
+  const [flightAggVersion, setFlightAggVersion] = useState(0);
 
   const tickTopic = !USE_MOCK && sessionId ? `/topic/operations/${sessionId}` : null;
   const statusTopic = !USE_MOCK && sessionId ? `/topic/operations/${sessionId}/estado` : null;
@@ -298,6 +300,15 @@ export function useOperationsSession({ enabled, setSimulationPanelData, resetSim
         (st, bag) => (st.e === 2 ? { fechaLlegada: bag.fechaLlegada ?? tick.simTime } : {}),
       );
       const updatedRoutes = updateEstadosOnly(prev.routes, rutaStateMap, ENUM_RUTA, "estado");
+      let flightTotalCap = 0;
+      let flightTotalUsed = 0;
+      for (const f of updatedFlights.values()) {
+        if (f.status === "EN_PROGRESO") {
+          flightTotalCap += f.capacity ?? 0;
+          flightTotalUsed += f.used ?? 0;
+        }
+      }
+      flightAggRef.current = { totalCap: flightTotalCap, totalUsed: flightTotalUsed };
       return {
         ...prev,
         simTime: tick.simTime,
@@ -307,6 +318,7 @@ export function useOperationsSession({ enabled, setSimulationPanelData, resetSim
         routes: updatedRoutes,
       };
     });
+    setFlightAggVersion((v) => v + 1);
   }, [enabled, tick]);
 
   useEffect(() => {
@@ -334,21 +346,26 @@ export function useOperationsSession({ enabled, setSimulationPanelData, resetSim
         ? {
             bagsInTransit: mockState.bagsInTransit ?? 0,
             bagsDelivered: mockState.bagsDelivered ?? 0,
-            bagsUnassigned: mockState.bagsUnassigned ?? 0,
             activeFlights: mockState.activeFlights ?? 0,
-            freeCapacityPct: mockState.freeCapacityPct ?? 0,
+            airportCapacityPct: mockState.airportCapacityPct ?? 0,
+            flightCapacityPct: mockState.flightCapacityPct ?? 0,
           }
         : emptyMetrics;
     }
     if (!tick || tick.type !== "TICK_DIAADIA") return emptyMetrics;
+    const apTotalCap = mapAirports.reduce((s, a) => s + (a.capacity ?? 0), 0);
+    const apTotalUsed = mapAirports.reduce((s, a) => s + (a.used ?? 0), 0);
+    const airportCapacityPct = apTotalCap > 0 ? Math.round((apTotalUsed / apTotalCap) * 100) : 0;
+    const agg = flightAggRef.current;
+    const flightCapacityPct = agg.totalCap > 0 ? Math.round((agg.totalUsed / agg.totalCap) * 100) : 0;
     return {
       bagsInTransit: tick.maletasEnTransito ?? 0,
       bagsDelivered: tick.maletasEntregadas ?? 0,
-      bagsUnassigned: tick.maletasNoAsignadas ?? tick.maletasSinRuta ?? 0,
       activeFlights: tick.vuelosActivos ?? 0,
-      freeCapacityPct: tick.capacidadLibrePct ?? 0,
+      airportCapacityPct,
+      flightCapacityPct,
     };
-  }, [tick, mockState, hasActiveRun]);
+  }, [tick, mockState, hasActiveRun, mapAirports, flightAggVersion]);
 
   return {
     simStatus,

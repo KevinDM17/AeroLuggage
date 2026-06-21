@@ -163,16 +163,13 @@ export async function mockListRutas() { await delay(); return [..._rutas]; }
 // ---------- STATUS / KPIs en tiempo real ----------
 export async function mockGetStatus() {
   await delay(120);
-  // Pequenas fluctuaciones para que se note el polling en el demo
   const jitter = (n, range) => Math.max(0, Math.round(n + (Math.random() - 0.5) * range));
   return {
     date: "18-03-26",
     time: new Date().toUTCString().slice(17, 25) + " UTC",
     bagsInTransit:    jitter(825, 30),
     bagsDelivered:    jitter(1240, 45),
-    bagsUnassigned:   jitter(18, 8),
     activeFlights:    jitter(7, 2),
-    freeCapacityPct:  Math.min(100, Math.max(0, jitter(42, 4))),
   };
 }
 

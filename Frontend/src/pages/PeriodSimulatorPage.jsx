@@ -82,9 +82,9 @@ const getDisplayedDay = (progress, hasActiveRun) => {
 const emptyMetrics = {
   bagsInTransit: 0,
   bagsDelivered: 0,
-  bagsUnassigned: 0,
   activeFlights: 0,
-  freeCapacityPct: 0,
+  airportCapacityPct: 0,
+  flightCapacityPct: 0,
 };
 
 const formatSummaryValue = (value, suffix = "") => {
@@ -169,11 +169,6 @@ const buildFinalSummaryMetrics = ({ liveMetrics, progress, periodDays }) => [
     key: "bagsInTransit",
     label: "Maletas en transito",
     value: formatSummaryValue(liveMetrics?.bagsInTransit ?? 0),
-  },
-  {
-    key: "bagsUnassigned",
-    label: "Maletas sin ruta",
-    value: formatSummaryValue(liveMetrics?.bagsUnassigned ?? 0),
   },
   {
     key: "activeFlights",
@@ -619,6 +614,21 @@ export default function PeriodSimulatorPage() {
     return formatUtcDateTimeDisplay(new Date(simulatedNowMs));
   }, [simulatedNowMs]);
 
+  const formattedStartDate = useMemo(() => {
+    if (!startDate) return "--";
+    const [y, m, d] = startDate.split("-");
+    return `${d}/${m}/${y}`;
+  }, [startDate]);
+
+  const simulatedElapsedLabel = useMemo(() => {
+    const startMs = startSimMsRef.current;
+    if (simulatedNowMs == null || startMs == null) return "--";
+    const totalMinutes = Math.max(0, Math.round((simulatedNowMs - startMs) / 60000));
+    const hours = Math.floor(totalMinutes / 60);
+    const minutes = totalMinutes % 60;
+    return `${hours}h ${minutes}m`;
+  }, [simulatedNowMs]);
+
   const liveMetrics = useMemo(() => {
     if (!hasActiveRun) return emptyMetrics;
     if (USE_MOCK) {
@@ -626,22 +636,35 @@ export default function PeriodSimulatorPage() {
         ? {
             bagsInTransit: mockState.bagsInTransit ?? 0,
             bagsDelivered: mockState.bagsDelivered ?? 0,
-            bagsUnassigned: mockState.bagsUnassigned ?? 0,
             activeFlights: mockState.activeFlights ?? 0,
-            freeCapacityPct: mockState.freeCapacityPct ?? 0,
+            airportCapacityPct: mockState.airportCapacityPct ?? 0,
+            flightCapacityPct: mockState.flightCapacityPct ?? 0,
           }
         : undefined;
     }
     if (!tick || tick.type !== "TICK") return undefined;
+    const apTotalCap = mapAirports.reduce((s, a) => s + (a.capacity ?? 0), 0);
+    const apTotalUsed = mapAirports.reduce((s, a) => s + (a.used ?? 0), 0);
+    const airportCapacityPct = apTotalCap > 0 ? Math.round((apTotalUsed / apTotalCap) * 100) : 0;
+    let flightTotalCap = 0;
+    let flightTotalUsed = 0;
+    for (const f of simulationPanelData.flights.values()) {
+      const status = normalizeFlightStatus(f.status);
+      if (status === "EN_PROGRESO") {
+        flightTotalCap += f.capacity ?? 0;
+        flightTotalUsed += f.used ?? 0;
+      }
+    }
+    const flightCapacityPct = flightTotalCap > 0 ? Math.round((flightTotalUsed / flightTotalCap) * 100) : 0;
     return {
       bagsInTransit: tick.maletasEnTransito ?? 0,
       bagsDelivered:
         tick.maletasEntregadas ?? tick.maletasEntregadasATiempo ?? 0,
-      bagsUnassigned: tick.maletasNoAsignadas ?? tick.maletasSinRuta ?? 0,
       activeFlights: tick.vuelosActivos ?? 0,
-      freeCapacityPct: tick.capacidadLibrePct ?? 0,
+      airportCapacityPct,
+      flightCapacityPct,
     };
-  }, [tick, mockState, hasActiveRun]);
+  }, [tick, mockState, hasActiveRun, mapAirports, simulationPanelData]);
 
   const collapseSummary = useMemo(
     () => getCollapseSummary(colapsoInfo),
@@ -927,61 +950,79 @@ export default function PeriodSimulatorPage() {
   const displayedDay = getDisplayedDay(progress, hasActiveRun);
 
   const mapOverlay = hasActiveRun ? (
-    <div className="bg-surface-2/85 m-4 backdrop-blur border border-slate-700 shadow-[0_12px_35px_rgba(0,0,0,0.45)] rounded-xl px-4 py-3 flex items-center justify-center gap-6">
-      <div>
-        <div className="text-[10px] text-slate-400 font-medium uppercase tracking-wider">
+    <div className="bg-surface-2/85 mb-4 backdrop-blur border border-slate-700 shadow-[0_12px_35px_rgba(0,0,0,0.45)] rounded-xl px-4 py-3 flex flex-wrap items-center justify-center gap-x-4 gap-y-1 max-w-[calc(100vw-2rem)]">
+      <div className="shrink-0">
+        <div className="text-[9px] text-slate-400 font-medium uppercase tracking-wider">
+          Inicio sim.
+        </div>
+        <div className="text-sm font-bold text-slate-100 tabular-nums whitespace-nowrap">
+          {formattedStartDate}  {startTime || "--:--"} UTC
+        </div>
+      </div>
+      <div className="h-9 w-px bg-slate-700 shrink-0" />
+      <div className="shrink-0">
+        <div className="text-[9px] text-slate-400 font-medium uppercase tracking-wider">
           Cronometro
         </div>
-        <div className="text-lg font-bold text-slate-100 tabular-nums">
+        <div className="text-base font-bold text-slate-100 tabular-nums">
           {formatElapsedHMS(executionElapsedMs)}
         </div>
       </div>
-      <div className="h-9 w-px bg-slate-700" />
-      <div>
-        <div className="text-[10px] text-slate-400 font-medium uppercase tracking-wider">
+      <div className="h-9 w-px bg-slate-700 shrink-0" />
+      <div className="shrink-0">
+        <div className="text-[9px] text-slate-400 font-medium uppercase tracking-wider">
           Fecha simulada
         </div>
-        <div className="text-lg font-bold text-info tabular-nums">
+        <div className="text-base font-bold text-info tabular-nums">
           {simulationClock.date}
         </div>
       </div>
-      <div className="h-9 w-px bg-slate-700" />
-      <div>
-        <div className="text-[10px] text-slate-400 font-medium uppercase tracking-wider">
+      <div className="h-9 w-px bg-slate-700 shrink-0" />
+      <div className="shrink-0">
+        <div className="text-[9px] text-slate-400 font-medium uppercase tracking-wider">
           Hora simulada
         </div>
-        <div className="text-lg font-bold text-info tabular-nums">
+        <div className="text-base font-bold text-info tabular-nums whitespace-nowrap">
           {simulationClock.time} UTC
         </div>
       </div>
-      <div className="h-9 w-px bg-slate-700" />
-      <div>
-        <div className="text-[10px] text-slate-400 font-medium uppercase tracking-wider">
-          Día de simulación
+      <div className="h-9 w-px bg-slate-700 shrink-0" />
+      <div className="shrink-0">
+        <div className="text-[9px] text-slate-400 font-medium uppercase tracking-wider">
+          Tiempo simulado
         </div>
-        <div className="text-lg font-bold text-info tabular-nums">
+        <div className="text-base font-bold text-info tabular-nums">
+          {simulatedElapsedLabel}
+        </div>
+      </div>
+      <div className="h-9 w-px bg-slate-700 shrink-0" />
+      <div className="shrink-0">
+        <div className="text-[9px] text-slate-400 font-medium uppercase tracking-wider">
+          Dia de simulacion
+        </div>
+        <div className="text-base font-bold text-info tabular-nums">
           {displayedDay
             ? `Dia ${displayedDay}/${PERIOD_DAYS}`
             : ""}
         </div>
       </div>
-      <div className="h-9 w-px bg-slate-700" />
+      <div className="h-9 w-px bg-slate-700 shrink-0" />
       <button
         type="button"
         onClick={() => setShowRouteLines((v) => !v)}
-        className={`rounded-lg px-3 py-1.5 text-sm font-medium transition-colors ${
+        className={`shrink-0 rounded-lg px-2 py-1 text-xs font-medium whitespace-nowrap transition-colors ${
           showRouteLines
             ? "bg-blue-600/20 text-blue-400 border border-blue-500/40 hover:bg-blue-600/30"
             : "bg-surface-2 text-slate-400 border border-slate-700 hover:text-slate-200"
         }`}
       >
-        Mostrar líneas
+        Mostrar lineas
       </button>
-      <div className="h-9 w-px bg-slate-700" />
+      <div className="h-9 w-px bg-slate-700 shrink-0" />
       <button
         type="button"
         onClick={handleStop}
-        className="bg-danger/10 hover:bg-danger/20 text-danger border border-danger/40 rounded-lg px-3 py-1.5 transition-colors"
+        className="shrink-0 bg-danger/10 hover:bg-danger/20 text-danger border border-danger/40 rounded-lg px-2 py-1 transition-colors"
         title="Detener"
       >
         <Square className="w-5 h-5" />
