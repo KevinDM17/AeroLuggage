@@ -512,7 +512,7 @@ export default function AirportsPage() {
         </button>
       </div>
 
-      <div className="bg-surface-1 border border-slate-800 rounded-xl overflow-x-auto">
+      <div className="app-scrollbar bg-surface-1 border border-slate-800 rounded-xl overflow-x-auto">
         {loading && <LoadingState label="Cargando aeropuertos..." />}
         {!loading && error && <ErrorState error={error} />}
         {!loading && !error && airports.length === 0 && (
