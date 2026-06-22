@@ -32,6 +32,7 @@ import pe.edu.pucp.aeroluggage.dto.simulacion.rest.RutaSimulacionResponse;
 import pe.edu.pucp.aeroluggage.dto.simulacion.rest.RutaVueloResponse;
 import pe.edu.pucp.aeroluggage.dto.simulacion.rest.VueloManifiestoResponse;
 import pe.edu.pucp.aeroluggage.dto.simulacion.rest.VueloInstanciaResponse;
+import pe.edu.pucp.aeroluggage.dto.simulacion.rest.CancelarVueloProgramadoRequest;
 import pe.edu.pucp.aeroluggage.dto.simulacion.ws.SimulacionEstadoDTO;
 import pe.edu.pucp.aeroluggage.simulacion.OperacionesDiaADiaService;
 
@@ -235,6 +236,26 @@ public class OperacionesDiaADiaRestController {
         }
         log.info("[AeroLuggage/OperacionesDiaADiaRest] - RESPUESTA/vuelos-nuevos: {} vuelos", result.size());
         return result;
+    }
+
+    @PostMapping("/{sessionId}/vuelos-programados/cancelar")
+    public SimulacionEstadoDTO cancelarVueloProgramado(
+            @PathVariable final String sessionId,
+            @RequestBody final CancelarVueloProgramadoRequest request) {
+        final String idVueloProgramado = request.getIdVueloProgramado();
+        log.info("[AeroLuggage/OperacionesDiaADiaRest] - API-CALL/cancelar-vuelo-programado: sessionId={}, vueloProgramado={}",
+                sessionId, idVueloProgramado);
+        if (!sessionId.equals(service.getSessionId())) {
+            throw new ResponseStatusException(HttpStatus.NOT_FOUND,
+                    "Sesion expirada o no encontrada: " + sessionId);
+        }
+        try {
+            return service.cancelarVueloProgramado(idVueloProgramado);
+        } catch (final IllegalArgumentException exception) {
+            throw new ResponseStatusException(HttpStatus.BAD_REQUEST, exception.getMessage());
+        } catch (final IllegalStateException exception) {
+            throw new ResponseStatusException(HttpStatus.CONFLICT, exception.getMessage());
+        }
     }
 
     @GetMapping("/{sessionId}/vuelo/{idVuelo}/manifiesto")

@@ -1152,6 +1152,229 @@ public class OperacionesDiaADiaService {
         }
     }
 
+    public SimulacionEstadoDTO cancelarVueloProgramado(final String idVueloProgramado) {
+        touchSession();
+        synchronized (lock) {
+            if (!activa) {
+                throw new IllegalStateException("La simulacion no esta activa");
+            }
+            VueloProgramado vp = vuelosProgramados.get(idVueloProgramado);
+            if (vp == null) {
+                vp = vueloProgramadoRepositorio.obtenerPorId(idVueloProgramado).orElse(null);
+                if (vp == null) {
+                    vp = vueloProgramadoRepositorio.obtenerPorIdSimple(idVueloProgramado).orElse(null);
+                    if (vp != null) {
+                        if (vp.getAeropuertoOrigen() != null
+                                && vp.getAeropuertoOrigen().getIdAeropuerto() != null) {
+                            final Aeropuerto ao = aeropuertos.get(
+                                    vp.getAeropuertoOrigen().getIdAeropuerto());
+                            if (ao != null) {
+                                vp.setAeropuertoOrigen(ao);
+                            }
+                        }
+                        if (vp.getAeropuertoDestino() != null
+                                && vp.getAeropuertoDestino().getIdAeropuerto() != null) {
+                            final Aeropuerto ad = aeropuertos.get(
+                                    vp.getAeropuertoDestino().getIdAeropuerto());
+                            if (ad != null) {
+                                vp.setAeropuertoDestino(ad);
+                            }
+                        }
+                    }
+                }
+                if (vp != null) {
+                    vuelosProgramados.put(idVueloProgramado, vp);
+                }
+            }
+            if (vp == null) {
+                throw new IllegalArgumentException(
+                        "Vuelo programado no encontrado: " + idVueloProgramado);
+            }
+            if (vp.getHoraSalida() == null) {
+                throw new IllegalArgumentException(
+                        "El vuelo programado no tiene hora de salida");
+            }
+            final LocalDateTime simTime = LocalDateTime.now(ZoneOffset.UTC);
+            final int gmtOrigen = vp.getAeropuertoOrigen() != null
+                    ? vp.getAeropuertoOrigen().getHusoGMT() : 0;
+            final LocalDateTime simTimeOrigen = simTime.plusHours(gmtOrigen);
+            final LocalDateTime salidaOrigenHoy = LocalDateTime.of(
+                    simTimeOrigen.toLocalDate(), vp.getHoraSalida());
+            final LocalDateTime cutoffOrigen = salidaOrigenHoy.minusHours(1);
+            final LocalDate fechaOperacion = !simTimeOrigen.isAfter(cutoffOrigen)
+                    ? simTimeOrigen.toLocalDate()
+                    : simTimeOrigen.toLocalDate().plusDays(1);
+
+            VueloInstancia instancia = null;
+            for (final VueloInstancia vi : vuelosInstancia.values()) {
+                if (vi == null || vi.getVueloProgramado() == null) continue;
+                if (idVueloProgramado.equals(vi.getVueloProgramado().getIdVueloProgramado())
+                        && fechaOperacion.equals(vi.getFechaOperacion())) {
+                    instancia = vi;
+                    break;
+                }
+            }
+            if (instancia == null) {
+                final VueloInstancia cancelada = crearInstanciaCancelada(vp, fechaOperacion);
+                vuelosInstancia.put(cancelada.getIdVueloInstancia(), cancelada);
+                vueloInstanciaRepositorio.insertarOActualizar(cancelada, idVueloProgramado);
+                log.info("[AeroLuggage/OperacionesDiaADia] - CANCELACION: vueloProgramado={}, fecha={}, "
+                                + "sin ocurrencia previa; creada instancia cancelada={}, maletasAfectadas=0",
+                        idVueloProgramado, fechaOperacion, cancelada.getIdVueloInstancia());
+                return SimulacionEstadoDTO.builder()
+                        .withSessionId(sessionId)
+                        .withEstado("VUELO_PROGRAMADO_CANCELADO")
+                        .withMensaje("Se cancelo el vuelo programado " + vp.getCodigo()
+                                + " para la fecha operativa " + fechaOperacion
+                                + ". No habia ocurrencia activa; 0 maletas afectadas.")
+                        .withSimTime(simTime.format(FORMATO_FECHA_HORA))
+                        .build();
+            }
+            final EstadoVuelo estado = instancia.getEstado();
+            if (estado == EstadoVuelo.EN_PROGRESO || estado == EstadoVuelo.FINALIZADO
+                    || estado == EstadoVuelo.CANCELADO) {
+                throw new IllegalStateException(
+                        "La ocurrencia " + instancia.getIdVueloInstancia()
+                                + " no puede cancelarse por su estado actual: " + estado);
+            }
+
+            final String idVuelo = instancia.getIdVueloInstancia();
+            final String codigoVuelo = instancia.getCodigo();
+
+            instancia.cancelar();
+            vueloInstanciaRepositorio.actualizar(instancia);
+
+            if (eventos != null) {
+                eventos.values().forEach(list ->
+                        list.removeIf(e -> idVuelo.equals(e.idEntidad())));
+            }
+
+            final Map<String, VueloInstancia> vueloIndex = getVueloIndex();
+            final List<String> maletasAfectadas = new ArrayList<>();
+            final Map<String, Aeropuerto> origenesOriginales = new HashMap<>();
+
+            for (final Ruta ruta : new ArrayList<>(rutasPorMaleta.values())) {
+                if (ruta == null) continue;
+                final EstadoRuta estadoRuta = ruta.getEstado();
+                if (estadoRuta == EstadoRuta.COMPLETADA
+                        || estadoRuta == EstadoRuta.REPLANIFICADA) continue;
+                final List<String> ids = ruta.getSubrutaIds();
+                if (ids == null || !ids.contains(idVuelo)) continue;
+
+                final String idMaleta = ruta.getIdMaleta();
+                final Maleta maleta = maletasPorId.get(idMaleta);
+                if (maleta == null || maleta.getPedido() == null) continue;
+
+                for (final String subId : ids) {
+                    final VueloInstancia v = vueloIndex.get(subId);
+                    if (v == null || v.getEstado() == EstadoVuelo.CANCELADO
+                            || v.getEstado() == EstadoVuelo.FINALIZADO) continue;
+                    v.setCapacidadDisponible(v.getCapacidadDisponible() + 1);
+                }
+
+                rutaRepositorio.actualizar(ruta);
+
+                final int idx = ids.indexOf(idVuelo);
+                String ubicacionActual = null;
+                if (idx >= 0 && idx < ids.size()) {
+                    final VueloInstancia vueloCancelado = vueloIndex.get(idVuelo);
+                    if (vueloCancelado != null && vueloCancelado.getAeropuertoOrigen() != null) {
+                        ubicacionActual = vueloCancelado.getAeropuertoOrigen().getIdAeropuerto();
+                    }
+                }
+                if (ubicacionActual == null) {
+                    ubicacionActual = maleta.getAeropuertoActual();
+                }
+
+                final Aeropuerto aeropuertoActual = aeropuertos.get(ubicacionActual);
+                if (aeropuertoActual != null && maleta.getPedido().getAeropuertoOrigen() != null) {
+                    origenesOriginales.put(idMaleta, maleta.getPedido().getAeropuertoOrigen());
+                    maleta.getPedido().setAeropuertoOrigen(aeropuertoActual);
+                }
+
+                maleta.setAeropuertoActual(ubicacionActual);
+                maleta.setEstado(EstadoMaleta.EN_ALMACEN);
+                maletaRepositorio.actualizar(maleta);
+
+                maletasAfectadas.add(idMaleta);
+                rutasPorMaleta.remove(idMaleta);
+            }
+
+            log.info("[AeroLuggage/OperacionesDiaADia] - CANCELACION: vueloProgramado={}, fecha={}, "
+                            + "vueloInstancia={}, maletasAfectadas={}",
+                    idVueloProgramado, fechaOperacion, idVuelo, maletasAfectadas.size());
+
+            if (!maletasAfectadas.isEmpty()) {
+                planificarPendientes();
+
+                int nuevasPersistidas = 0;
+                for (final String idMaleta : maletasAfectadas) {
+                    final Ruta nuevaRuta = rutasPorMaleta.get(idMaleta);
+                    if (nuevaRuta != null) {
+                        rutaRepositorio.insertar(nuevaRuta);
+                        nuevasPersistidas++;
+                    }
+                    final Aeropuerto original = origenesOriginales.get(idMaleta);
+                    if (original != null) {
+                        final Maleta m = maletasPorId.get(idMaleta);
+                        if (m != null && m.getPedido() != null) {
+                            m.getPedido().setAeropuertoOrigen(original);
+                        }
+                    }
+                }
+                log.info("[AeroLuggage/OperacionesDiaADia] - CANCELACION: rutas nuevas persistidas={}",
+                        nuevasPersistidas);
+            }
+
+            return SimulacionEstadoDTO.builder()
+                    .withSessionId(sessionId)
+                    .withEstado("VUELO_PROGRAMADO_CANCELADO")
+                    .withMensaje("Se cancelo el vuelo programado " + codigoVuelo
+                            + " para la fecha operativa " + fechaOperacion
+                            + ". " + maletasAfectadas.size() + " maletas replanificadas.")
+                    .withSimTime(simTime.format(FORMATO_FECHA_HORA))
+                    .build();
+        }
+    }
+
+    private VueloInstancia crearInstanciaCancelada(final VueloProgramado vp, final LocalDate fechaOperacion) {
+        final String fechaStr = fechaOperacion.format(DateTimeFormatter.ofPattern("yyyyMMdd"));
+        final int gmtOrigen = vp.getAeropuertoOrigen() != null
+                ? vp.getAeropuertoOrigen().getHusoGMT() : 0;
+        final int gmtDestino = vp.getAeropuertoDestino() != null
+                ? vp.getAeropuertoDestino().getHusoGMT() : 0;
+        LocalDate fechaLocalOrigen = fechaOperacion;
+        LocalDateTime salidaUtc = LocalDateTime.of(fechaLocalOrigen, vp.getHoraSalida())
+                .minusHours(gmtOrigen);
+        if (salidaUtc.isAfter(fechaOperacion.plusDays(1).atStartOfDay())) {
+            fechaLocalOrigen = fechaOperacion.minusDays(1);
+        } else if (salidaUtc.isBefore(fechaOperacion.atStartOfDay())) {
+            fechaLocalOrigen = fechaOperacion.plusDays(1);
+        }
+        salidaUtc = LocalDateTime.of(fechaLocalOrigen, vp.getHoraSalida()).minusHours(gmtOrigen);
+        LocalDate fechaLlegadaLocal = fechaLocalOrigen;
+        if (vp.getHoraLlegada() != null && vp.getHoraLlegada().isBefore(vp.getHoraSalida())) {
+            fechaLlegadaLocal = fechaLlegadaLocal.plusDays(1);
+        }
+        LocalDateTime llegadaUtc = vp.getHoraLlegada() != null
+                ? LocalDateTime.of(fechaLlegadaLocal, vp.getHoraLlegada()).minusHours(gmtDestino)
+                : salidaUtc.plusHours(1);
+        if (!llegadaUtc.isAfter(salidaUtc)) {
+            llegadaUtc = llegadaUtc.plusDays(1);
+        }
+        final String orig = vp.getAeropuertoOrigen() != null
+                ? vp.getAeropuertoOrigen().getIdAeropuerto() : "??";
+        final String dest = vp.getAeropuertoDestino() != null
+                ? vp.getAeropuertoDestino().getIdAeropuerto() : "??";
+        final int seq = vueloInstanciaRepositorio.obtenerUltimoSecuencial(fechaStr);
+        final String id = String.format("VUE-%s-%s-%s-%06d", orig, dest, fechaStr, seq + 1);
+        final VueloInstancia vi = new VueloInstancia(
+                id, vp, fechaOperacion, salidaUtc, llegadaUtc,
+                vp.getCapacidadMaxima(), vp.getCapacidadMaxima(),
+                EstadoVuelo.CANCELADO);
+        return vi;
+    }
+
     public void touchSession() {
         if (activa) {
             lastAccessTime = System.currentTimeMillis();

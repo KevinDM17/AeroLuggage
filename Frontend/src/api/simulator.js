@@ -13,6 +13,7 @@ import {
   mockCrearAeropuerto,
   mockActualizarAeropuerto,
   mockEliminarAeropuerto,
+  mockCancelarVueloProgramadoOperacionesDiaADia,
 } from "./mock";
 
 /* =========================================================================
@@ -252,6 +253,11 @@ export const confirmarConexionOperacionesDiaADia = () =>
 
 export const obtenerVuelosNuevosOperacionesDiaADia = () =>
   withReconnect((sid) => apiGet(`/operations/${sid}/vuelos-nuevos`));
+
+export const cancelarVueloProgramadoOperacionesDiaADia = (idVueloProgramado) =>
+  USE_MOCK
+    ? mockCancelarVueloProgramadoOperacionesDiaADia(idVueloProgramado)
+    : withReconnect((sid) => apiPost(`/operations/${sid}/vuelos-programados/cancelar`, { idVueloProgramado }));
 
 export const obtenerEstadoActualOperacionesDiaADia = () =>
   apiGet("/operations/estado-actual");
