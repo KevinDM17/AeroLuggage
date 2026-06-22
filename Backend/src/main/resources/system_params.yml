@@ -4,7 +4,7 @@ negocio:
   umbral-confirmacion-minutos: 30
 
 simulacion:
-  duracion-dia-simulado-ms: 300000
+  duracion-dia-simulado-ms: 576000
   ventana:
     tamanio-minutos: 120
     espaciado-minutos: 120
@@ -27,7 +27,7 @@ algoritmos:
     q-min: 1
     q-max: 6
     q-critical: 4
-    max-reintentos-ruteo: 100
+    max-reintentos-ruteo: 25
     umbral-critico-aeropuerto: 0.25
     temperatura-inicial: 5.0
     factor-enfriamiento: 0.98
