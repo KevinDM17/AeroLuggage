@@ -30,13 +30,13 @@ export default function Sidebar({ onClose, closeOnNavigate = false }) {
 
   const navItemClass = (isActive, nested = false) =>
     cn(
-      "flex w-full items-center gap-3 rounded-lg px-3 py-2 text-left transition-colors",
+      "flex w-full items-center gap-3 rounded-xl border px-3 py-2.5 text-left transition-all duration-200",
       nested ? "text-sm" : "",
       isActive
-        ? "bg-blue-600/20 text-blue-400 hover:bg-blue-600/30"
+        ? "border-blue-500/35 bg-blue-500/12 text-blue-300 shadow-[0_10px_24px_rgba(37,99,235,0.14)]"
         : nested
-          ? "bg-surface-2 text-slate-300 hover:bg-slate-800"
-          : "text-slate-400 hover:bg-slate-800 hover:text-slate-300",
+          ? "border-slate-800 bg-surface-2/80 text-slate-300 hover:border-slate-700 hover:bg-slate-800"
+          : "border-transparent text-slate-400 hover:border-slate-800 hover:bg-slate-800/80 hover:text-slate-200",
     );
 
   return (
@@ -72,7 +72,7 @@ export default function Sidebar({ onClose, closeOnNavigate = false }) {
         )}
       </div>
 
-      <nav className="flex-1 py-2 px-3 space-y-1 overflow-y-auto">
+      <nav className="app-scrollbar flex-1 py-3 px-3 space-y-1 overflow-y-auto">
         <button
           type="button"
           onClick={() => handleNavigate("/inicio")}
@@ -131,10 +131,10 @@ export default function Sidebar({ onClose, closeOnNavigate = false }) {
               type="button"
               onClick={() => setFlightsOpen((v) => !v)}
               className={cn(
-                "flex w-full items-center gap-3 rounded-lg px-3 py-2 text-left transition-colors",
+                "flex w-full items-center gap-3 rounded-xl border px-3 py-2.5 text-left transition-all duration-200",
                 location.pathname.startsWith("/flights")
-                  ? "bg-blue-600/20 text-blue-400 hover:bg-blue-600/30"
-                  : "text-slate-400 hover:bg-slate-800 hover:text-slate-300",
+                  ? "border-blue-500/35 bg-blue-500/12 text-blue-300 shadow-[0_10px_24px_rgba(37,99,235,0.14)]"
+                  : "border-transparent text-slate-400 hover:border-slate-800 hover:bg-slate-800/80 hover:text-slate-200",
               )}
             >
               <Plane className="w-4 h-4" />

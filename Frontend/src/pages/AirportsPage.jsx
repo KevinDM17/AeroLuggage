@@ -155,7 +155,7 @@ export default function AirportsPage() {
   };
 
   return (
-    <div className="flex-1 bg-surface-0 flex flex-col min-h-0 overflow-y-auto w-full h-full p-4 sm:p-8 text-slate-200">
+    <div className="app-scrollbar flex-1 bg-surface-0 flex flex-col min-h-0 overflow-y-auto w-full h-full p-4 sm:p-8 text-slate-200">
       <div className="flex flex-col sm:flex-row justify-between sm:items-start gap-4 mb-8 pl-12 sm:pl-14">
         <div>
           <h1 className="text-2xl sm:text-4xl font-extrabold text-white mb-2">Tabla de Aeropuertos</h1>
@@ -170,7 +170,7 @@ export default function AirportsPage() {
         </button>
       </div>
 
-      <div className="bg-surface-1 border border-slate-800 rounded-xl overflow-x-auto">
+      <div className="app-scrollbar bg-surface-1 border border-slate-800 rounded-xl overflow-x-auto">
         {loading && <LoadingState label="Cargando aeropuertos..." />}
         {!loading && error && <ErrorState error={error} />}
         {!loading && !error && airports.length === 0 && (

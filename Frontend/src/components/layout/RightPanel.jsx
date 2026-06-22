@@ -1,4 +1,4 @@
-import { memo, useCallback, useEffect, useMemo, useRef, useState } from "react";
+import { forwardRef, memo, useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { Virtuoso } from "react-virtuoso";
 import { useLocation } from "react-router-dom";
 import { Ban, Filter, PanelRightClose, MapPin, Globe, Info, ChevronDown, Plane, RefreshCw, Package, Luggage, ArrowDownUp, ArrowUp, ArrowDown, Route, X, Crosshair } from "lucide-react";
@@ -73,6 +73,14 @@ const routeStatusColor = (s) => {
 
 const EMPTY_MANIFEST = { bags: [], orders: [] };
 
+const PanelScroller = forwardRef(function PanelScroller({ style, className, children, ...props }, ref) {
+  return (
+    <div {...props} ref={ref} style={style} className={className ? `${className} app-scrollbar` : "app-scrollbar"}>
+      {children}
+    </div>
+  );
+});
+
 const FlightItem = memo(function FlightItem({ flight, onCancel, canceling, loadManifest, onFocus, onDeselect, isSelected, onExpand, onCollapse }) {
   const [expanded, setExpanded] = useState(false);
   const pct = flight.capacity > 0 ? Math.round((flight.used / flight.capacity) * 100) : 0;
@@ -107,7 +115,7 @@ const FlightItem = memo(function FlightItem({ flight, onCancel, canceling, loadM
   }, [expanded, flightKey, loadManifest]);
 
   return (
-    <div className={`flex flex-col border-b border-slate-800/50 h-full cursor-pointer transition-colors duration-200 ${isSelected ? "rounded-lg ring-1 ring-info/70 bg-info/5 hover:bg-info/[7]" : "hover:bg-slate-800"}`} onClick={() => {
+    <div className={`mb-2 flex h-full cursor-pointer flex-col rounded-xl border px-3 py-3 transition-all duration-200 ${isSelected ? "border-info/60 bg-info/5 ring-1 ring-info/70 shadow-[0_8px_24px_rgba(14,165,233,0.08)]" : "border-slate-800/70 bg-surface-1/65 hover:border-slate-700 hover:bg-surface-2/55"}`} onClick={() => {
       const next = !expanded;
       setExpanded(next);
       if (next) onExpand?.(flight.idVueloInstancia ?? flight.id);
@@ -545,16 +553,21 @@ const AirportItem = memo(function AirportItem({
   }, [expanded, airportKey, loadContenido]);
 
   return (
-    <div className={`flex flex-col border-b border-slate-800/50 h-full cursor-pointer transition-colors duration-200 ${isSelected ? "rounded-lg ring-1 ring-info/70 bg-info/5 hover:bg-info/[7]" : "hover:bg-slate-800"}`} onClick={() => {
+    <div className={`mb-2 flex h-full cursor-pointer flex-col rounded-xl border px-3 py-3 transition-all duration-200 ${isSelected ? "border-info/60 bg-info/5 ring-1 ring-info/70 shadow-[0_8px_24px_rgba(14,165,233,0.08)]" : "border-slate-800/70 bg-surface-1/65 hover:border-slate-700 hover:bg-surface-2/55"}`} onClick={() => {
       const next = !expanded;
       setExpanded(next);
       if (next) onExpand?.(apt.iata ?? apt.idAeropuerto);
       else onCollapse?.();
     }}>
       <div className="flex justify-between items-center gap-2">
-        <h4 className="font-bold text-lg text-slate-200">{apt.iata}</h4>
+        <div className="min-w-0">
+          <h4 className="font-bold text-lg text-slate-200">{apt.iata}</h4>
+          <p className="truncate text-[11px] text-slate-500">{apt.city}</p>
+        </div>
         <div className="flex items-center gap-2 shrink-0">
-          <span className="text-xs text-slate-400">{pct}% Ocupado</span>
+          <span className="rounded-full border border-slate-700/70 bg-surface-2/70 px-2 py-1 text-[11px] font-semibold text-slate-300">
+            {pct}% ocupado
+          </span>
           {isSelected && onDeselect && (
             <button
               type="button"
@@ -2364,7 +2377,7 @@ export default function RightPanel({
         )}
       </div>
 
-      <div key={`${activeTab}-${simulationLoaded ? "loaded" : "empty"}`} className="flex-1 overflow-y-auto m-4 no-scrollbar">
+      <div key={`${activeTab}-${simulationLoaded ? "loaded" : "empty"}`} className="app-scrollbar m-4 flex-1 overflow-y-auto">
           {tabContent}
       </div>
 
@@ -2383,6 +2396,7 @@ function TabBody({ loading, error, refetch, rows, empty, renderItem }) {
   return (
     <Virtuoso
       style={{ height: "100%" }}
+      components={{ Scroller: PanelScroller }}
       totalCount={rows.length}
       itemContent={(index) => renderItem(rows[index], index)}
     />
