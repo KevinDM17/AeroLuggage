@@ -169,7 +169,7 @@ export default function MainLayout() {
       )}
 
       <div className="flex-1 flex flex-col h-full overflow-hidden relative border-r border-slate-800 min-w-0">
-        <main key={location.pathname} className="flex-1 overflow-hidden bg-canvas">
+        <main key={location.pathname} className="app-scrollbar flex-1 min-h-0 overflow-y-auto overflow-x-hidden bg-canvas">
           <Outlet context={layoutContext} />
         </main>
       </div>

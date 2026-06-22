@@ -41,6 +41,7 @@ import pe.edu.pucp.aeroluggage.repositorio.VueloProgramadoRepositorio;
 
 import java.time.LocalDate;
 import java.time.LocalDateTime;
+import java.time.LocalTime;
 import java.time.ZoneOffset;
 import java.time.format.DateTimeFormatter;
 import java.util.ArrayList;
@@ -1187,8 +1188,18 @@ public class OperacionesDiaADiaService {
                 }
             }
             if (vp == null) {
+                vp = reconstruirVueloProgramadoFaltante(idVueloProgramado);
+                if (vp != null) {
+                    vueloProgramadoRepositorio.insertar(vp);
+                    vuelosProgramados.put(idVueloProgramado, vp);
+                    log.warn("[AeroLuggage/OperacionesDiaADia] - CANCELACION: vueloProgramado={} no existia; "
+                                    + "se creo un placeholder para registrar la cancelacion",
+                            idVueloProgramado);
+                }
+            }
+            if (vp == null) {
                 throw new IllegalArgumentException(
-                        "Vuelo programado no encontrado: " + idVueloProgramado);
+                        "Vuelo programado no encontrado y no se pudo reconstruir: " + idVueloProgramado);
             }
             if (vp.getHoraSalida() == null) {
                 throw new IllegalArgumentException(
@@ -1272,6 +1283,7 @@ public class OperacionesDiaADiaService {
                     v.setCapacidadDisponible(v.getCapacidadDisponible() + 1);
                 }
 
+                ruta.setEstado(EstadoRuta.REPLANIFICADA);
                 rutaRepositorio.actualizar(ruta);
 
                 final int idx = ids.indexOf(idVuelo);
@@ -1373,6 +1385,73 @@ public class OperacionesDiaADiaService {
                 vp.getCapacidadMaxima(), vp.getCapacidadMaxima(),
                 EstadoVuelo.CANCELADO);
         return vi;
+    }
+
+    private VueloProgramado reconstruirVueloProgramadoFaltante(final String idVueloProgramado) {
+        if (idVueloProgramado == null || idVueloProgramado.isBlank()) {
+            return null;
+        }
+        final String[] partes = idVueloProgramado.trim().split("-", 3);
+        if (partes.length != 3) {
+            return null;
+        }
+        final String origenId = partes[0].trim();
+        final String destinoId = partes[1].trim();
+        final String horaSalidaRaw = partes[2].trim();
+        final Aeropuerto origen = aeropuertos.get(origenId);
+        final Aeropuerto destino = aeropuertos.get(destinoId);
+        if (origen == null || destino == null) {
+            return null;
+        }
+
+        final LocalTime horaSalida;
+        try {
+            horaSalida = LocalTime.parse(horaSalidaRaw);
+        } catch (final Exception ignored) {
+            return null;
+        }
+
+        final VueloProgramado referencia = vuelosProgramados.values().stream()
+                .filter(Objects::nonNull)
+                .filter(v -> v.getAeropuertoOrigen() != null
+                        && v.getAeropuertoDestino() != null
+                        && origenId.equals(v.getAeropuertoOrigen().getIdAeropuerto())
+                        && destinoId.equals(v.getAeropuertoDestino().getIdAeropuerto()))
+                .findFirst()
+                .orElse(null);
+
+        final LocalTime horaLlegada = referencia != null && referencia.getHoraLlegada() != null
+                ? ajustarHoraLlegadaReferencia(referencia, horaSalida)
+                : horaSalida.plusHours(2);
+        final int capacidadBase = referencia != null ? referencia.getCapacidadMaxima() : 0;
+
+        final VueloProgramado reconstruido = new VueloProgramado(
+                idVueloProgramado,
+                idVueloProgramado,
+                horaSalida,
+                horaLlegada,
+                capacidadBase,
+                origen,
+                destino
+        );
+        reconstruido.setActivo(true);
+        return reconstruido;
+    }
+
+    private LocalTime ajustarHoraLlegadaReferencia(final VueloProgramado referencia, final LocalTime horaSalida) {
+        if (referencia.getHoraSalida() == null || referencia.getHoraLlegada() == null) {
+            return horaSalida.plusHours(2);
+        }
+        final int salidaRefMin = referencia.getHoraSalida().toSecondOfDay() / 60;
+        int llegadaRefMin = referencia.getHoraLlegada().toSecondOfDay() / 60;
+        if (!referencia.getHoraLlegada().isAfter(referencia.getHoraSalida())) {
+            llegadaRefMin += 24 * 60;
+        }
+        int duracionMin = llegadaRefMin - salidaRefMin;
+        if (duracionMin <= 0) {
+            duracionMin = 120;
+        }
+        return horaSalida.plusMinutes(duracionMin);
     }
 
     public void touchSession() {

@@ -247,7 +247,7 @@ export default function AirportDetailPage() {
   const pct = Math.round((airport.used / capacity) * 100);
 
   return (
-    <div className="flex-1 bg-surface-0 flex flex-col min-h-0 overflow-y-auto w-full h-full p-4 sm:p-8 text-slate-200">
+    <div className="app-scrollbar flex-1 bg-surface-0 flex flex-col min-h-0 overflow-y-auto w-full min-h-full p-4 pb-8 sm:p-8 sm:pb-10 text-slate-200">
       <div className="mb-6 pl-12 sm:pl-14">
         <a href="/airports" className="inline-flex items-center gap-2 text-slate-400 hover:text-white text-sm transition-colors">
           <ArrowLeft className="w-4 h-4" /> Volver a Aeropuertos
@@ -380,7 +380,7 @@ export default function AirportDetailPage() {
               {filteredFlightPlans.length} plan{filteredFlightPlans.length !== 1 ? "es" : ""} encontrado{filteredFlightPlans.length !== 1 ? "s" : ""}
             </p>
           </div>
-          <div className="flex items-center gap-4">
+          <div className="flex flex-wrap items-center gap-4">
             <div className="flex bg-surface-2 rounded-lg p-0.5">
               <button
                 type="button"
@@ -421,7 +421,7 @@ export default function AirportDetailPage() {
           <EmptyState title="Sin planes de vuelo" message={`No hay planes de vuelo con ${viewMode === "origin" ? "origen" : "destino"} en ${iata}.`} />
         )}
         {!plansLoading && !plansError && filteredFlightPlans.length > 0 && (
-          <div className="overflow-auto max-h-96">
+          <div className="app-scrollbar overflow-x-auto overflow-y-auto max-h-[56vh] min-h-[320px]">
             <table className="w-full text-left border-collapse min-w-[720px]">
               <thead className="sticky top-0 bg-surface-1 z-10">
                 <tr className="border-b border-slate-800 text-slate-400 text-sm">

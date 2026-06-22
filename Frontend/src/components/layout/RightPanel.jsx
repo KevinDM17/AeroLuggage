@@ -9,7 +9,7 @@ import { listOrders } from "../../api/orders";
 import { listAirports } from "../../api/airports";
 import { listMaletas } from "../../api/maletas";
 import { listRutas } from "../../api/rutas";
-import { obtenerContenidoAlmacen, obtenerEnviosOperacionesDiaADia, obtenerEnviosPanel, obtenerManifiestoVuelo, obtenerManifiestoVueloOperacionesDiaADia, obtenerRutaMaleta, obtenerRutaMaletaOperacionesDiaADia, obtenerRutasEnvio, obtenerRutasEnvioOperacionesDiaADia } from "../../api/simulator";
+import { cancelarVueloProgramadoOperacionesDiaADia, obtenerContenidoAlmacen, obtenerEnviosOperacionesDiaADia, obtenerEnviosPanel, obtenerMaletasOperacionesDiaADia, obtenerManifiestoVuelo, obtenerManifiestoVueloOperacionesDiaADia, obtenerRutaMaleta, obtenerRutaMaletaOperacionesDiaADia, obtenerRutasEnvio, obtenerRutasEnvioOperacionesDiaADia, obtenerRutasOperacionesDiaADia } from "../../api/simulator";
 import { apiGet, USE_MOCK } from "../../api/client";
 import { useMapFocus } from "../../context/MapFocusContext";
 import Modal from "../ui/Modal";
@@ -1151,7 +1151,7 @@ export default function RightPanel({
   }, []);
 
   const loadFlightPlansForAirport = useCallback((airport) => {
-    if (!airport || !isPeriodo) return () => {};
+    if (!airport || (!isPeriodo && !isOperacionesDiaADia)) return () => {};
     let cancelled = false;
 
     setAirportFlightPlansStatus("loading");
@@ -1170,12 +1170,12 @@ export default function RightPanel({
     return () => {
       cancelled = true;
     };
-  }, [isPeriodo]);
+  }, [isOperacionesDiaADia, isPeriodo]);
 
   useEffect(() => {
-    if (!flightPlansModalAirport || !isPeriodo) return;
+    if (!flightPlansModalAirport || (!isPeriodo && !isOperacionesDiaADia)) return;
     return loadFlightPlansForAirport(flightPlansModalAirport);
-  }, [flightPlansModalAirport, isPeriodo, loadFlightPlansForAirport]);
+  }, [flightPlansModalAirport, isOperacionesDiaADia, isPeriodo, loadFlightPlansForAirport]);
 
   useEffect(() => {
     if (!pendingFlightPlanCancellation || !periodStatusMessage?.estado) return;
@@ -1396,6 +1396,46 @@ export default function RightPanel({
     setCancelingFlightPlanId(flightPlanId);
 
     try {
+      if (isOperacionesDiaADia) {
+        await cancelarVueloProgramadoOperacionesDiaADia(flightPlanId);
+        const [rutasData, maletasData] = await Promise.all([
+          obtenerRutasOperacionesDiaADia().catch(() => []),
+          obtenerMaletasOperacionesDiaADia().catch(() => []),
+        ]);
+        setSimulationPanelData?.((previous) => {
+          const bagOrigen = new Map();
+          const bagDestino = new Map();
+          for (const r of rutasData) {
+            const first = r?.vuelos?.[0];
+            const last = r?.vuelos?.[r.vuelos.length - 1];
+            if (r.idMaleta) {
+              if (first?.aeropuertoOrigen) bagOrigen.set(r.idMaleta, first.aeropuertoOrigen);
+              if (last?.aeropuertoDestino) bagDestino.set(r.idMaleta, last.aeropuertoDestino);
+            }
+          }
+          const routes = new Map();
+          for (const r of rutasData) routes.set(r.idRuta, { ...r, ticksAusente: 0 });
+          const bags = new Map(previous?.bags ?? new Map());
+          for (const m of maletasData) {
+            const existing = bags.get(m.idMaleta);
+            bags.set(m.idMaleta, {
+              ...m,
+              origen: bagOrigen.get(m.idMaleta) ?? existing?.origen ?? null,
+              destino: bagDestino.get(m.idMaleta) ?? existing?.destino ?? null,
+              ticksAusente: 0,
+            });
+          }
+          return { ...previous, routes, bags };
+        });
+        toast.push({
+          type: "warning",
+          title: "Vuelo cancelado",
+          message: `${flightPlan.origin} -> ${flightPlan.dest} · ${timing.effectiveDateLabel}`,
+        });
+        closeFlightPlansModal();
+        return;
+      }
+
       if (USE_MOCK || !sessionId) {
         toast.push({
           type: "warning",
@@ -1448,6 +1488,7 @@ export default function RightPanel({
   };
 
   const simTime = simulationPanelData?.simTime;
+  const flightPlanTimingRef = isOperacionesDiaADia ? new Date().toISOString() : simTime;
 
   const maletasVisibles = useMemo(() => {
     const source = maletas.data ?? [];
@@ -1888,7 +1929,7 @@ export default function RightPanel({
             onCollapse={handleItemCollapse}
             isSelected={selected?.kind === "airport" && selected.id === (a.iata ?? a.idAeropuerto)}
             onShowFlightPlans={openFlightPlansModal}
-            showFlightPlansAction={isPeriodo}
+            showFlightPlansAction={isPeriodo || isOperacionesDiaADia}
           />
         )}
       />
@@ -1930,7 +1971,7 @@ export default function RightPanel({
                   <ScheduledFlightPlanItem
                     key={key}
                     flightPlan={flightPlan}
-                    simTime={simTime}
+                    simTime={flightPlanTimingRef}
                     onCancel={handleCancelFlightPlan}
                     canceling={cancelingFlightPlanId === (flightPlan.idVueloProgramado ?? flightPlan.id)}
                   />

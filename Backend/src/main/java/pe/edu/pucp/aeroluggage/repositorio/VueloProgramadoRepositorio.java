@@ -67,7 +67,7 @@ public class VueloProgramadoRepositorio {
     }
 
     public Optional<VueloProgramado> obtenerPorIdSimple(final String id) {
-        final String sql = "SELECT id_vuelo_programado, codigo, hora_salida, horaLlegada, capacidad_maxima, "
+        final String sql = "SELECT id_vuelo_programado, codigo, hora_salida, hora_llegada, capacidad_maxima, "
                 + "id_aeropuerto_origen, id_aeropuerto_destino "
                 + "FROM vuelo_programado WHERE id_vuelo_programado = ? AND activo = 1";
         final List<VueloProgramado> resultado = jdbcTemplate.query(sql, (rs, rowNum) -> {
