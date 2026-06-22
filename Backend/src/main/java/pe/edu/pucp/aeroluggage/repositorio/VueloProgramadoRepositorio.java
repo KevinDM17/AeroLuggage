@@ -66,6 +66,36 @@ public class VueloProgramadoRepositorio {
         return resultado.isEmpty() ? Optional.empty() : Optional.of(resultado.get(0));
     }
 
+    public Optional<VueloProgramado> obtenerPorIdSimple(final String id) {
+        final String sql = "SELECT id_vuelo_programado, codigo, hora_salida, hora_llegada, capacidad_maxima, "
+                + "id_aeropuerto_origen, id_aeropuerto_destino "
+                + "FROM vuelo_programado WHERE id_vuelo_programado = ? AND activo = 1";
+        final List<VueloProgramado> resultado = jdbcTemplate.query(sql, (rs, rowNum) -> {
+            final VueloProgramado vp = new VueloProgramado();
+            vp.setIdVueloProgramado(rs.getString("id_vuelo_programado"));
+            vp.setCodigo(rs.getString("codigo"));
+            final String hs = rs.getString("hora_salida");
+            vp.setHoraSalida(hs != null ? LocalTime.parse(hs) : null);
+            final String hl = rs.getString("hora_llegada");
+            vp.setHoraLlegada(hl != null ? LocalTime.parse(hl) : null);
+            vp.setCapacidadBase(rs.getInt("capacidad_maxima"));
+            final String idOrig = rs.getString("id_aeropuerto_origen");
+            if (idOrig != null && !idOrig.isBlank()) {
+                final Aeropuerto orig = new Aeropuerto();
+                orig.setIdAeropuerto(idOrig);
+                vp.setAeropuertoOrigen(orig);
+            }
+            final String idDest = rs.getString("id_aeropuerto_destino");
+            if (idDest != null && !idDest.isBlank()) {
+                final Aeropuerto dest = new Aeropuerto();
+                dest.setIdAeropuerto(idDest);
+                vp.setAeropuertoDestino(dest);
+            }
+            return vp;
+        }, id);
+        return resultado.isEmpty() ? Optional.empty() : Optional.of(resultado.get(0));
+    }
+
     public List<VueloProgramado> obtenerTodos() {
         String sql = SELECT_CON_JOINS + " WHERE vp.activo = 1";
         return jdbcTemplate.query(sql, new VueloProgramadoRowMapper());

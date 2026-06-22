@@ -114,7 +114,7 @@ export default function SimulatorPage() {
   return (
     <>
       <MapDashboard
-        title="Operaciones dia a dia · Tiempo real"
+        title={null}
         header={null}
         mapOverlay={mapOverlay}
         showMapClock={false}

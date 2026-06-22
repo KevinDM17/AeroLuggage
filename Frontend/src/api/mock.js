@@ -253,6 +253,18 @@ export async function mockProcesarPedidosBulkOperacionesDiaADia(icaoOrigen, cont
   return { accepted: lines.length, total: lines.length };
 }
 
+export async function mockCancelarVueloProgramadoOperacionesDiaADia(idVueloProgramado) {
+  await delay(300);
+  const idx = _flights.findIndex(f => f.id === idVueloProgramado);
+  if (idx < 0) throw new Error(`Vuelo programado ${idVueloProgramado} no encontrado`);
+  _flights[idx] = { ..._flights[idx], status: "Cancelado", used: 0 };
+  return {
+    sessionId: _opsDiaADia.sessionId,
+    estado: "VUELO_PROGRAMADO_CANCELADO",
+    mensaje: `Se cancelo el vuelo programado ${idVueloProgramado}`,
+  };
+}
+
 export function getMockOperacionesDiaADiaState() {
   return { ..._opsDiaADia };
 }
