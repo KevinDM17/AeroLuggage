@@ -40,12 +40,12 @@ export default function MainLayout() {
   const toast = useToast();
 
   const isOperations =
-    location.pathname === "/" ||
+    location.pathname === "/operaciones" ||
     location.pathname === "/airports" ||
     location.pathname.startsWith("/flights") ||
     location.pathname === "/orders";
 
-  const showRightPanel = location.pathname === "/" || location.pathname.startsWith("/simulator");
+  const showRightPanel = location.pathname === "/operaciones" || location.pathname.startsWith("/simulator");
 
   const resetSimulationPanelData = useCallback(() => {
     setSimulationPanelData({ ...EMPTY_SIMULATION_PANEL_DATA });
@@ -56,6 +56,11 @@ export default function MainLayout() {
     setMapFocus(null);
     setPanelFocus(null);
     setMapDim({ airports: null, flights: null });
+  }, []);
+
+  const collapseSidebars = useCallback(() => {
+    setLeftOpen(false);
+    setRightOpen(false);
   }, []);
 
   const ops = useOperationsSession({
@@ -117,11 +122,12 @@ export default function MainLayout() {
       simulationPanelData,
       setSimulationPanelData,
       resetSimulationPanelData,
+      collapseSidebars,
       cancelledFlightIds,
       setCancelledFlightIds,
       ops,
     }),
-    [simulationPanelData, resetSimulationPanelData, cancelledFlightIds, ops],
+    [simulationPanelData, resetSimulationPanelData, collapseSidebars, cancelledFlightIds, ops],
   );
 
   return (

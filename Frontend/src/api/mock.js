@@ -163,16 +163,13 @@ export async function mockListRutas() { await delay(); return [..._rutas]; }
 // ---------- STATUS / KPIs en tiempo real ----------
 export async function mockGetStatus() {
   await delay(120);
-  // Pequenas fluctuaciones para que se note el polling en el demo
   const jitter = (n, range) => Math.max(0, Math.round(n + (Math.random() - 0.5) * range));
   return {
     date: "18-03-26",
     time: new Date().toUTCString().slice(17, 25) + " UTC",
     bagsInTransit:    jitter(825, 30),
     bagsDelivered:    jitter(1240, 45),
-    bagsUnassigned:   jitter(18, 8),
     activeFlights:    jitter(7, 2),
-    freeCapacityPct:  Math.min(100, Math.max(0, jitter(42, 4))),
   };
 }
 
@@ -222,40 +219,40 @@ export async function mockGetCollapseSimState() {
   return { ..._sim.collapse };
 }
 
-// ---------- DIA A DIA ----------
-const _simDiaADia = {
+// ---------- OPERACIONES DIA A DIA ----------
+const _opsDiaADia = {
   status: "idle",
   sessionId: null,
   startedAt: null,
 };
 
-export async function mockIniciarDiaADia() {
+export async function mockIniciarOperacionesDiaADia() {
   await delay();
-  _simDiaADia.status = "running";
-  _simDiaADia.sessionId = "mock-dia-a-dia-" + Date.now();
-  _simDiaADia.startedAt = Date.now();
-  return { sessionId: _simDiaADia.sessionId, estado: "INICIADA", mensaje: "Simulacion dia a dia iniciada" };
+  _opsDiaADia.status = "running";
+  _opsDiaADia.sessionId = "mock-operaciones-dia-a-dia-" + Date.now();
+  _opsDiaADia.startedAt = Date.now();
+  return { sessionId: _opsDiaADia.sessionId, estado: "INICIADA", mensaje: "Operaciones dia a dia iniciada" };
 }
 
-export async function mockDetenerDiaADia() {
+export async function mockDetenerOperacionesDiaADia() {
   await delay();
-  _simDiaADia.status = "idle";
-  _simDiaADia.sessionId = null;
-  _simDiaADia.startedAt = null;
-  return { estado: "DETENIDA", mensaje: "Simulacion dia a dia detenida" };
+  _opsDiaADia.status = "idle";
+  _opsDiaADia.sessionId = null;
+  _opsDiaADia.startedAt = null;
+  return { estado: "DETENIDA", mensaje: "Operaciones dia a dia detenida" };
 }
 
-export async function mockProcesarPedidoDiaADia(pedido) {
+export async function mockProcesarPedidoOperacionesDiaADia(pedido) {
   await delay();
   return { estado: "PEDIDO_PROCESADO", mensaje: "Pedido " + pedido.idPedido + " procesado" };
 }
 
-export async function mockProcesarPedidosBulkDiaADia(icaoOrigen, content) {
+export async function mockProcesarPedidosBulkOperacionesDiaADia(icaoOrigen, content) {
   await delay(600);
   const lines = String(content).split(/\r?\n/).map(l => l.trim()).filter(Boolean);
   return { accepted: lines.length, total: lines.length };
 }
 
-export function getMockDiaADiaState() {
-  return { ..._simDiaADia };
+export function getMockOperacionesDiaADiaState() {
+  return { ..._opsDiaADia };
 }

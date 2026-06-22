@@ -24,6 +24,30 @@
 }
 
 @layer utilities {
+  .app-scrollbar {
+    scrollbar-width: thin;
+    scrollbar-color: rgba(100, 116, 139, 0.9) rgba(15, 23, 42, 0.45);
+    scrollbar-gutter: stable;
+  }
+  .app-scrollbar::-webkit-scrollbar {
+    width: 10px;
+    height: 10px;
+  }
+  .app-scrollbar::-webkit-scrollbar-track {
+    background: rgba(15, 23, 42, 0.38);
+    border-radius: 9999px;
+  }
+  .app-scrollbar::-webkit-scrollbar-thumb {
+    background: linear-gradient(180deg, rgba(100, 116, 139, 0.92), rgba(71, 85, 105, 0.92));
+    border: 2px solid rgba(15, 23, 42, 0.24);
+    border-radius: 9999px;
+  }
+  .app-scrollbar::-webkit-scrollbar-thumb:hover {
+    background: linear-gradient(180deg, rgba(148, 163, 184, 0.96), rgba(100, 116, 139, 0.96));
+  }
+  .app-scrollbar::-webkit-scrollbar-corner {
+    background: transparent;
+  }
   .no-scrollbar::-webkit-scrollbar {
     display: none;
   }

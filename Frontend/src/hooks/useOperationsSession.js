@@ -5,20 +5,20 @@ import { useElapsedTimer } from "./useElapsedTimer";
 import { isStompConnected, subscribeToReconnects } from "../api/stomp";
 import { USE_MOCK } from "../api/client";
 import {
-  iniciarSimulacionDiaADia,
-  obtenerAeropuertosDiaADia,
-  obtenerVuelosDiaADia,
-  obtenerMaletasDiaADia,
-  obtenerRutasDiaADia,
-  obtenerEstadoDiaADia,
-  obtenerEstadoActualDiaADia,
+  iniciarOperacionesDiaADia,
+  obtenerAeropuertosOperacionesDiaADia,
+  obtenerVuelosOperacionesDiaADia,
+  obtenerMaletasOperacionesDiaADia,
+  obtenerRutasOperacionesDiaADia,
+  obtenerEstadoOperacionesDiaADia,
+  obtenerEstadoActualOperacionesDiaADia,
   onSessionChange,
-  confirmarConexionDiaADia,
-  obtenerVuelosNuevosDiaADia,
+  confirmarConexionOperacionesDiaADia,
+  obtenerVuelosNuevosOperacionesDiaADia,
 } from "../api/simulator";
 import { adaptAirport } from "../api/airports";
 import { adaptFlightInstance } from "../api/flightInstances";
-import { getMockDiaADiaState } from "../api/mock";
+import { getMockOperacionesDiaADiaState } from "../api/mock";
 
 const ENUM_RUTA = ["PLANIFICADA", "ACTIVA", "COMPLETADA", "REPLANIFICADA"];
 
@@ -33,9 +33,9 @@ const ESTADO_BACK_A_LOCAL = {
 const emptyMetrics = {
   bagsInTransit: 0,
   bagsDelivered: 0,
-  bagsUnassigned: 0,
   activeFlights: 0,
-  freeCapacityPct: 0,
+  airportCapacityPct: 0,
+  flightCapacityPct: 0,
 };
 
 function updateEstadosOnly(oldMap, stateMap, enumArr, statusField, extraFields) {
@@ -74,6 +74,8 @@ export function useOperationsSession({ enabled, setSimulationPanelData, resetSim
   const tickCountRef = useRef(0);
   const reiniciarTokenRef = useRef(0);
   const startSimMsRef = useRef(null);
+  const flightAggRef = useRef({ totalCap: 0, totalUsed: 0 });
+  const [flightAggVersion, setFlightAggVersion] = useState(0);
 
   const tickTopic = !USE_MOCK && sessionId ? `/topic/operations/${sessionId}` : null;
   const statusTopic = !USE_MOCK && sessionId ? `/topic/operations/${sessionId}/estado` : null;
@@ -81,7 +83,7 @@ export function useOperationsSession({ enabled, setSimulationPanelData, resetSim
   const { data: tick } = useStompSubscribe(tickTopic);
   const { data: estadoMessage } = useStompSubscribe(statusTopic);
 
-  const { data: mockState } = usePolling(getMockDiaADiaState, {
+  const { data: mockState } = usePolling(getMockOperacionesDiaADiaState, {
     enabled: USE_MOCK && simStatus === "running",
     intervalMs: REFRESH_MS,
   });
@@ -113,14 +115,14 @@ export function useOperationsSession({ enabled, setSimulationPanelData, resetSim
   const inicializarSesion = useCallback(
     async (esInicial) => {
       try {
-        const result = await iniciarSimulacionDiaADia();
+        const result = await iniciarOperacionesDiaADia();
         const newSessionId = result.sessionId;
         setSessionId(newSessionId);
         setRunId((c) => c + 1);
 
         let aeropuertosData, vuelosData;
         try {
-          const snapshot = await obtenerEstadoActualDiaADia();
+          const snapshot = await obtenerEstadoActualOperacionesDiaADia();
           if (snapshot && snapshot.activa) {
             aeropuertosData = snapshot.aeropuertos;
             vuelosData = snapshot.vuelos;
@@ -130,8 +132,8 @@ export function useOperationsSession({ enabled, setSimulationPanelData, resetSim
         }
         if (!aeropuertosData || !vuelosData) {
           [aeropuertosData, vuelosData] = await Promise.all([
-            obtenerAeropuertosDiaADia(),
-            obtenerVuelosDiaADia(),
+            obtenerAeropuertosOperacionesDiaADia(),
+            obtenerVuelosOperacionesDiaADia(),
           ]);
         }
         const adaptedAirports = Array.isArray(aeropuertosData)
@@ -145,14 +147,30 @@ export function useOperationsSession({ enabled, setSimulationPanelData, resetSim
           flights.set(f.idVueloInstancia ?? f.id, { ...f, ticksAusente: 0 });
 
         const [rutasData, maletasData] = await Promise.all([
-          obtenerRutasDiaADia().catch(() => []),
-          obtenerMaletasDiaADia().catch(() => []),
+          obtenerRutasOperacionesDiaADia().catch(() => []),
+          obtenerMaletasOperacionesDiaADia().catch(() => []),
         ]);
+
+        const bagOrigen = new Map();
+        const bagDestino = new Map();
+        for (const r of rutasData) {
+          const first = r?.vuelos?.[0];
+          const last = r?.vuelos?.[r.vuelos.length - 1];
+          if (r.idMaleta) {
+            if (first?.aeropuertoOrigen) bagOrigen.set(r.idMaleta, first.aeropuertoOrigen);
+            if (last?.aeropuertoDestino) bagDestino.set(r.idMaleta, last.aeropuertoDestino);
+          }
+        }
 
         const routes = new Map();
         for (const r of rutasData) routes.set(r.idRuta, { ...r, ticksAusente: 0 });
         const bags = new Map();
-        for (const m of maletasData) bags.set(m.idMaleta, { ...m, ticksAusente: 0 });
+        for (const m of maletasData) bags.set(m.idMaleta, {
+          ...m,
+          origen: bagOrigen.get(m.idMaleta) ?? null,
+          destino: bagDestino.get(m.idMaleta) ?? null,
+          ticksAusente: 0,
+        });
 
         if (!esInicial) {
           setSimulationPanelData((prev) => ({
@@ -179,7 +197,7 @@ export function useOperationsSession({ enabled, setSimulationPanelData, resetSim
         datosBaseCargadosRef.current = true;
         ultimoTickRef.current = Date.now();
         if (!USE_MOCK) {
-          await confirmarConexionDiaADia();
+          await confirmarConexionOperacionesDiaADia();
         }
         if (esInicial && toast) {
           toast.push({
@@ -210,7 +228,7 @@ export function useOperationsSession({ enabled, setSimulationPanelData, resetSim
       if (Date.now() - ultimoTickRef.current < 5000) return;
       if (!isStompConnected()) return;
       try {
-        await obtenerEstadoDiaADia();
+        await obtenerEstadoOperacionesDiaADia();
       } catch {
         // withReconnect handles session renewal
       }
@@ -295,9 +313,33 @@ export function useOperationsSession({ enabled, setSimulationPanelData, resetSim
         maletaStateMap,
         ENUM_MALETA,
         "estado",
-        (st, bag) => (st.e === 2 ? { fechaLlegada: bag.fechaLlegada ?? tick.simTime } : {}),
+        (st, bag) => ({
+          ...(st.e === 2 ? { fechaLlegada: bag.fechaLlegada ?? tick.simTime } : {}),
+          ubicacionActual: st.u ?? bag.ubicacionActual ?? null,
+        }),
       );
       const updatedRoutes = updateEstadosOnly(prev.routes, rutaStateMap, ENUM_RUTA, "estado");
+      for (const [id, bag] of updatedBags) {
+        if (bag.estado === "ENTREGADA") updatedBags.delete(id);
+      }
+      for (const [id, route] of updatedRoutes) {
+        if (route.estado === "COMPLETADA") updatedRoutes.delete(id);
+      }
+      for (const [id, order] of prev.orders) {
+        const s = String(order.status ?? "").toUpperCase();
+        if (s === "ENTREGADO" || s === "FINALIZADO" || s === "ENVIADO") {
+          prev.orders.delete(id);
+        }
+      }
+      let flightTotalCap = 0;
+      let flightTotalUsed = 0;
+      for (const f of updatedFlights.values()) {
+        if (f.status === "EN_PROGRESO") {
+          flightTotalCap += f.capacity ?? 0;
+          flightTotalUsed += f.used ?? 0;
+        }
+      }
+      flightAggRef.current = { totalCap: flightTotalCap, totalUsed: flightTotalUsed };
       return {
         ...prev,
         simTime: tick.simTime,
@@ -307,19 +349,25 @@ export function useOperationsSession({ enabled, setSimulationPanelData, resetSim
         routes: updatedRoutes,
       };
     });
+    setFlightAggVersion((v) => v + 1);
   }, [enabled, tick]);
 
   useEffect(() => {
     if (!enabled || USE_MOCK || !hasActiveRun) return;
     if (tickCountRef.current % 60 !== 0) return;
-    obtenerVuelosNuevosDiaADia()
+    obtenerVuelosNuevosOperacionesDiaADia()
       .then((nuevos) => {
         if (!nuevos?.length) return;
         const adapted = nuevos.map(adaptFlightInstance);
         setSimulationPanelData((prev) => {
           const flights = new Map(prev.flights);
           for (const f of adapted) {
-            flights.set(f.idVueloInstancia ?? f.id, { ...f, ticksAusente: 0 });
+            const existing = flights.get(f.idVueloInstancia ?? f.id);
+            flights.set(f.idVueloInstancia ?? f.id, {
+              ...f,
+              used: existing?.used ?? f.used ?? 0,
+              ticksAusente: 0,
+            });
           }
           return { ...prev, flights };
         });
@@ -334,21 +382,26 @@ export function useOperationsSession({ enabled, setSimulationPanelData, resetSim
         ? {
             bagsInTransit: mockState.bagsInTransit ?? 0,
             bagsDelivered: mockState.bagsDelivered ?? 0,
-            bagsUnassigned: mockState.bagsUnassigned ?? 0,
             activeFlights: mockState.activeFlights ?? 0,
-            freeCapacityPct: mockState.freeCapacityPct ?? 0,
+            airportCapacityPct: mockState.airportCapacityPct ?? 0,
+            flightCapacityPct: mockState.flightCapacityPct ?? 0,
           }
         : emptyMetrics;
     }
     if (!tick || tick.type !== "TICK_DIAADIA") return emptyMetrics;
+    const apTotalCap = mapAirports.reduce((s, a) => s + (a.capacity ?? 0), 0);
+    const apTotalUsed = mapAirports.reduce((s, a) => s + (a.used ?? 0), 0);
+    const airportCapacityPct = apTotalCap > 0 ? Math.round((apTotalUsed / apTotalCap) * 100) : 0;
+    const agg = flightAggRef.current;
+    const flightCapacityPct = agg.totalCap > 0 ? Math.round((agg.totalUsed / agg.totalCap) * 100) : 0;
     return {
       bagsInTransit: tick.maletasEnTransito ?? 0,
       bagsDelivered: tick.maletasEntregadas ?? 0,
-      bagsUnassigned: tick.maletasNoAsignadas ?? tick.maletasSinRuta ?? 0,
       activeFlights: tick.vuelosActivos ?? 0,
-      freeCapacityPct: tick.capacidadLibrePct ?? 0,
+      airportCapacityPct,
+      flightCapacityPct,
     };
-  }, [tick, mockState, hasActiveRun]);
+  }, [tick, mockState, hasActiveRun, mapAirports, flightAggVersion]);
 
   return {
     simStatus,

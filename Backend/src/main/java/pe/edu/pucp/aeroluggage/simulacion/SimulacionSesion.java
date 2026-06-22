@@ -953,6 +953,10 @@ public class SimulacionSesion {
         return todos;
     }
 
+    public List<VueloProgramado> getVuelosProgramados() {
+        return vuelosProgramados;
+    }
+
     public List<VueloInstancia> getVuelosCalientes() {
         return vuelosCalientes;
     }
@@ -1415,11 +1419,38 @@ public class SimulacionSesion {
             List<OcupacionAeropuertoDTO> aeropuertos
     ) {}
 
+    private String obtenerUbicacionMaleta(final Maleta m, final EstadoMaleta estado,
+                                          final Map<String, VueloInstancia> vueloIndex) {
+        if (estado == EstadoMaleta.EN_ALMACEN || estado == EstadoMaleta.ENTREGADA) {
+            return m.getAeropuertoActual();
+        }
+        if (estado == EstadoMaleta.EN_TRANSITO) {
+            final Ruta r = rutasPorMaleta.get(m.getIdMaleta());
+            if (r != null && r.getSubrutaIds() != null) {
+                VueloInstancia candidata = null;
+                for (final String subId : r.getSubrutaIds()) {
+                    final VueloInstancia v = vueloIndex.get(subId);
+                    if (v == null) continue;
+                    if (v.getEstado() == EstadoVuelo.EN_PROGRESO) return v.getCodigo();
+                    if (candidata == null) candidata = v;
+                }
+                if (candidata != null) return candidata.getCodigo();
+            }
+        }
+        return m.getAeropuertoActual();
+    }
+
     public TickSnapshot consolidar(final LocalDateTime simTimeUtc) {
         int almacen = 0;
         int enTransito = 0;
         int sinRuta = 0;
         final List<EstadoMaletaDTO> estadosMaletas = new ArrayList<>();
+        final Map<String, VueloInstancia> vueloIndex = new HashMap<>();
+        for (final VueloInstancia v : getVuelosInstancia()) {
+            if (v != null && v.getIdVueloInstancia() != null) {
+                vueloIndex.put(v.getIdVueloInstancia(), v);
+            }
+        }
 
         for (final Maleta m : maletasPorId.values()) {
             if (m == null || m.getFechaRegistro() == null
@@ -1430,6 +1461,7 @@ public class SimulacionSesion {
             estadosMaletas.add(EstadoMaletaDTO.builder()
                     .withId(m.getIdMaleta())
                     .withE(estado != null ? estado.ordinal() : 0)
+                    .withU(obtenerUbicacionMaleta(m, estado, vueloIndex))
                     .build());
             if (estado == EstadoMaleta.EN_ALMACEN || estado == EstadoMaleta.EN_TRANSITO) {
                 final Ruta r = rutasPorMaleta.get(m.getIdMaleta());
@@ -1449,6 +1481,15 @@ public class SimulacionSesion {
                     .build());
         }
 
+        final Map<String, Integer> ocupacionPorVuelo = new HashMap<>();
+        for (final Ruta r : rutasPorMaleta.values()) {
+            if (r == null || r.getSubrutaIds() == null) continue;
+            for (final String idVuelo : r.getSubrutaIds()) {
+                if (idVuelo == null) continue;
+                ocupacionPorVuelo.merge(idVuelo, 1, Integer::sum);
+            }
+        }
+
         int vuelosActivos = 0;
         int capacidadTotal = 0;
         int capacidadDisponible = 0;
@@ -1458,12 +1499,15 @@ public class SimulacionSesion {
             final EstadoVuelo estado = v.getEstado();
             if (estado == EstadoVuelo.PROGRAMADO) continue;
             if (estado == EstadoVuelo.EN_PROGRESO) vuelosActivos++;
-            capacidadTotal += Math.max(0, v.getCapacidadMaxima());
-            capacidadDisponible += Math.max(0, v.getCapacidadDisponible());
+            final int maxCap = Math.max(0, v.getCapacidadMaxima());
+            capacidadTotal += maxCap;
+            final int usado = ocupacionPorVuelo.getOrDefault(v.getIdVueloInstancia(), 0);
+            final int capDisp = Math.max(0, maxCap - usado);
+            capacidadDisponible += capDisp;
             estadosVuelos.add(EstadoVueloDTO.builder()
                     .withId(v.getIdVueloInstancia())
                     .withE(estado != null ? estado.ordinal() : 0)
-                    .withCap(v.getCapacidadDisponible())
+                    .withCap(capDisp)
                     .build());
         }
         final int capacidadLibrePct = capacidadTotal > 0
@@ -1529,9 +1573,13 @@ public class SimulacionSesion {
                     final String id = String.format("VI%08d", secuenciaBase + 1L);
 
                     final VueloInstancia vi = new VueloInstancia(
-                            id, vp.getCodigo(), salidaUtc, llegadaUtc,
-                            vp.getCapacidadMaxima(), vp.getCapacidadMaxima(),
-                            vp.getAeropuertoOrigen(), vp.getAeropuertoDestino(),
+                            id,
+                            vp,
+                            opDate,
+                            salidaUtc,
+                            llegadaUtc,
+                            vp.getCapacidadMaxima(),
+                            vp.getCapacidadMaxima(),
                             EstadoVuelo.PROGRAMADO
                     );
 

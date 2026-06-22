@@ -33,7 +33,7 @@ import pe.edu.pucp.aeroluggage.dto.simulacion.rest.RutaVueloResponse;
 import pe.edu.pucp.aeroluggage.dto.simulacion.rest.VueloManifiestoResponse;
 import pe.edu.pucp.aeroluggage.dto.simulacion.rest.VueloInstanciaResponse;
 import pe.edu.pucp.aeroluggage.dto.simulacion.ws.SimulacionEstadoDTO;
-import pe.edu.pucp.aeroluggage.simulacion.SimulacionDiaADiaService;
+import pe.edu.pucp.aeroluggage.simulacion.OperacionesDiaADiaService;
 
 import java.time.LocalDateTime;
 import java.time.ZoneOffset;
@@ -50,21 +50,21 @@ import java.util.Objects;
 @RestController
 @RequestMapping("/api/operations")
 @RequiredArgsConstructor
-public class SimulacionDiaADiaRestController {
+public class OperacionesDiaADiaRestController {
 
     private static final DateTimeFormatter FORMATO_FECHA_HORA = DateTimeFormatter.ISO_LOCAL_DATE_TIME;
 
-    private final SimulacionDiaADiaService service;
+    private final OperacionesDiaADiaService service;
 
     @PostMapping("/iniciar")
     public SimulacionEstadoDTO iniciar() {
-        log.info("[AeroLuggage/DiaADiaRest] - API-CALL/iniciar");
+        log.info("[AeroLuggage/OperacionesDiaADiaRest] - API-CALL/iniciar");
         try {
             final String sessionId = service.iniciar();
             return SimulacionEstadoDTO.builder()
                     .withSessionId(sessionId)
                     .withEstado("INICIADA")
-                    .withMensaje("Simulacion dia a dia iniciada correctamente")
+                    .withMensaje("Operaciones dia a dia iniciada correctamente")
                     .build();
         } catch (final IllegalStateException exception) {
             throw new ResponseStatusException(HttpStatus.CONFLICT, exception.getMessage());
@@ -73,7 +73,7 @@ public class SimulacionDiaADiaRestController {
 
     @PostMapping("/{sessionId}/detener")
     public SimulacionEstadoDTO detener(@PathVariable final String sessionId) {
-        log.info("[AeroLuggage/DiaADiaRest] - API-CALL/detener: sessionId={}", sessionId);
+        log.info("[AeroLuggage/OperacionesDiaADiaRest] - API-CALL/detener: sessionId={}", sessionId);
         if (!sessionId.equals(service.getSessionId())) {
             throw new ResponseStatusException(HttpStatus.NOT_FOUND,
                     "Sesion expirada o no encontrada: " + sessionId);
@@ -82,7 +82,7 @@ public class SimulacionDiaADiaRestController {
         return SimulacionEstadoDTO.builder()
                 .withSessionId(sessionId)
                 .withEstado("DETENIDA")
-                .withMensaje("Simulacion dia a dia detenida")
+                .withMensaje("Operaciones dia a dia detenida")
                 .build();
     }
 
@@ -90,7 +90,7 @@ public class SimulacionDiaADiaRestController {
     public SimulacionEstadoDTO procesarPedido(
             @PathVariable final String sessionId,
             @RequestBody final PedidoRequest request) {
-        log.info("[AeroLuggage/DiaADiaRest] - API-CALL/pedido: sessionId={}, origen={}, destino={}",
+        log.info("[AeroLuggage/OperacionesDiaADiaRest] - API-CALL/pedido: sessionId={}, origen={}, destino={}",
                 sessionId, request.getIdAeropuertoOrigen(), request.getIdAeropuertoDestino());
         if (!sessionId.equals(service.getSessionId())) {
             throw new ResponseStatusException(HttpStatus.NOT_FOUND,
@@ -122,7 +122,7 @@ public class SimulacionDiaADiaRestController {
         if (content == null || content.isBlank()) {
             throw new ResponseStatusException(HttpStatus.BAD_REQUEST, "content es requerido");
         }
-        log.info("[AeroLuggage/DiaADiaRest] - API-CALL/pedidos-bulk: sessionId={}, origen={}",
+        log.info("[AeroLuggage/OperacionesDiaADiaRest] - API-CALL/pedidos-bulk: sessionId={}, origen={}",
                 sessionId, icaoOrigen);
         if (!sessionId.equals(service.getSessionId())) {
             throw new ResponseStatusException(HttpStatus.NOT_FOUND,
@@ -163,7 +163,7 @@ public class SimulacionDiaADiaRestController {
 
     @GetMapping("/estado-actual")
     public ResponseEntity<Map<String, Object>> estadoActual() {
-        log.info("[AeroLuggage/DiaADiaRest] - API-CALL/estado-actual");
+        log.info("[AeroLuggage/OperacionesDiaADiaRest] - API-CALL/estado-actual");
         final Map<String, Object> estado = service.obtenerEstadoActual();
         if (estado.isEmpty()) {
             return ResponseEntity.notFound().build();
@@ -181,7 +181,7 @@ public class SimulacionDiaADiaRestController {
         final List<VueloInstanciaResponse> vuelos = new ArrayList<>();
         for (final VueloInstancia v : service.getVuelosFrontend()) {
             if (v == null) continue;
-            vuelos.add(toVueloResponse(v));
+            vuelos.add(toVueloResponse(v, service.getOcupacionVuelo(v.getIdVueloInstancia())));
         }
         estado.put("aeropuertos", aeropuertos);
         estado.put("vuelos", vuelos);
@@ -190,7 +190,7 @@ public class SimulacionDiaADiaRestController {
 
     @PostMapping("/{sessionId}/confirmar-conexion")
     public SimulacionEstadoDTO confirmarConexion(@PathVariable final String sessionId) {
-        log.info("[AeroLuggage/DiaADiaRest] - API-CALL/confirmar-conexion: sessionId={}", sessionId);
+        log.info("[AeroLuggage/OperacionesDiaADiaRest] - API-CALL/confirmar-conexion: sessionId={}", sessionId);
         if (!sessionId.equals(service.getSessionId())) {
             throw new ResponseStatusException(HttpStatus.NOT_FOUND,
                     "Sesion expirada o no encontrada: " + sessionId);
@@ -216,9 +216,9 @@ public class SimulacionDiaADiaRestController {
         final List<VueloInstanciaResponse> result = new ArrayList<>();
         for (final VueloInstancia v : service.getVuelosFrontend()) {
             if (v == null) continue;
-            result.add(toVueloResponse(v));
+            result.add(toVueloResponse(v, service.getOcupacionVuelo(v.getIdVueloInstancia())));
         }
-        log.info("[AeroLuggage/DiaADiaRest] - RESPUESTA/vuelos: {} vuelos (CONFIRMADO+EN_PROGRESO)", result.size());
+        log.info("[AeroLuggage/OperacionesDiaADiaRest] - RESPUESTA/vuelos: {} vuelos (CONFIRMADO+EN_PROGRESO)", result.size());
         return result;
     }
 
@@ -231,9 +231,9 @@ public class SimulacionDiaADiaRestController {
         final List<VueloInstanciaResponse> result = new ArrayList<>();
         for (final VueloInstancia v : service.getVuelosNuevos()) {
             if (v == null) continue;
-            result.add(toVueloResponse(v));
+            result.add(toVueloResponse(v, service.getOcupacionVuelo(v.getIdVueloInstancia())));
         }
-        log.info("[AeroLuggage/DiaADiaRest] - RESPUESTA/vuelos-nuevos: {} vuelos", result.size());
+        log.info("[AeroLuggage/OperacionesDiaADiaRest] - RESPUESTA/vuelos-nuevos: {} vuelos", result.size());
         return result;
     }
 
@@ -579,6 +579,7 @@ public class SimulacionDiaADiaRestController {
                     "Sesion expirada o no encontrada: " + sessionId);
         }
         final List<MaletaSimulacionResponse> result = new ArrayList<>();
+        final Map<String, VueloInstancia> vueloIndex = service.getVueloIndex();
         for (final Maleta m : service.getMaletas()) {
             if (m == null) continue;
             result.add(MaletaSimulacionResponse.builder()
@@ -590,9 +591,21 @@ public class SimulacionDiaADiaRestController {
                             ? m.getFechaLlegada().format(FORMATO_FECHA_HORA) : null)
                     .withEstado(m.getEstado() != null ? m.getEstado().name() : null)
                     .withUbicacionActual(m.getAeropuertoActual())
+                    .withHoraLlegadaEstimada(obtenerHoraLlegadaEstimada(m.getIdMaleta(), vueloIndex))
                     .build());
         }
         return result;
+    }
+
+    private String obtenerHoraLlegadaEstimada(final String idMaleta,
+                                              final Map<String, VueloInstancia> vueloIndex) {
+        final Ruta r = service.getRutaPorMaleta(idMaleta);
+        if (r == null) return null;
+        final List<String> ids = r.getSubrutas();
+        if (ids == null || ids.isEmpty()) return null;
+        final VueloInstancia ultimo = vueloIndex.get(ids.get(ids.size() - 1));
+        if (ultimo == null || ultimo.getFechaLlegada() == null) return null;
+        return ultimo.getFechaLlegada().format(FORMATO_FECHA_HORA);
     }
 
     private RutaSimulacionResponse mapearRutaPorIds(
@@ -692,7 +705,8 @@ public class SimulacionDiaADiaRestController {
         return vuelo.getCodigo() != null && vuelo.getCodigo().equals(objetivo.getCodigo());
     }
 
-    private static VueloInstanciaResponse toVueloResponse(final VueloInstancia v) {
+    private static VueloInstanciaResponse toVueloResponse(final VueloInstancia v, final int usado) {
+        final int capDisp = Math.max(0, v.getCapacidadMaxima() - usado);
         return VueloInstanciaResponse.builder()
                 .withIdVueloInstancia(v.getIdVueloInstancia())
                 .withCodigo(v.getCodigo())
@@ -705,8 +719,8 @@ public class SimulacionDiaADiaRestController {
                 .withFechaLlegada(v.getFechaLlegada() != null
                         ? v.getFechaLlegada().format(FORMATO_FECHA_HORA) : null)
                 .withCapacidadMaxima(v.getCapacidadMaxima())
-                .withCapacidadDisponible(v.getCapacidadDisponible())
-                .withCapacidadUsada(Math.max(0, v.getCapacidadMaxima() - v.getCapacidadDisponible()))
+                .withCapacidadDisponible(capDisp)
+                .withCapacidadUsada(Math.max(0, v.getCapacidadMaxima() - capDisp))
                 .withEstado(v.getEstado() != null ? v.getEstado().name() : null)
                 .build();
     }

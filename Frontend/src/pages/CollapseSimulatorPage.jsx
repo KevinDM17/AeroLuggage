@@ -26,9 +26,9 @@ const ESTADO_BACK_A_LOCAL = {
 const emptyMetrics = {
   bagsInTransit: 0,
   bagsDelivered: 0,
-  bagsUnassigned: 0,
   activeFlights: 0,
-  freeCapacityPct: 0,
+  airportCapacityPct: 0,
+  flightCapacityPct: 0,
 };
 
 export default function CollapseSimulatorPage() {
@@ -116,9 +116,9 @@ export default function CollapseSimulatorPage() {
     return {
       bagsInTransit:   tick.maletasEnTransito ?? 0,
       bagsDelivered:   tick.maletasEntregadas ?? 0,
-      bagsUnassigned:  tick.maletasRetrasadas ?? tick.maletasNoAsignadas ?? 0,
       activeFlights:   tick.vuelosActivos ?? 0,
-      freeCapacityPct: Math.max(0, Math.min(100, 100 - (tick.porcentajeSaturacion ?? 0) * 100)),
+      airportCapacityPct: 0,
+      flightCapacityPct: 0,
     };
   }, [tick, hasActiveRun]);
 

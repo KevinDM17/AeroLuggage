@@ -1,6 +1,6 @@
 import { useEffect, useMemo, useRef, useState } from "react";
 import { useOutletContext } from "react-router-dom";
-import { Play, Square, RotateCw } from "lucide-react";
+import { Play, Square, RotateCw, AlertTriangle, X, CheckCircle2 } from "lucide-react";
 import MapDashboard from "../components/simulator/MapDashboard";
 import { usePolling } from "../hooks/usePolling";
 import { useElapsedTimer } from "../hooks/useElapsedTimer";
@@ -35,12 +35,28 @@ const PERIOD_DAYS = 5;
 const CLOCK_REFRESH_MS = 500;
 const MAP_REFRESH_MS = 500;
 
+const METRICAS_COLAPSO = [
+  { key: "aeropuertosColapsados", label: "Aeropuertos colapsados" },
+  { key: "vuelosColapsados", label: "Vuelos colapsados" },
+  { key: "maletasEvaluadasSinRuta", label: "Maletas sin ruta" },
+];
+
+const RESUMEN_METRICAS_COLAPSO = [
+  { key: "aeropuertosColapsados", label: "Aeropuertos colapsados" },
+  { key: "vuelosColapsados", label: "Vuelos afectados" },
+  { key: "maletasEvaluadasSinRuta", label: "Maletas sin ruta" },
+  { key: "bagsInTransit", label: "Maletas en transito" },
+  { key: "bagsDelivered", label: "Maletas entregadas" },
+  { key: "activeFlights", label: "Vuelos activos" },
+];
+
 const ESTADO_BACK_A_LOCAL = {
   INICIADA: "running",
   REANUDADA: "running",
   PAUSADA: "paused",
   DETENIDA: "idle",
   FINALIZADA: "done",
+  COLAPSO: "collapsed",
 };
 
 const clamp = (value, min, max) => Math.min(max, Math.max(min, value));
@@ -66,10 +82,100 @@ const getDisplayedDay = (progress, hasActiveRun) => {
 const emptyMetrics = {
   bagsInTransit: 0,
   bagsDelivered: 0,
-  bagsUnassigned: 0,
   activeFlights: 0,
-  freeCapacityPct: 0,
+  airportCapacityPct: 0,
+  flightCapacityPct: 0,
 };
+
+const formatSummaryValue = (value, suffix = "") => {
+  if (value == null || Number.isNaN(Number(value))) return null;
+  return `${Number(value).toLocaleString("es-PE")}${suffix}`;
+};
+
+const getCollapseSummary = (info) => {
+  const rawMessage = String(info?.mensaje ?? "").trim();
+  const compactMessage = rawMessage
+    .replace(/\s*\|\s*/g, " | ")
+    .replace(/\s+/g, " ")
+    .trim();
+
+  if (/sin ruta asignada/i.test(compactMessage)) {
+    return {
+      title: "Saturacion por falta de rutas disponibles",
+      description:
+        "La simulacion llego al colapso porque se acumularon maletas evaluadas dentro de la ventana actual sin una ruta valida para continuar su traslado.",
+    };
+  }
+
+  if (/aeropuerto/i.test(compactMessage) && /colaps/i.test(compactMessage)) {
+    return {
+      title: "Capacidad aeroportuaria superada",
+      description:
+        "La red dejo de absorber la demanda operativa y uno o mas aeropuertos superaron su capacidad de manejo durante la simulacion.",
+    };
+  }
+
+  if (/vuelo/i.test(compactMessage) && /colaps|satur/i.test(compactMessage)) {
+    return {
+      title: "Red de vuelos saturada",
+      description:
+        "La operacion llego a un punto de saturacion en el que los vuelos disponibles ya no pudieron sostener el flujo de maletas planificado.",
+    };
+  }
+
+  return {
+    title: "Operacion colapsada",
+    description:
+      "La simulacion detecto una condicion critica y detuvo la ejecucion para evitar seguir acumulando operaciones inconsistentes.",
+  };
+};
+
+const buildStablePlanningSnapshot = ({
+  windowId,
+  simTime,
+  flights,
+  orders,
+  routes,
+}) => {
+  const clock = formatUtcDateTimeDisplay(simTime ? new Date(`${simTime}Z`) : null);
+
+  return {
+    windowId,
+    dateLabel: clock.date,
+    timeLabel: clock.time,
+    flightsCount: Array.isArray(flights) ? flights.length : 0,
+    ordersCount: Array.isArray(orders) ? orders.length : 0,
+    routesCount: Array.isArray(routes) ? routes.length : 0,
+  };
+};
+
+const buildFinalSummaryMetrics = ({ liveMetrics, progress, periodDays }) => [
+  {
+    key: "periodoProcesado",
+    label: "Periodo procesado",
+    value: `${Math.round(progress ?? 100)}%`,
+  },
+  {
+    key: "diasSimulados",
+    label: "Dias simulados",
+    value: `${periodDays}`,
+  },
+  {
+    key: "bagsDelivered",
+    label: "Maletas entregadas",
+    value: formatSummaryValue(liveMetrics?.bagsDelivered ?? 0),
+  },
+  {
+    key: "bagsInTransit",
+    label: "Maletas en transito",
+    value: formatSummaryValue(liveMetrics?.bagsInTransit ?? 0),
+  },
+  {
+    key: "activeFlights",
+    label: "Vuelos activos al cierre",
+    value: formatSummaryValue(liveMetrics?.activeFlights ?? 0),
+  },
+];
 
 export default function PeriodSimulatorPage() {
   const toast = useToast();
@@ -78,6 +184,7 @@ export default function PeriodSimulatorPage() {
     simulationPanelData,
     setSimulationPanelData,
     resetSimulationPanelData,
+    collapseSidebars,
     cancelledFlightIds,
     setCancelledFlightIds,
   } = useOutletContext();
@@ -97,6 +204,11 @@ export default function PeriodSimulatorPage() {
   const [simulatedDayDurationMs, setSimulatedDayDurationMs] = useState(null);
   const [windowSizeMinutes, setWindowSizeMinutes] = useState(120);
   const [windowSpacingMinutes, setWindowSpacingMinutes] = useState(120);
+  const [showColapsoModal, setShowColapsoModal] = useState(false);
+  const [showFinalSummaryModal, setShowFinalSummaryModal] = useState(false);
+  const [colapsoInfo, setColapsoInfo] = useState(null);
+  const [finalSummaryInfo, setFinalSummaryInfo] = useState(null);
+  const [lastStablePlanning, setLastStablePlanning] = useState(null);
   const startSimMsRef = useRef(null);
   const ventanasCargadasRef = useRef(new Set());
   const lastMapFlightsRef = useRef([]);
@@ -111,6 +223,11 @@ export default function PeriodSimulatorPage() {
     ventanasCargadasRef.current.clear();
     flightMetadataRef.current.clear();
     setMapAirports([]);
+    setShowColapsoModal(false);
+    setShowFinalSummaryModal(false);
+    setColapsoInfo(null);
+    setFinalSummaryInfo(null);
+    setLastStablePlanning(null);
     setSimulationPanelData({
       airports: [],
       flights: new Map(),
@@ -190,7 +307,7 @@ export default function PeriodSimulatorPage() {
     CLOCK_REFRESH_MS,
   );
   const hasActiveRun =
-    simStatus === "running" || simStatus === "paused" || simStatus === "done";
+    simStatus === "running" || simStatus === "paused" || simStatus === "done" || simStatus === "collapsed";
 
   useDefensivePerformanceCleanup(simStatus === "running");
 
@@ -200,6 +317,12 @@ export default function PeriodSimulatorPage() {
       setLastMockState(mockState);
       setSimStatus(mockState.status);
       if (mockState.status === "done") {
+        setShowColapsoModal(false);
+        setColapsoInfo(null);
+        setFinalSummaryInfo({
+          mensaje: `Periodo de ${PERIOD_DAYS} dias procesado.`,
+        });
+        setShowFinalSummaryModal(true);
         toast.push({
           type: "success",
           title: "Simulación completada",
@@ -212,11 +335,22 @@ export default function PeriodSimulatorPage() {
     const local = ESTADO_BACK_A_LOCAL[estadoMessage.estado] ?? simStatus;
     if (local !== simStatus) setSimStatus(local);
     if (estadoMessage.estado === "FINALIZADA") {
+      setShowColapsoModal(false);
+      setColapsoInfo(null);
+      setFinalSummaryInfo(estadoMessage);
+      setShowFinalSummaryModal(true);
       toast.push({
         type: "success",
         title: "Simulación completada",
         message: estadoMessage.mensaje,
       });
+    }
+    if (estadoMessage.estado === "COLAPSO") {
+      setSimStatus("collapsed");
+      setShowFinalSummaryModal(false);
+      setFinalSummaryInfo(null);
+      setColapsoInfo(estadoMessage);
+      setShowColapsoModal(true);
     }
     if (estadoMessage.estado === "DETENIDA" && simStatus !== "idle") {
       setSessionId(null);
@@ -270,6 +404,18 @@ export default function PeriodSimulatorPage() {
           metadata.set(f.idVueloInstancia ?? f.id, { ...f, ticksAusente: 0 });
         }
         flightMetadataRef.current = metadata;
+        setLastStablePlanning(
+          buildStablePlanningSnapshot({
+            windowId,
+            simTime:
+              ventanaData.fechaSimulada ??
+              tick.simTime ??
+              currentSimTimeUtc,
+            flights: adaptedFlights,
+            orders: ventanaData.pedidos ?? [],
+            routes: ventanaData.rutas ?? [],
+          }),
+        );
         setSimulationPanelData((prev) => {
           const flights = new Map(prev.flights);
           for (const f of adaptedFlights) {
@@ -279,8 +425,28 @@ export default function PeriodSimulatorPage() {
             }
           }
           const bags = new Map(prev.bags);
+          const bagOrigen = new Map();
+          const bagDestino = new Map();
+          const pedidoMap = new Map();
+          for (const p of ventanaData.pedidos ?? []) {
+            pedidoMap.set(p.id ?? p.idPedido, p);
+          }
+          for (const r of ventanaData.rutas ?? []) {
+            const first = r?.vuelos?.[0];
+            const last = r?.vuelos?.[r.vuelos.length - 1];
+            if (r.idMaleta) {
+              if (first?.aeropuertoOrigen) bagOrigen.set(r.idMaleta, first.aeropuertoOrigen);
+              if (last?.aeropuertoDestino) bagDestino.set(r.idMaleta, last.aeropuertoDestino);
+            }
+          }
           for (const b of ventanaData.maletas ?? []) {
-            bags.set(b.idMaleta, { ...b, ticksAusente: 0 });
+            const pedido = pedidoMap.get(b.idPedido);
+            bags.set(b.idMaleta, {
+              ...b,
+              origen: bagOrigen.get(b.idMaleta) ?? pedido?.origin ?? null,
+              destino: bagDestino.get(b.idMaleta) ?? pedido?.dest ?? null,
+              ticksAusente: 0,
+            });
           }
           const routes = new Map(prev.routes);
           for (const r of ventanaData.rutas ?? []) {
@@ -396,9 +562,25 @@ export default function PeriodSimulatorPage() {
       flightMetadataRef.current = metadata;
 
       const updatedBags = updateEstadosOnly(prev.bags, maletaStateMap, ENUM_MALETA, "estado",
-        (st, bag) => (st.e === 2 ? { fechaLlegada: bag.fechaLlegada ?? tick.simTime } : {}));
+        (st, bag) => ({
+          ...(st.e === 2 ? { fechaLlegada: bag.fechaLlegada ?? tick.simTime } : {}),
+          ubicacionActual: st.u ?? bag.ubicacionActual ?? null,
+        }));
 
       const updatedRoutes = updateEstadosOnly(prev.routes, rutaStateMap, ENUM_RUTA, "estado");
+
+      for (const [id, bag] of updatedBags) {
+        if (bag.estado === "ENTREGADA") updatedBags.delete(id);
+      }
+      for (const [id, route] of updatedRoutes) {
+        if (route.estado === "COMPLETADA") updatedRoutes.delete(id);
+      }
+      for (const [id, order] of prev.orders) {
+        const s = String(order.status ?? "").toUpperCase();
+        if (s === "ENTREGADO" || s === "FINALIZADO" || s === "ENVIADO") {
+          prev.orders.delete(id);
+        }
+      }
 
       return {
         ...prev,
@@ -469,6 +651,21 @@ export default function PeriodSimulatorPage() {
     return formatUtcDateTimeDisplay(new Date(simulatedNowMs));
   }, [simulatedNowMs]);
 
+  const formattedStartDate = useMemo(() => {
+    if (!startDate) return "--";
+    const [y, m, d] = startDate.split("-");
+    return `${d}/${m}/${y}`;
+  }, [startDate]);
+
+  const simulatedElapsedLabel = useMemo(() => {
+    const startMs = startSimMsRef.current;
+    if (simulatedNowMs == null || startMs == null) return "--";
+    const totalMinutes = Math.max(0, Math.round((simulatedNowMs - startMs) / 60000));
+    const hours = Math.floor(totalMinutes / 60);
+    const minutes = totalMinutes % 60;
+    return `${hours}h ${minutes}m`;
+  }, [simulatedNowMs]);
+
   const liveMetrics = useMemo(() => {
     if (!hasActiveRun) return emptyMetrics;
     if (USE_MOCK) {
@@ -476,22 +673,121 @@ export default function PeriodSimulatorPage() {
         ? {
             bagsInTransit: mockState.bagsInTransit ?? 0,
             bagsDelivered: mockState.bagsDelivered ?? 0,
-            bagsUnassigned: mockState.bagsUnassigned ?? 0,
             activeFlights: mockState.activeFlights ?? 0,
-            freeCapacityPct: mockState.freeCapacityPct ?? 0,
+            airportCapacityPct: mockState.airportCapacityPct ?? 0,
+            flightCapacityPct: mockState.flightCapacityPct ?? 0,
           }
         : undefined;
     }
     if (!tick || tick.type !== "TICK") return undefined;
+    const apTotalCap = mapAirports.reduce((s, a) => s + (a.capacity ?? 0), 0);
+    const apTotalUsed = mapAirports.reduce((s, a) => s + (a.used ?? 0), 0);
+    const airportCapacityPct = apTotalCap > 0 ? Math.round((apTotalUsed / apTotalCap) * 100) : 0;
+    let flightTotalCap = 0;
+    let flightTotalUsed = 0;
+    for (const f of simulationPanelData.flights.values()) {
+      const status = normalizeFlightStatus(f.status);
+      if (status === "EN_PROGRESO") {
+        flightTotalCap += f.capacity ?? 0;
+        flightTotalUsed += f.used ?? 0;
+      }
+    }
+    const flightCapacityPct = flightTotalCap > 0 ? Math.round((flightTotalUsed / flightTotalCap) * 100) : 0;
     return {
       bagsInTransit: tick.maletasEnTransito ?? 0,
       bagsDelivered:
         tick.maletasEntregadas ?? tick.maletasEntregadasATiempo ?? 0,
-      bagsUnassigned: tick.maletasNoAsignadas ?? tick.maletasSinRuta ?? 0,
       activeFlights: tick.vuelosActivos ?? 0,
-      freeCapacityPct: tick.capacidadLibrePct ?? 0,
+      airportCapacityPct,
+      flightCapacityPct,
     };
-  }, [tick, mockState, hasActiveRun]);
+  }, [tick, mockState, hasActiveRun, mapAirports, simulationPanelData]);
+
+  const collapseSummary = useMemo(
+    () => getCollapseSummary(colapsoInfo),
+    [colapsoInfo],
+  );
+
+  const collapseStats = useMemo(() => {
+    if (!showColapsoModal) return [];
+
+    const combined = {
+      aeropuertosColapsados: colapsoInfo?.aeropuertosColapsados,
+      vuelosColapsados: colapsoInfo?.vuelosColapsados,
+      maletasEvaluadasSinRuta: colapsoInfo?.maletasEvaluadasSinRuta,
+      bagsInTransit: liveMetrics?.bagsInTransit,
+      bagsDelivered: liveMetrics?.bagsDelivered,
+      activeFlights: liveMetrics?.activeFlights,
+    };
+
+    return RESUMEN_METRICAS_COLAPSO
+      .map(({ key, label }) => {
+        const value = combined[key];
+        if (value == null) return null;
+        return { key, label, value: formatSummaryValue(value) };
+      })
+      .filter(Boolean);
+  }, [colapsoInfo, liveMetrics, showColapsoModal]);
+
+  const collapseEntityDetails = useMemo(() => {
+    if (!showColapsoModal) return [];
+
+    const details = [];
+    if (colapsoInfo?.aeropuertosColapsados > 0 && colapsoInfo?.aeropuertoColapsadoDetalle) {
+      details.push({
+        key: "aeropuertoColapsadoDetalle",
+        label: "Aeropuerto colapsado",
+        value: colapsoInfo.aeropuertoColapsadoDetalle,
+      });
+    }
+    if (colapsoInfo?.vuelosColapsados > 0 && colapsoInfo?.vueloColapsadoDetalle) {
+      details.push({
+        key: "vueloColapsadoDetalle",
+        label: "Vuelo colapsado",
+        value: colapsoInfo.vueloColapsadoDetalle,
+      });
+    }
+
+    return details;
+  }, [colapsoInfo, showColapsoModal]);
+
+  const collapseStablePlanningSummary = useMemo(() => {
+    if (!lastStablePlanning) return null;
+
+    return [
+      {
+        label: "Ventana estable",
+        value: lastStablePlanning.windowId ?? "-",
+      },
+      {
+        label: "Fecha simulada",
+        value: lastStablePlanning.dateLabel ?? "-",
+      },
+      {
+        label: "Hora simulada",
+        value: lastStablePlanning.timeLabel
+          ? `${lastStablePlanning.timeLabel} UTC`
+          : "-",
+      },
+      {
+        label: "Vuelos planificados",
+        value: formatSummaryValue(lastStablePlanning.flightsCount ?? 0),
+      },
+      {
+        label: "Pedidos considerados",
+        value: formatSummaryValue(lastStablePlanning.ordersCount ?? 0),
+      },
+      {
+        label: "Rutas generadas",
+        value: formatSummaryValue(lastStablePlanning.routesCount ?? 0),
+      },
+    ];
+  }, [lastStablePlanning]);
+
+  const finalSummaryMetrics = useMemo(
+    () => buildFinalSummaryMetrics({ liveMetrics, progress, periodDays: PERIOD_DAYS }),
+    [liveMetrics, progress],
+  );
 
   const MAX_INICIAR_TICK_RETRIES = 3;
   const INICIAR_TICK_WATCHDOG_MS = 2000;
@@ -589,8 +885,28 @@ export default function PeriodSimulatorPage() {
         if (statusFilter(f)) initialFlights.set(id, f);
       }
       const initialBags = new Map();
+      const bagOrigen = new Map();
+      const bagDestino = new Map();
+      const pedidoMapInit = new Map();
+      for (const p of ventana1.pedidos ?? []) {
+        pedidoMapInit.set(p.id ?? p.idPedido, p);
+      }
+      for (const r of ventana1.rutas ?? []) {
+        const first = r?.vuelos?.[0];
+        const last = r?.vuelos?.[r.vuelos.length - 1];
+        if (r.idMaleta) {
+          if (first?.aeropuertoOrigen) bagOrigen.set(r.idMaleta, first.aeropuertoOrigen);
+          if (last?.aeropuertoDestino) bagDestino.set(r.idMaleta, last.aeropuertoDestino);
+        }
+      }
       for (const b of ventana1.maletas ?? []) {
-        initialBags.set(b.idMaleta, { ...b, ticksAusente: 0 });
+        const pedido = pedidoMapInit.get(b.idPedido);
+        initialBags.set(b.idMaleta, {
+          ...b,
+          origen: bagOrigen.get(b.idMaleta) ?? pedido?.origin ?? null,
+          destino: bagDestino.get(b.idMaleta) ?? pedido?.dest ?? null,
+          ticksAusente: 0,
+        });
       }
       const initialRoutes = new Map();
       for (const r of ventana1.rutas ?? []) {
@@ -600,6 +916,15 @@ export default function PeriodSimulatorPage() {
       for (const o of ventana1.pedidos ?? []) {
         initialOrders.set(o.id ?? o.idPedido, o);
       }
+      setLastStablePlanning(
+        buildStablePlanningSnapshot({
+          windowId: primeraVentana,
+          simTime: ventana1.fechaSimulada ?? result.fechaHoraInicio ?? startDateTime,
+          flights: adaptedFlights,
+          orders: ventana1.pedidos ?? [],
+          routes: ventana1.rutas ?? [],
+        }),
+      );
       setSimulationPanelData({
         airports: adaptedAirports,
         flights: initialFlights,
@@ -612,23 +937,20 @@ export default function PeriodSimulatorPage() {
 
       tickReceivedRef.current = false;
       iniciarTickRetriesRef.current = 0;
-      pendienteIniciarTickRef.current = newSessionId;
+      pendienteIniciarTickRef.current = null;
       cancelarWatchdogIniciarTick();
       if (planCompletionTimeoutRef.current) {
         clearTimeout(planCompletionTimeoutRef.current);
+        planCompletionTimeoutRef.current = null;
       }
-      planCompletionTimeoutRef.current = setTimeout(() => {
-        if (!pendienteIniciarTickRef.current) return;
-        const sid = pendienteIniciarTickRef.current;
-        pendienteIniciarTickRef.current = null;
-        enviarIniciarTick(sid);
-      }, 30000);
+      enviarIniciarTick(newSessionId);
 
       toast.push({
         type: "info",
         title: "Simulación iniciada",
         message: `Inicio: ${startDate} ${startTime || "00:00"} · ${PERIOD_DAYS} días`,
       });
+      collapseSidebars();
     } catch (err) {
       setSimStatus("idle");
       setSessionId(null);
@@ -656,6 +978,8 @@ export default function PeriodSimulatorPage() {
   };
 
   const handleStop = async () => {
+    setShowColapsoModal(false);
+    setColapsoInfo(null);
     setSimStatus("idle");
     setSessionId(null);
     setCurrentSimTimeUtc(null);
@@ -680,61 +1004,79 @@ export default function PeriodSimulatorPage() {
   const displayedDay = getDisplayedDay(progress, hasActiveRun);
 
   const mapOverlay = hasActiveRun ? (
-    <div className="bg-surface-2/85 m-4 backdrop-blur border border-slate-700 shadow-[0_12px_35px_rgba(0,0,0,0.45)] rounded-xl px-4 py-3 flex items-center justify-center gap-6">
-      <div>
-        <div className="text-[10px] text-slate-400 font-medium uppercase tracking-wider">
+    <div className="bg-surface-2/85 mb-4 backdrop-blur border border-slate-700 shadow-[0_12px_35px_rgba(0,0,0,0.45)] rounded-xl px-4 py-3 flex flex-wrap items-center justify-center gap-x-4 gap-y-1 max-w-[calc(100vw-2rem)]">
+      <div className="shrink-0">
+        <div className="text-[9px] text-slate-400 font-medium uppercase tracking-wider">
+          Inicio sim.
+        </div>
+        <div className="text-sm font-bold text-slate-100 tabular-nums whitespace-nowrap">
+          {formattedStartDate}  {startTime || "--:--"} UTC
+        </div>
+      </div>
+      <div className="h-9 w-px bg-slate-700 shrink-0" />
+      <div className="shrink-0">
+        <div className="text-[9px] text-slate-400 font-medium uppercase tracking-wider">
           Cronometro
         </div>
-        <div className="text-lg font-bold text-slate-100 tabular-nums">
+        <div className="text-base font-bold text-slate-100 tabular-nums">
           {formatElapsedHMS(executionElapsedMs)}
         </div>
       </div>
-      <div className="h-9 w-px bg-slate-700" />
-      <div>
-        <div className="text-[10px] text-slate-400 font-medium uppercase tracking-wider">
+      <div className="h-9 w-px bg-slate-700 shrink-0" />
+      <div className="shrink-0">
+        <div className="text-[9px] text-slate-400 font-medium uppercase tracking-wider">
           Fecha simulada
         </div>
-        <div className="text-lg font-bold text-info tabular-nums">
+        <div className="text-base font-bold text-info tabular-nums">
           {simulationClock.date}
         </div>
       </div>
-      <div className="h-9 w-px bg-slate-700" />
-      <div>
-        <div className="text-[10px] text-slate-400 font-medium uppercase tracking-wider">
+      <div className="h-9 w-px bg-slate-700 shrink-0" />
+      <div className="shrink-0">
+        <div className="text-[9px] text-slate-400 font-medium uppercase tracking-wider">
           Hora simulada
         </div>
-        <div className="text-lg font-bold text-info tabular-nums">
+        <div className="text-base font-bold text-info tabular-nums whitespace-nowrap">
           {simulationClock.time} UTC
         </div>
       </div>
-      <div className="h-9 w-px bg-slate-700" />
-      <div>
-        <div className="text-[10px] text-slate-400 font-medium uppercase tracking-wider">
-          Día de simulación
+      <div className="h-9 w-px bg-slate-700 shrink-0" />
+      <div className="shrink-0">
+        <div className="text-[9px] text-slate-400 font-medium uppercase tracking-wider">
+          Tiempo simulado
         </div>
-        <div className="text-lg font-bold text-info tabular-nums">
+        <div className="text-base font-bold text-info tabular-nums">
+          {simulatedElapsedLabel}
+        </div>
+      </div>
+      <div className="h-9 w-px bg-slate-700 shrink-0" />
+      <div className="shrink-0">
+        <div className="text-[9px] text-slate-400 font-medium uppercase tracking-wider">
+          Dia de simulacion
+        </div>
+        <div className="text-base font-bold text-info tabular-nums">
           {displayedDay
             ? `Dia ${displayedDay}/${PERIOD_DAYS}`
             : ""}
         </div>
       </div>
-      <div className="h-9 w-px bg-slate-700" />
+      <div className="h-9 w-px bg-slate-700 shrink-0" />
       <button
         type="button"
         onClick={() => setShowRouteLines((v) => !v)}
-        className={`rounded-lg px-3 py-1.5 text-sm font-medium transition-colors ${
+        className={`shrink-0 rounded-lg px-2 py-1 text-xs font-medium whitespace-nowrap transition-colors ${
           showRouteLines
             ? "bg-blue-600/20 text-blue-400 border border-blue-500/40 hover:bg-blue-600/30"
             : "bg-surface-2 text-slate-400 border border-slate-700 hover:text-slate-200"
         }`}
       >
-        Mostrar líneas
+        Mostrar lineas
       </button>
-      <div className="h-9 w-px bg-slate-700" />
+      <div className="h-9 w-px bg-slate-700 shrink-0" />
       <button
         type="button"
         onClick={handleStop}
-        className="bg-danger/10 hover:bg-danger/20 text-danger border border-danger/40 rounded-lg px-3 py-1.5 transition-colors"
+        className="shrink-0 bg-danger/10 hover:bg-danger/20 text-danger border border-danger/40 rounded-lg px-2 py-1 transition-colors"
         title="Detener"
       >
         <Square className="w-5 h-5" />
@@ -800,6 +1142,301 @@ export default function PeriodSimulatorPage() {
     </div>
   ) : null;
 
+  const finalSummaryModal = showFinalSummaryModal ? (
+    <div className="fixed inset-0 z-[10001] overflow-y-auto bg-black/60 backdrop-blur-sm">
+      <div className="min-h-full flex items-start justify-center px-4 py-6 sm:py-10">
+        <div className="bg-surface-2 border border-success/40 shadow-[0_12px_35px_rgba(0,0,0,0.55)] rounded-2xl max-w-2xl w-full max-h-[calc(100vh-3rem)] overflow-y-auto">
+        <div className="px-8 py-6 border-b border-success/20 bg-success/10 sticky top-0 z-10">
+          <div className="flex items-start justify-between gap-4">
+            <div className="flex items-start gap-4">
+              <div className="rounded-xl bg-success/15 border border-success/30 p-3">
+                <CheckCircle2 className="w-7 h-7 text-success flex-shrink-0" />
+              </div>
+              <div>
+                <p className="text-xs font-semibold uppercase tracking-[0.2em] text-success/80 mb-2">
+                  Resumen final
+                </p>
+                <h2 className="text-2xl font-bold text-slate-50">
+                  Simulacion completada
+                </h2>
+                <p className="text-sm text-slate-300 mt-2 max-w-xl leading-relaxed">
+                  {finalSummaryInfo?.mensaje ?? `La simulacion por periodo concluyo correctamente tras procesar los ${PERIOD_DAYS} dias planificados.`}
+                </p>
+              </div>
+            </div>
+            <button
+              type="button"
+              onClick={() => setShowFinalSummaryModal(false)}
+              className="text-slate-400 hover:text-slate-200 transition-colors flex-shrink-0 mt-1"
+              title="Cerrar"
+            >
+              <X className="w-5 h-5" />
+            </button>
+          </div>
+        </div>
+
+        <div className="px-8 py-6">
+          <div className="grid grid-cols-1 sm:grid-cols-3 gap-3 mb-6">
+            <div className="rounded-xl border border-slate-700 bg-slate-900/50 px-4 py-3">
+              <div className="text-[11px] uppercase tracking-wider text-slate-400 mb-1">
+                Estado final
+              </div>
+              <div className="text-base font-semibold text-success">
+                Ejecucion completada
+              </div>
+            </div>
+            <div className="rounded-xl border border-slate-700 bg-slate-900/50 px-4 py-3">
+              <div className="text-[11px] uppercase tracking-wider text-slate-400 mb-1">
+                Tiempo ejecutado
+              </div>
+              <div className="text-base font-semibold text-slate-100">
+                {formatElapsedHMS(executionElapsedMs)}
+              </div>
+            </div>
+            <div className="rounded-xl border border-slate-700 bg-slate-900/50 px-4 py-3">
+              <div className="text-[11px] uppercase tracking-wider text-slate-400 mb-1">
+                Cierre de simulacion
+              </div>
+              <div className="text-base font-semibold text-slate-100">
+                {simulationClock.date}
+              </div>
+              <div className="text-sm text-info tabular-nums">
+                {simulationClock.time} UTC
+              </div>
+            </div>
+          </div>
+
+          {collapseStablePlanningSummary ? (
+            <div className="mb-6">
+              <h3 className="text-sm font-semibold text-slate-200 mb-2">
+                Ultima planificacion estable
+              </h3>
+              <p className="text-sm text-slate-400 mb-3">
+                Se muestra como referencia el ultimo cierre operativo consistente antes de finalizar la simulacion.
+              </p>
+              <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-3">
+                {collapseStablePlanningSummary.map(({ label, value }) => (
+                  <div
+                    key={label}
+                    className="rounded-xl border border-slate-700 bg-slate-900/40 px-4 py-3"
+                  >
+                    <div className="text-sm text-slate-400 mb-1">{label}</div>
+                    <div className="text-base font-semibold text-slate-100 tabular-nums">
+                      {value}
+                    </div>
+                  </div>
+                ))}
+              </div>
+            </div>
+          ) : null}
+
+          <div className="mb-6">
+            <h3 className="text-sm font-semibold text-slate-200 mb-3">
+              Estadisticas generales del periodo
+            </h3>
+            <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-3">
+              {finalSummaryMetrics.map(({ key, label, value }) => (
+                <div
+                  key={key}
+                  className="rounded-xl border border-slate-700 bg-slate-900/40 px-4 py-3"
+                >
+                  <div className="text-sm text-slate-400 mb-1">{label}</div>
+                  <div className="text-xl font-bold text-slate-50 tabular-nums">
+                    {value}
+                  </div>
+                </div>
+              ))}
+            </div>
+          </div>
+
+          <div className="rounded-xl border border-info/20 bg-info/10 px-4 py-3 text-sm text-slate-300 leading-relaxed">
+            La corrida termino sin colapso. Puedes cerrar este resumen para revisar el tablero final o iniciar una nueva simulacion.
+          </div>
+        </div>
+      </div>
+      </div>
+    </div>
+  ) : null;
+
+  const resumenColapsoModal = showColapsoModal ? (
+    <div className="fixed inset-0 z-[10001] overflow-y-auto bg-black/60 backdrop-blur-sm">
+      <div className="min-h-full flex items-start justify-center px-4 py-6 sm:py-10">
+        <div className="bg-surface-2 border border-danger/40 shadow-[0_12px_35px_rgba(0,0,0,0.55)] rounded-2xl max-w-2xl w-full max-h-[calc(100vh-3rem)] overflow-y-auto">
+        <div className="px-8 py-6 border-b border-danger/20 bg-danger/10 sticky top-0 z-10">
+          <div className="flex items-start justify-between gap-4">
+            <div className="flex items-start gap-4">
+              <div className="rounded-xl bg-danger/15 border border-danger/30 p-3">
+                <AlertTriangle className="w-7 h-7 text-danger flex-shrink-0" />
+              </div>
+              <div>
+                <p className="text-xs font-semibold uppercase tracking-[0.2em] text-danger/80 mb-2">
+                  Resumen final
+                </p>
+                <h2 className="text-2xl font-bold text-slate-50">
+                  {collapseSummary.title}
+                </h2>
+                <p className="text-sm text-slate-300 mt-2 max-w-xl leading-relaxed">
+                  {collapseSummary.description}
+                </p>
+              </div>
+            </div>
+            <button
+              type="button"
+              onClick={() => setShowColapsoModal(false)}
+              className="text-slate-400 hover:text-slate-200 transition-colors flex-shrink-0 mt-1"
+              title="Cerrar"
+            >
+              <X className="w-5 h-5" />
+            </button>
+          </div>
+        </div>
+
+        <div className="px-8 py-6">
+          <div className="grid grid-cols-1 sm:grid-cols-3 gap-3 mb-6">
+            <div className="rounded-xl border border-slate-700 bg-slate-900/50 px-4 py-3">
+              <div className="text-[11px] uppercase tracking-wider text-slate-400 mb-1">
+                Estado final
+              </div>
+              <div className="text-base font-semibold text-danger">
+                Colapso operativo
+              </div>
+            </div>
+            <div className="rounded-xl border border-slate-700 bg-slate-900/50 px-4 py-3">
+              <div className="text-[11px] uppercase tracking-wider text-slate-400 mb-1">
+                Tiempo ejecutado
+              </div>
+              <div className="text-base font-semibold text-slate-100">
+                {formatElapsedHMS(executionElapsedMs)}
+              </div>
+            </div>
+            <div className="rounded-xl border border-slate-700 bg-slate-900/50 px-4 py-3">
+              <div className="text-[11px] uppercase tracking-wider text-slate-400 mb-1">
+                Momento del colapso
+              </div>
+              <div className="text-base font-semibold text-slate-100">
+                {simulationClock.date}
+              </div>
+              <div className="text-sm text-info tabular-nums">
+                {simulationClock.time} UTC
+              </div>
+            </div>
+          </div>
+
+          {collapseStablePlanningSummary ? (
+            <div className="mb-6">
+              <h3 className="text-sm font-semibold text-slate-200 mb-2">
+                Ultima planificacion estable
+              </h3>
+              <p className="text-sm text-slate-400 mb-3">
+                Corresponde a la ultima planificacion que se completo correctamente antes de la que desencadeno el colapso.
+              </p>
+              <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-3">
+                {collapseStablePlanningSummary.map(({ label, value }) => (
+                  <div
+                    key={label}
+                    className="rounded-xl border border-slate-700 bg-slate-900/40 px-4 py-3"
+                  >
+                    <div className="text-sm text-slate-400 mb-1">{label}</div>
+                    <div className="text-base font-semibold text-slate-100 tabular-nums">
+                      {value}
+                    </div>
+                  </div>
+                ))}
+              </div>
+            </div>
+          ) : null}
+
+          <div className="mb-6">
+            <h3 className="text-sm font-semibold text-slate-200 mb-3">
+              Estadisticas generales al cierre
+            </h3>
+            <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-3">
+              {collapseStats.map(({ key, label, value }) => (
+                <div
+                  key={key}
+                  className="rounded-xl border border-slate-700 bg-slate-900/40 px-4 py-3"
+                >
+                  <div className="text-sm text-slate-400 mb-1">{label}</div>
+                  <div className="text-xl font-bold text-slate-50 tabular-nums">
+                    {value}
+                  </div>
+                </div>
+              ))}
+            </div>
+          </div>
+
+          {collapseEntityDetails.length > 0 ? (
+            <div className="mb-6">
+              <h3 className="text-sm font-semibold text-slate-200 mb-3">
+                Entidades que colapsaron
+              </h3>
+              <div className="grid grid-cols-1 gap-3">
+                {collapseEntityDetails.map(({ key, label, value }) => (
+                  <div
+                    key={key}
+                    className="rounded-xl border border-slate-700 bg-slate-900/40 px-4 py-3"
+                  >
+                    <div className="text-sm text-slate-400 mb-1">{label}</div>
+                    <div className="text-base font-semibold text-slate-100 break-words">
+                      {value}
+                    </div>
+                  </div>
+                ))}
+              </div>
+            </div>
+          ) : null}
+
+          <div className="rounded-xl border border-warning/20 bg-warning/10 px-4 py-3 text-sm text-slate-300 leading-relaxed">
+            La simulacion se detuvo al alcanzar una condicion critica. Puedes cerrar este resumen o usar el boton{" "}
+            <Square className="inline w-3 h-3 text-danger" /> para finalizar la ejecucion y comenzar una nueva corrida.
+          </div>
+        </div>
+      </div>
+      </div>
+    </div>
+  ) : null;
+
+  const colapsoModal = showColapsoModal ? (
+    <div className="fixed inset-0 z-[10000] flex items-center justify-center bg-black/60 backdrop-blur-sm">
+      <div className="bg-surface-2 border border-danger/40 shadow-[0_12px_35px_rgba(0,0,0,0.55)] rounded-xl px-8 py-6 max-w-md w-full mx-4">
+        <div className="flex items-start justify-between gap-4 mb-4">
+          <div className="flex items-center gap-3">
+            <AlertTriangle className="w-8 h-8 text-danger flex-shrink-0" />
+            <h2 className="text-xl font-bold text-danger">¡Colapso!</h2>
+          </div>
+          <button
+            type="button"
+            onClick={() => setShowColapsoModal(false)}
+            className="text-slate-400 hover:text-slate-200 transition-colors flex-shrink-0"
+            title="Cerrar"
+          >
+            <X className="w-5 h-5" />
+          </button>
+        </div>
+        {colapsoInfo?.mensaje && (
+          <p className="text-slate-300 text-sm mb-4">{colapsoInfo.mensaje}</p>
+        )}
+        <ul className="text-sm text-slate-400 space-y-1.5 mb-4">
+          {METRICAS_COLAPSO.map(({ key, label }) => {
+            const valor = colapsoInfo?.[key];
+            if (valor == null || valor <= 0) return null;
+            return (
+              <li key={key} className="flex justify-between">
+                <span>{label}</span>
+                <span className="text-slate-200 font-medium tabular-nums">{valor}</span>
+              </li>
+            );
+          })}
+        </ul>
+        <p className="text-xs text-slate-500 leading-relaxed">
+          La simulación se ha detenido. Puedes cerrar este panel o usar el botón{" "}
+          <Square className="inline w-3 h-3 text-danger" /> en el panel inferior
+          para finalizar la simulación.
+        </p>
+      </div>
+    </div>
+  ) : null;
+
   const header = (
     <div className="flex items-center gap-3 flex-wrap">
       {simStatus === "paused" ? (
@@ -817,6 +1454,8 @@ export default function PeriodSimulatorPage() {
   return (
     <>
       {loadingModal}
+      {finalSummaryModal}
+      {resumenColapsoModal || colapsoModal}
       <MapDashboard
       title=""
       header={header}

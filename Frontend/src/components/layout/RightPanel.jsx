@@ -1,17 +1,18 @@
-import { memo, useCallback, useEffect, useMemo, useRef, useState } from "react";
+import { forwardRef, memo, useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { Virtuoso } from "react-virtuoso";
 import { useLocation } from "react-router-dom";
 import { Ban, Filter, PanelRightClose, MapPin, Globe, Info, ChevronDown, Plane, RefreshCw, Package, Luggage, ArrowDownUp, ArrowUp, ArrowDown, Route, X, Crosshair } from "lucide-react";
 import { useFetch } from "../../hooks/useFetch";
-import { useStompPublish } from "../../hooks/useStomp";
-import { cancelFlight, listFlights } from "../../api/flights";
+import { useStompPublish, useStompSubscribe } from "../../hooks/useStomp";
+import { cancelFlight, listFlightPlans, listFlights } from "../../api/flights";
 import { listOrders } from "../../api/orders";
 import { listAirports } from "../../api/airports";
 import { listMaletas } from "../../api/maletas";
 import { listRutas } from "../../api/rutas";
-import { obtenerContenidoAlmacen, obtenerEnviosDiaADia, obtenerEnviosPanel, obtenerManifiestoVuelo, obtenerManifiestoVueloDiaADia, obtenerRutaMaleta, obtenerRutasEnvio, obtenerRutasEnvioDiaADia } from "../../api/simulator";
+import { obtenerContenidoAlmacen, obtenerEnviosOperacionesDiaADia, obtenerEnviosPanel, obtenerManifiestoVuelo, obtenerManifiestoVueloOperacionesDiaADia, obtenerRutaMaleta, obtenerRutaMaletaOperacionesDiaADia, obtenerRutasEnvio, obtenerRutasEnvioOperacionesDiaADia } from "../../api/simulator";
 import { apiGet, USE_MOCK } from "../../api/client";
 import { useMapFocus } from "../../context/MapFocusContext";
+import Modal from "../ui/Modal";
 import { LoadingState, EmptyState, ErrorState } from "../ui/States";
 import { useToast } from "../ui/Toast";
 
@@ -49,7 +50,7 @@ const occupancyColor = (pct) => pct >= 85 ? "bg-danger" : pct >= 60 ? "bg-warnin
 const bagStatusColor = (s) => {
   switch (s) {
     case "EN_ALMACEN": return "bg-slate-300 text-slate-800";
-    case "EN_TRASLADO": return "bg-warning text-yellow-900";
+    case "EN_TRANSITO": return "bg-warning text-yellow-900";
     case "EN_VUELO": return "bg-info text-slate-900";
     case "ENTREGADA": return "bg-success text-emerald-900";
     case "EXTRAVIADA": return "bg-danger text-white";
@@ -72,7 +73,15 @@ const routeStatusColor = (s) => {
 
 const EMPTY_MANIFEST = { bags: [], orders: [] };
 
-const FlightItem = memo(function FlightItem({ flight, onCancel, canceling, loadManifest, onFocus, onDeselect, isSelected }) {
+const PanelScroller = forwardRef(function PanelScroller({ style, className, children, ...props }, ref) {
+  return (
+    <div {...props} ref={ref} style={style} className={className ? `${className} app-scrollbar` : "app-scrollbar"}>
+      {children}
+    </div>
+  );
+});
+
+const FlightItem = memo(function FlightItem({ flight, onCancel, canceling, loadManifest, onFocus, onDeselect, isSelected, onExpand, onCollapse }) {
   const [expanded, setExpanded] = useState(false);
   const pct = flight.capacity > 0 ? Math.round((flight.used / flight.capacity) * 100) : 0;
   const normalizedStatus = normalizeFlightStatus(flight.status);
@@ -106,7 +115,12 @@ const FlightItem = memo(function FlightItem({ flight, onCancel, canceling, loadM
   }, [expanded, flightKey, loadManifest]);
 
   return (
-    <div className={`flex flex-col border-b border-slate-800/50 h-full cursor-pointer ${isSelected ? "rounded-lg ring-1 ring-info/70 bg-info/5" : ""}`} onClick={() => setExpanded(!expanded)}>
+    <div className={`mb-2 flex h-full cursor-pointer flex-col rounded-xl border px-3 py-3 transition-all duration-200 ${isSelected ? "border-info/60 bg-info/5 ring-1 ring-info/70 shadow-[0_8px_24px_rgba(14,165,233,0.08)]" : "border-slate-800/70 bg-surface-1/65 hover:border-slate-700 hover:bg-surface-2/55"}`} onClick={() => {
+      const next = !expanded;
+      setExpanded(next);
+      if (next) onExpand?.(flight.idVueloInstancia ?? flight.id);
+      else onCollapse?.();
+    }}>
       <div className="flex justify-between items-start mb-2">
         <div>
           <h4 className="font-bold text-lg text-slate-200">{flight.id}</h4>
@@ -259,7 +273,7 @@ const OrderItem = memo(function OrderItem({ order }) {
   const time = order.time ?? fallbackTime.slice(0, 5);
 
   return (
-    <div className="flex flex-col border-b border-slate-800/50 h-full cursor-pointer" onClick={() => setExpanded(!expanded)}>
+    <div className="flex flex-col border-b border-slate-800/50 h-full cursor-pointer hover:bg-slate-800 transition-colors duration-200" onClick={() => setExpanded(!expanded)}>
       <div className="flex justify-between items-center mb-2">
         <h4 className="font-bold text-lg text-slate-200">{id}</h4>
         <span className="text-xs text-slate-400">{bags} maleta{bags !== 1 ? "s" : ""}</span>
@@ -294,7 +308,7 @@ const RouteItem = memo(function RouteItem({ route, onShowRoute }) {
   }, [vuelos]);
 
   return (
-    <div className="flex flex-col border-b border-slate-800/50 h-full cursor-pointer" onClick={() => setExpanded(!expanded)}>
+    <div className="flex flex-col border-b border-slate-800/50 h-full cursor-pointer hover:bg-slate-800 transition-colors duration-200" onClick={() => setExpanded(!expanded)}>
       <div className="flex justify-between items-center mb-2">
         <div>
           <h4 className="font-bold text-lg text-slate-200">{route.idRuta}</h4>
@@ -348,7 +362,7 @@ const BagItem = memo(function BagItem({ bag, onShowRoute }) {
   const [expanded, setExpanded] = useState(false);
   const label = bagStatusLabel(bag.estado);
   return (
-    <div className="flex flex-col border-b border-slate-800/50 h-full cursor-pointer" onClick={() => setExpanded(!expanded)}>
+    <div className="flex flex-col border-b border-slate-800/50 h-full cursor-pointer hover:bg-slate-800 transition-colors duration-200" onClick={() => setExpanded(!expanded)}>
       <div className="flex justify-between items-start mb-2 gap-2">
         <h4 className="font-bold text-sm text-slate-200 break-all pr-2">{bag.idMaleta}</h4>
         <div className="flex shrink-0 flex-col items-end gap-1.5">
@@ -368,10 +382,12 @@ const BagItem = memo(function BagItem({ bag, onShowRoute }) {
       </div>
       {expanded && (
         <div className="cursor-default mt-2" onClick={(e) => e.stopPropagation()}>
-          {bag.ubicacionActual && <div className="text-base font-bold text-slate-300 mb-2">{bag.ubicacionActual}</div>}
           <div className="text-xs text-slate-400 flex flex-col gap-0.5">
             <div>Pedido: <span className="text-slate-200">{bag.idPedido}</span></div>
             <div>Registro: <span className="text-slate-200">{(bag.fechaRegistro ?? "").replace("T", " ").slice(0, 16)}</span></div>
+            {(bag.ubicacionActual || bag.origen) && <div>Ubicacion: <span className="text-slate-200 font-semibold">{bag.ubicacionActual || bag.origen}</span></div>}
+            {bag.origen && bag.destino && <div>Ruta: <span className="text-slate-200">{bag.origen} → {bag.destino}</span></div>}
+            {bag.horaLlegadaEstimada && <div>Llegada est.: <span className="text-slate-200">{bag.horaLlegadaEstimada.replace("T", " ").slice(0, 16)}</span></div>}
             {bag.fechaLlegada && <div>Entregada: <span className="text-slate-200">{bag.fechaLlegada.replace("T", " ").slice(0, 16)}</span></div>}
           </div>
         </div>
@@ -432,7 +448,7 @@ const EnvioItem = memo(function EnvioItem({ envio, showOrigin = true, onShowRout
   const uts = envio.uts ?? [];
   const utResumen = uts.length === 0 ? "sin asignar" : uts.length <= 2 ? uts.join(", ") : `${uts[0]} +${uts.length - 1}`;
   return (
-    <div className="flex flex-col border-b border-slate-800/50 h-full cursor-pointer" onClick={() => setExpanded(!expanded)}>
+    <div className="flex flex-col border-b border-slate-800/50 h-full cursor-pointer hover:bg-slate-800 transition-colors duration-200" onClick={() => setExpanded(!expanded)}>
       <div className="flex items-start justify-between gap-2">
         <div className="min-w-0">
           <h4 className="truncate text-sm font-bold text-slate-200">{envio.id}</h4>
@@ -484,7 +500,17 @@ function EnvioSeccion({ title, envios, showOrigin = true, defaultOpen = false, m
   );
 }
 
-const AirportItem = memo(function AirportItem({ apt, loadContenido, onFocus, onDeselect, isSelected }) {
+const AirportItem = memo(function AirportItem({
+  apt,
+  loadContenido,
+  onFocus,
+  onDeselect,
+  isSelected,
+  onShowFlightPlans,
+  showFlightPlansAction = false,
+  onExpand,
+  onCollapse,
+}) {
   const [expanded, setExpanded] = useState(false);
   const pct = apt.capacity > 0 ? Math.round((apt.used / apt.capacity) * 100) : 0;
 
@@ -527,11 +553,21 @@ const AirportItem = memo(function AirportItem({ apt, loadContenido, onFocus, onD
   }, [expanded, airportKey, loadContenido]);
 
   return (
-    <div className={`flex flex-col border-b border-slate-800/50 h-full cursor-pointer ${isSelected ? "rounded-lg ring-1 ring-info/70 bg-info/5" : ""}`} onClick={() => setExpanded(!expanded)}>
+    <div className={`mb-2 flex h-full cursor-pointer flex-col rounded-xl border px-3 py-3 transition-all duration-200 ${isSelected ? "border-info/60 bg-info/5 ring-1 ring-info/70 shadow-[0_8px_24px_rgba(14,165,233,0.08)]" : "border-slate-800/70 bg-surface-1/65 hover:border-slate-700 hover:bg-surface-2/55"}`} onClick={() => {
+      const next = !expanded;
+      setExpanded(next);
+      if (next) onExpand?.(apt.iata ?? apt.idAeropuerto);
+      else onCollapse?.();
+    }}>
       <div className="flex justify-between items-center gap-2">
-        <h4 className="font-bold text-lg text-slate-200">{apt.iata}</h4>
+        <div className="min-w-0">
+          <h4 className="font-bold text-lg text-slate-200">{apt.iata}</h4>
+          <p className="truncate text-[11px] text-slate-500">{apt.city}</p>
+        </div>
         <div className="flex items-center gap-2 shrink-0">
-          <span className="text-xs text-slate-400">{pct}% Ocupado</span>
+          <span className="rounded-full border border-slate-700/70 bg-surface-2/70 px-2 py-1 text-[11px] font-semibold text-slate-300">
+            {pct}% ocupado
+          </span>
           {isSelected && onDeselect && (
             <button
               type="button"
@@ -556,20 +592,32 @@ const AirportItem = memo(function AirportItem({ apt, loadContenido, onFocus, onD
           )}
         </div>
       </div>
+      <div className="mt-2 flex justify-between items-start gap-3 pt-1">
+        <div className="flex flex-col gap-0.5">
+          <div className="flex items-center gap-1 text-[10px] text-slate-400"><MapPin className="w-3 h-3 shrink-0" /> {apt.city}</div>
+          <div className="flex items-center gap-1 text-[10px] text-slate-400"><Globe className="w-3 h-3 shrink-0" /> {apt.continent}</div>
+        </div>
+        <div className="flex flex-col items-end min-w-0">
+          <div className="text-[10px] text-slate-400 mb-1">{apt.used} / {apt.capacity} maletas</div>
+          <div className="w-24 h-1.5 bg-surface-2 rounded-full overflow-hidden border border-slate-800">
+            <div className={`h-full ${occupancyColor(pct)}`} style={{ width: `${pct}%` }} />
+          </div>
+        </div>
+      </div>
       {expanded && (
         <div className="cursor-default" onClick={(e) => e.stopPropagation()}>
-          <div className="mt-4 flex justify-between items-start">
-            <div className="flex flex-col gap-1 w-1/2">
-              <div className="flex items-center gap-1 text-[10px] text-slate-400"><MapPin className="w-3 h-3" /> {apt.city}</div>
-              <div className="flex items-center gap-1 text-[10px] text-slate-400"><Globe className="w-3 h-3" /> {apt.continent}</div>
+          {showFlightPlansAction && onShowFlightPlans ? (
+            <div className="mt-3">
+              <button
+                type="button"
+                onClick={() => onShowFlightPlans(apt)}
+                className="inline-flex items-center gap-2 rounded-lg border border-info/40 bg-info/10 px-3 py-2 text-xs font-semibold text-info transition-colors hover:bg-info/20"
+              >
+                <Plane className="h-3.5 w-3.5" />
+                Ver vuelos programados
+              </button>
             </div>
-            <div className="flex flex-col w-1/2 pt-1">
-              <div className="text-[10px] text-slate-400 mb-2">{apt.used} de {apt.capacity} maletas</div>
-              <div className="w-full h-2 bg-surface-2 rounded-full overflow-hidden border border-slate-800">
-                <div className={`h-full ${occupancyColor(pct)}`} style={{ width: `${pct}%` }} />
-              </div>
-            </div>
-          </div>
+          ) : null}
 
           <div className="mt-3 space-y-3 border-t border-slate-800 pt-3 text-xs text-slate-400">
             {contenidoStatus === "loading" ? (
@@ -718,6 +766,45 @@ const AirportItem = memo(function AirportItem({ apt, loadContenido, onFocus, onD
   );
 });
 
+const ScheduledFlightPlanItem = memo(function ScheduledFlightPlanItem({
+  flightPlan,
+  simTime,
+  onCancel,
+  canceling,
+}) {
+  const timing = useMemo(
+    () => buildScheduledFlightTiming(flightPlan, simTime),
+    [flightPlan, simTime],
+  );
+
+  return (
+    <div className="rounded-xl border border-slate-800 bg-surface-2 px-4 py-3">
+      <div className="flex flex-col gap-3 sm:flex-row sm:items-start sm:justify-between">
+        <div className="min-w-0">
+          <div className="font-semibold text-slate-100">
+            {flightPlan.origin} {"->"} {flightPlan.dest}
+          </div>
+          <div className="mt-1 text-sm text-slate-400">
+            Sale a las {flightPlan.depTime || "--:--"}
+          </div>
+          <div className="mt-2 inline-flex rounded-md border border-slate-700 bg-surface-1 px-2.5 py-1 text-[11px] font-semibold text-slate-300">
+            {timing.statusLabel}
+          </div>
+        </div>
+        <button
+          type="button"
+          onClick={() => onCancel?.(flightPlan, timing)}
+          disabled={canceling || !timing.resolved}
+          className="inline-flex items-center justify-center gap-1.5 rounded-lg border border-danger/40 bg-danger/10 px-3 py-2 text-xs font-bold uppercase tracking-wide text-danger transition-colors hover:bg-danger/20 disabled:cursor-not-allowed disabled:opacity-60"
+        >
+          <Ban className="h-3.5 w-3.5" />
+          {canceling ? "Cancelando" : "Cancelar"}
+        </button>
+      </div>
+    </div>
+  );
+});
+
 function ColorLegend() {
   return (
     <details className="group border-t border-slate-800 bg-surface-1/95 px-4 py-3">
@@ -845,6 +932,67 @@ function normalizeFlightStatus(status) {
     .replace(/\s+/g, "_");
 }
 
+function formatLocalDateLabel(utcLikeMs) {
+  const date = new Date(utcLikeMs);
+  return `${padDatePart(date.getUTCDate())}/${padDatePart(date.getUTCMonth() + 1)}/${date.getUTCFullYear()}`;
+}
+
+function buildScheduledFlightTiming(flightPlan, simTime) {
+  const utcMs = parseUtcDateTime(simTime);
+  const gmtOrigin = Number(flightPlan?.gmtOrigin ?? 0);
+  const depRaw = String(flightPlan?.depTime ?? "").trim();
+  const departureLabel = depRaw ? depRaw.slice(0, 5) : "--:--";
+  const [depHourRaw, depMinuteRaw] = depRaw.split(":");
+  const depHour = Number(depHourRaw);
+  const depMinute = Number(depMinuteRaw);
+
+  if (!Number.isFinite(utcMs) || !Number.isFinite(depHour) || !Number.isFinite(depMinute)) {
+    return {
+      resolved: false,
+      departureLabel,
+      statusLabel: "Esperando hora simulada",
+      effectiveDateIso: null,
+      effectiveDateLabel: "--",
+      appliesToday: null,
+      cutoffLabel: "--:--",
+      confirmMessage: "",
+    };
+  }
+
+  const simAtOriginMs = utcMs + gmtOrigin * 60 * 60 * 1000;
+  const simAtOrigin = new Date(simAtOriginMs);
+  const departureTodayOriginMs = Date.UTC(
+    simAtOrigin.getUTCFullYear(),
+    simAtOrigin.getUTCMonth(),
+    simAtOrigin.getUTCDate(),
+    depHour,
+    depMinute,
+    0,
+    0,
+  );
+  const cutoffOriginMs = departureTodayOriginMs - 60 * 60 * 1000;
+  const appliesToday = simAtOriginMs <= cutoffOriginMs;
+  const effectiveOriginMs = departureTodayOriginMs + (appliesToday ? 0 : 24 * 60 * 60 * 1000);
+  const effectiveDate = new Date(effectiveOriginMs);
+  const effectiveDateIso = `${effectiveDate.getUTCFullYear()}-${padDatePart(effectiveDate.getUTCMonth() + 1)}-${padDatePart(effectiveDate.getUTCDate())}`;
+  const effectiveDateLabel = formatLocalDateLabel(effectiveOriginMs);
+  const cutoffLabel = `${padDatePart(Math.floor((((depHour * 60) + depMinute - 60 + (24 * 60)) % (24 * 60)) / 60))}:${padDatePart((((depHour * 60) + depMinute - 60 + (24 * 60)) % (24 * 60)) % 60)}`;
+  const statusLabel = appliesToday
+    ? `Aplica hoy · ${effectiveDateLabel}`
+    : `Aplica manana · ${effectiveDateLabel}`;
+
+  return {
+    resolved: true,
+    departureLabel,
+    statusLabel,
+    effectiveDateIso,
+    effectiveDateLabel,
+    appliesToday,
+    cutoffLabel,
+    confirmMessage: `Se cancelara la salida ${flightPlan.origin} -> ${flightPlan.dest} de las ${depRaw} para el ${effectiveDateLabel}. Regla aplicada: hasta ${cutoffLabel} afecta el mismo dia; despues de esa hora afecta el dia siguiente.`,
+  };
+}
+
 function airportOccupancyRatio(apt) {
   const cap = Number(apt?.capacity) || 0;
   const used = Number(apt?.used) || 0;
@@ -877,7 +1025,9 @@ function sortAirports(rows = [], key = "occupancy", dir = "desc", nextTimes = ne
   const factor = dir === "desc" ? -1 : 1;
   return [...rows].sort((left, right) => {
     let cmp;
-    if (key === "nextDep" || key === "nextArr") {
+    if (key === "name") {
+      cmp = String(left?.iata ?? "").localeCompare(String(right?.iata ?? ""));
+    } else if (key === "nextDep" || key === "nextArr") {
       const field = key === "nextDep" ? "dep" : "arr";
       const lv = nextTimes.get(left?.iata)?.[field] ?? Infinity;
       const rv = nextTimes.get(right?.iata)?.[field] ?? Infinity;
@@ -900,9 +1050,6 @@ export default function RightPanel({
   const toast = useToast();
   const [activeTab, setActiveTab] = useState("flights");
   const [query, setQuery] = useState("");
-  // Marca si el query/filtro activo lo impuso una seleccion (click en mapa).
-  // Al deseleccionar hay que limpiarlo para que el mapa deje de atenuar el resto.
-  const selectionDrivenFilterRef = useRef(false);
   const [flightStatusFilter, setFlightStatusFilter] = useState("DEFAULT");
   const [flightOriginFilter, setFlightOriginFilter] = useState("ALL");
   const [flightDestFilter, setFlightDestFilter] = useState("ALL");
@@ -911,8 +1058,8 @@ export default function RightPanel({
   const [flightSortDir, setFlightSortDir] = useState("asc");
   const [airportRegionFilter, setAirportRegionFilter] = useState("ALL");
   const [airportCodePattern, setAirportCodePattern] = useState("");
-  const [airportSortKey, setAirportSortKey] = useState("occupancy");
-  const [airportSortDir, setAirportSortDir] = useState("desc");
+  const [airportSortKey, setAirportSortKey] = useState("name");
+  const [airportSortDir, setAirportSortDir] = useState("asc");
   const [envioOriginFilter, setEnvioOriginFilter] = useState("ALL");
   const [envioDestFilter, setEnvioDestFilter] = useState("ALL");
   const [enviosData, setEnviosData] = useState({ planificados: [], enVuelos: [] });
@@ -920,13 +1067,21 @@ export default function RightPanel({
   const [airportSemaforo, setAirportSemaforo] = useState("ALL");
   const [flightSemaforo, setFlightSemaforo] = useState("ALL");
   const [cancelingFlightId, setCancelingFlightId] = useState(null);
+  const [flightPlansModalAirport, setFlightPlansModalAirport] = useState(null);
+  const [airportFlightPlans, setAirportFlightPlans] = useState([]);
+  const [airportFlightPlansStatus, setAirportFlightPlansStatus] = useState("idle");
+  const [cancelingFlightPlanId, setCancelingFlightPlanId] = useState(null);
+  const [pendingFlightPlanCancellation, setPendingFlightPlanCancellation] = useState(null);
+  const [flightPlanConfirmation, setFlightPlanConfirmation] = useState(null);
   const publish = useStompPublish();
   const sessionId = simulationPanelData?.sessionId ?? null;
   const { mapHighlight, setMapHighlight, selected, setSelected, setMapFocus, panelFocus, setMapDim, setFlightManifestLoader } = useMapFocus();
   const location = useLocation();
-  const isDiaADia = location.pathname === "/";
+  const isOperacionesDiaADia = location.pathname === "/operaciones";
   const isPeriodo = location.pathname === "/simulator/period";
-  const isSimulator = location.pathname === "/" || location.pathname.startsWith("/simulator");
+  const isSimulator = location.pathname === "/operaciones" || location.pathname.startsWith("/simulator");
+  const statusTopic = !USE_MOCK && isPeriodo && sessionId ? `/topic/simulacion/${sessionId}/estado` : null;
+  const { data: periodStatusMessage } = useStompSubscribe(statusTopic, { enabled: Boolean(statusTopic) });
   const simulationLoaded = !isSimulator || simulationPanelData?.loaded === true;
   const activeTabLabel = PANEL_TABS.find((tab) => tab.id === activeTab)?.label ?? "";
 
@@ -949,8 +1104,8 @@ export default function RightPanel({
   };
 
   const resetAirportSort = () => {
-    setAirportSortKey("occupancy");
-    setAirportSortDir("desc");
+    setAirportSortKey("name");
+    setAirportSortDir("asc");
   };
 
   const clearEnvioFilters = () => {
@@ -969,6 +1124,12 @@ export default function RightPanel({
     resetAirportSort();
     clearEnvioFilters();
     setCancelingFlightId(null);
+    setFlightPlansModalAirport(null);
+    setAirportFlightPlans([]);
+    setAirportFlightPlansStatus("idle");
+    setCancelingFlightPlanId(null);
+    setPendingFlightPlanCancellation(null);
+    setFlightPlanConfirmation(null);
   }, [isSimulator, simulationLoaded]);
 
   const onTabChange = (tab) => {
@@ -985,6 +1146,74 @@ export default function RightPanel({
       setFlightStatusFilter("DEFAULT");
     }
   };
+
+  const closeFlightPlansModal = useCallback(() => {
+    setFlightPlansModalAirport(null);
+    setAirportFlightPlans([]);
+    setAirportFlightPlansStatus("idle");
+    setCancelingFlightPlanId(null);
+    setPendingFlightPlanCancellation(null);
+    setFlightPlanConfirmation(null);
+  }, []);
+
+  const openFlightPlansModal = useCallback((airport) => {
+    setFlightPlansModalAirport(airport ?? null);
+    setCancelingFlightPlanId(null);
+    setPendingFlightPlanCancellation(null);
+    setFlightPlanConfirmation(null);
+  }, []);
+
+  const loadFlightPlansForAirport = useCallback((airport) => {
+    if (!airport || !isPeriodo) return () => {};
+    let cancelled = false;
+
+    setAirportFlightPlansStatus("loading");
+    listFlightPlans(airport.iata ?? airport.idAeropuerto)
+      .then((data) => {
+        if (cancelled) return;
+        setAirportFlightPlans(Array.isArray(data) ? data : []);
+        setAirportFlightPlansStatus("ready");
+      })
+      .catch(() => {
+        if (cancelled) return;
+        setAirportFlightPlans([]);
+        setAirportFlightPlansStatus("error");
+      });
+
+    return () => {
+      cancelled = true;
+    };
+  }, [isPeriodo]);
+
+  useEffect(() => {
+    if (!flightPlansModalAirport || !isPeriodo) return;
+    return loadFlightPlansForAirport(flightPlansModalAirport);
+  }, [flightPlansModalAirport, isPeriodo, loadFlightPlansForAirport]);
+
+  useEffect(() => {
+    if (!pendingFlightPlanCancellation || !periodStatusMessage?.estado) return;
+
+    if (periodStatusMessage.estado === "VUELO_PROGRAMADO_CANCELADO") {
+      toast.push({
+        type: "warning",
+        title: "Vuelo cancelado",
+        message: pendingFlightPlanCancellation.toastMessage,
+      });
+      closeFlightPlansModal();
+      return;
+    }
+
+    if (periodStatusMessage.estado === "ERROR_CANCELACION_VUELO_PROGRAMADO") {
+      toast.push({
+        type: "error",
+        title: "No se pudo cancelar el vuelo",
+        message: periodStatusMessage.mensaje ?? "La cancelacion fue rechazada por el backend.",
+      });
+      setPendingFlightPlanCancellation(null);
+      setCancelingFlightPlanId(null);
+      setFlightPlanConfirmation(null);
+    }
+  }, [closeFlightPlansModal, pendingFlightPlanCancellation, periodStatusMessage, toast]);
 
   const flightsFetch = useFetch(() => (isSimulator ? Promise.resolve([]) : listFlights()), [isSimulator]);
   const ordersFetch = useFetch(() => (isSimulator ? Promise.resolve([]) : listOrders()), [isSimulator]);
@@ -1174,6 +1403,63 @@ export default function RightPanel({
     }
   };
 
+  const executeFlightPlanCancellation = async (flightPlan, timing) => {
+    const flightPlanId = flightPlan?.idVueloProgramado ?? flightPlan?.id;
+    if (!flightPlanId) return;
+    setCancelingFlightPlanId(flightPlanId);
+
+    try {
+      if (USE_MOCK || !sessionId) {
+        toast.push({
+          type: "warning",
+          title: "Vuelo cancelado",
+          message: `${flightPlan.origin} -> ${flightPlan.dest} · ${timing.effectiveDateLabel}`,
+        });
+        closeFlightPlansModal();
+        return;
+      }
+
+      setPendingFlightPlanCancellation({
+        idVueloProgramado: flightPlanId,
+        toastMessage: `${flightPlan.origin} -> ${flightPlan.dest} · ${timing.effectiveDateLabel}`,
+      });
+      await publish("/app/simulacion/periodo/cancelar-vuelo-programado", {
+        sessionId,
+        idVueloProgramado: flightPlanId,
+      });
+    } catch (err) {
+      setPendingFlightPlanCancellation(null);
+      setCancelingFlightPlanId(null);
+      toast.push({
+        type: "error",
+        title: "No se pudo cancelar el vuelo",
+        message: err.message,
+      });
+    }
+  };
+
+  const handleCancelFlightPlan = (flightPlan, timing) => {
+    const flightPlanId = flightPlan?.idVueloProgramado ?? flightPlan?.id;
+    if (!flightPlanId) return;
+    if (!timing?.resolved) {
+      toast.push({
+        type: "warning",
+        title: "Hora simulada no disponible",
+        message: "Espera a que la simulacion tenga una hora simulada para resolver si la cancelacion aplica hoy o manana.",
+      });
+      return;
+    }
+
+    setFlightPlanConfirmation({ flightPlan, timing });
+  };
+
+  const confirmFlightPlanCancellation = async () => {
+    if (!flightPlanConfirmation) return;
+    const { flightPlan, timing } = flightPlanConfirmation;
+    setFlightPlanConfirmation(null);
+    await executeFlightPlanCancellation(flightPlan, timing);
+  };
+
   const simTime = simulationPanelData?.simTime;
 
   const maletasVisibles = useMemo(() => {
@@ -1276,8 +1562,8 @@ export default function RightPanel({
     }
     setEnviosStatus("loading");
 
-    if (isDiaADia) {
-      return obtenerEnviosDiaADia()
+    if (isOperacionesDiaADia) {
+      return obtenerEnviosOperacionesDiaADia()
         .then((data) => {
           setEnviosData({
             planificados: data?.planificados ?? [],
@@ -1303,11 +1589,11 @@ export default function RightPanel({
         setEnviosData({ planificados: [], enVuelos: [] });
         setEnviosStatus("error");
       });
-  }, [sessionId, isDiaADia, isPeriodo]);
+  }, [sessionId, isOperacionesDiaADia, isPeriodo]);
 
   useEffect(() => {
-    if ((isPeriodo || isDiaADia) && activeTab === "orders") fetchEnvios();
-  }, [isPeriodo, isDiaADia, activeTab, fetchEnvios]);
+    if ((isPeriodo || isOperacionesDiaADia) && activeTab === "orders") fetchEnvios();
+  }, [isPeriodo, isOperacionesDiaADia, activeTab, fetchEnvios]);
 
   const enviosAirportOptions = useMemo(() => {
     const origins = new Set();
@@ -1355,11 +1641,11 @@ export default function RightPanel({
       if (USE_MOCK || !sessionId || !flightKey) {
         return Promise.resolve({ maletas: [], pedidos: [] });
       }
-      return isDiaADia
-        ? obtenerManifiestoVueloDiaADia(flightKey)
+      return isOperacionesDiaADia
+        ? obtenerManifiestoVueloOperacionesDiaADia(flightKey)
         : obtenerManifiestoVuelo(sessionId, flightKey);
     },
-    [sessionId, isDiaADia]
+    [sessionId, isOperacionesDiaADia]
   );
 
   // Publicamos el loader al contexto para que el mapa pueda usarlo al hacer
@@ -1385,7 +1671,7 @@ export default function RightPanel({
           totalMaletasEntran: 0, totalMaletasSalen: 0,
         });
       }
-      if (isDiaADia) {
+      if (isOperacionesDiaADia) {
         return apiGet(`/operations/${sessionId}/almacen/${encodeURIComponent(idAeropuerto)}/contenido`)
           .catch(() => ({
             pedidosDestinoFinal: [], pedidosEnTransito: [],
@@ -1406,7 +1692,9 @@ export default function RightPanel({
     async (idMaleta) => {
       if (!idMaleta || !sessionId || USE_MOCK) return;
       try {
-        const ruta = await obtenerRutaMaleta(sessionId, idMaleta);
+        const ruta = isOperacionesDiaADia
+          ? await obtenerRutaMaletaOperacionesDiaADia(idMaleta)
+          : await obtenerRutaMaleta(sessionId, idMaleta);
         const escalas = (ruta?.vuelos ?? []).map(toEscala);
         if (escalas.length === 0) {
           toast.push({ type: "warning", title: "Sin ruta", message: `La maleta ${idMaleta} no tiene ruta asignada.` });
@@ -1423,10 +1711,14 @@ export default function RightPanel({
         const c = centroideDe(codes);
         if (c) setMapFocus({ ...c, zoom: 3.5, ts: Date.now() });
       } catch (err) {
+        if (err?.status === 404) {
+          toast.push({ type: "warning", title: "Sin ruta", message: `La maleta ${idMaleta} no tiene ruta asignada.` });
+          return;
+        }
         toast.push({ type: "error", title: "No se pudo cargar la ruta", message: err.message });
       }
     },
-    [sessionId, setMapHighlight, setMapFocus, centroideDe, toast]
+    [sessionId, isOperacionesDiaADia, setMapHighlight, setMapFocus, centroideDe, toast]
   );
 
   // Resalta en el mapa las rutas de un envio por su ID (req 3/4).
@@ -1434,8 +1726,8 @@ export default function RightPanel({
     async (idPedido) => {
       if (!idPedido || !sessionId || USE_MOCK) return;
       try {
-        const rutas = isDiaADia
-          ? await obtenerRutasEnvioDiaADia(idPedido)
+        const rutas = isOperacionesDiaADia
+          ? await obtenerRutasEnvioOperacionesDiaADia(idPedido)
           : await obtenerRutasEnvio(sessionId, idPedido);
         const rutasVistas = new Set();
         const rutasNorm = [];
@@ -1474,7 +1766,7 @@ export default function RightPanel({
         toast.push({ type: "error", title: "No se pudieron cargar las rutas", message: err.message });
       }
     },
-    [sessionId, isDiaADia, setMapHighlight, setMapFocus, centroideDe, toast]
+    [sessionId, isOperacionesDiaADia, setMapHighlight, setMapFocus, centroideDe, toast]
   );
 
   // Enfocar un almacen (req 5) o una UT (req 7) en el mapa desde el panel.
@@ -1501,39 +1793,6 @@ export default function RightPanel({
     [airportCoords, setSelected, setMapFocus]
   );
 
-  // Mapa -> panel: al clicar el mapa, cambia de pestana y enfoca la entidad (req 6/8).
-  useEffect(() => {
-    if (!panelFocus) return;
-    if (panelFocus.kind === "airport") {
-      setActiveTab("airports");
-      clearAirportFilters();
-      setQuery(panelFocus.id);
-    } else if (panelFocus.kind === "flight") {
-      setActiveTab("flights");
-      clearFlightFilters();
-      setFlightStatusFilter("ALL");
-      const f = (flights.data ?? []).find((fl) => (fl.idVueloInstancia ?? fl.id) === panelFocus.id);
-      setQuery(f?.id ?? panelFocus.id);
-    }
-    // El filtro recien aplicado proviene de una seleccion en el mapa.
-    selectionDrivenFilterRef.current = true;
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [panelFocus]);
-
-  // Al deseleccionar (boton X del panel o click en zona vacia del mapa), limpiar
-  // el filtro que la seleccion habia impuesto para que el mapa deje de atenuar
-  // los demas vuelos/aeropuertos y todo vuelva a su color normal.
-  useEffect(() => {
-    if (selected) return;
-    if (!selectionDrivenFilterRef.current) return;
-    selectionDrivenFilterRef.current = false;
-    setQuery("");
-    setFlightStatusFilter("DEFAULT");
-    clearFlightFilters();
-    clearAirportFilters();
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [selected]);
-
   // Panel -> mapa: refleja el filtro de almacenes (semaforo y otros) (req 10/12).
   useEffect(() => {
     const active = airportSemaforo !== "ALL" || airportRegionFilter !== "ALL"
@@ -1558,6 +1817,14 @@ export default function RightPanel({
     }
   }, [activeTab, visibleFlights, flightSemaforo, flightOriginFilter, flightDestFilter, flightCodePattern, query, flightStatusFilter, setMapDim]);
 
+  const handleItemExpand = useCallback((entity) => {
+    setSelected(entity);
+  }, [setSelected]);
+
+  const handleItemCollapse = useCallback(() => {
+    setSelected(null);
+  }, [setSelected]);
+
   const tabContent = {
     flights: (
       <TabBody
@@ -1573,6 +1840,8 @@ export default function RightPanel({
             loadManifest={loadFlightManifest}
             onFocus={focusFlightOnMap}
             onDeselect={() => setSelected(null)}
+            onExpand={(id) => handleItemExpand({ kind: "flight", id })}
+            onCollapse={handleItemCollapse}
             isSelected={selected?.kind === "flight" && selected.id === (f.idVueloInstancia ?? f.id)}
           />
         )}
@@ -1628,12 +1897,152 @@ export default function RightPanel({
             loadContenido={loadAirportContenido}
             onFocus={focusAirportOnMap}
             onDeselect={() => setSelected(null)}
+            onExpand={(id) => handleItemExpand({ kind: "airport", id })}
+            onCollapse={handleItemCollapse}
             isSelected={selected?.kind === "airport" && selected.id === (a.iata ?? a.idAeropuerto)}
+            onShowFlightPlans={openFlightPlansModal}
+            showFlightPlansAction={isPeriodo}
           />
         )}
       />
     ),
   }[activeTab];
+
+  const flightPlansModal = (
+    <Modal
+      open={Boolean(flightPlansModalAirport)}
+      onClose={closeFlightPlansModal}
+      title={`Vuelos programados de ${flightPlansModalAirport?.iata ?? flightPlansModalAirport?.idAeropuerto ?? ""}`}
+      maxWidth="max-w-4xl"
+    >
+      <div className="flex max-h-[80vh] flex-col">
+        <div className="border-b border-slate-800 px-6 py-5 pr-16">
+          <h3 className="text-lg font-semibold text-slate-100">
+            Vuelos programados de {flightPlansModalAirport?.iata ?? flightPlansModalAirport?.idAeropuerto ?? "--"}
+          </h3>
+          <p className="mt-2 text-sm leading-relaxed text-slate-400">
+            Selecciona un vuelo programado para registrar su cancelacion. La interfaz te indicara si la cancelacion aplica al vuelo de hoy o al del dia siguiente segun la hora simulada actual.
+          </p>
+        </div>
+
+        <div className="overflow-y-auto px-6 py-5">
+          {airportFlightPlansStatus === "loading" ? (
+            <LoadingState label="Cargando vuelos programados..." />
+          ) : airportFlightPlansStatus === "error" ? (
+            <ErrorState
+              error={{ message: "No se pudieron cargar los vuelos programados de este aeropuerto." }}
+              onRetry={() => loadFlightPlansForAirport(flightPlansModalAirport)}
+            />
+          ) : airportFlightPlans.length === 0 ? (
+            <EmptyState title="Sin vuelos programados" message="Este aeropuerto no tiene vuelos programados registrados." />
+          ) : (
+            <div className="space-y-3">
+              {airportFlightPlans.map((flightPlan, index) => {
+                const key = flightPlan.idVueloProgramado ?? flightPlan.id ?? `${flightPlan.origin}-${flightPlan.dest}-${index}`;
+                return (
+                  <ScheduledFlightPlanItem
+                    key={key}
+                    flightPlan={flightPlan}
+                    simTime={simTime}
+                    onCancel={handleCancelFlightPlan}
+                    canceling={cancelingFlightPlanId === (flightPlan.idVueloProgramado ?? flightPlan.id)}
+                  />
+                );
+              })}
+            </div>
+          )}
+        </div>
+      </div>
+    </Modal>
+  );
+
+  const flightPlanConfirmationModal = (
+    <Modal
+      open={Boolean(flightPlanConfirmation)}
+      onClose={() => {
+        if (cancelingFlightPlanId) return;
+        setFlightPlanConfirmation(null);
+      }}
+      title="Confirmar cancelacion de vuelo programado"
+      maxWidth="max-w-2xl"
+    >
+      <div className="flex max-h-[80vh] flex-col">
+        <div className="border-b border-slate-800 px-6 py-5 pr-16">
+          <p className="text-xs font-semibold uppercase tracking-[0.24em] text-warning">
+            Confirmacion
+          </p>
+          <h3 className="mt-2 text-2xl font-semibold text-slate-100">
+            Cancelar vuelo programado
+          </h3>
+          <p className="mt-3 text-sm leading-relaxed text-slate-400">
+            La cancelacion se registrara sobre la siguiente ocurrencia aplicable del vuelo segun la hora simulada actual.
+          </p>
+        </div>
+
+        <div className="space-y-5 overflow-y-auto px-6 py-5">
+          <div className="rounded-2xl border border-slate-700/80 bg-slate-900/40 p-5">
+            <div className="text-xs font-semibold uppercase tracking-[0.2em] text-slate-400">
+              Vuelo seleccionado
+            </div>
+            <div className="mt-3 flex flex-wrap items-center gap-3 text-lg font-semibold text-white">
+              <span>{flightPlanConfirmation?.flightPlan?.origin ?? "--"}</span>
+              <span className="text-slate-500">{"->"}</span>
+              <span>{flightPlanConfirmation?.flightPlan?.dest ?? "--"}</span>
+            </div>
+
+            <div className="mt-4 grid gap-3 sm:grid-cols-2">
+              <div className="rounded-xl border border-slate-700/70 bg-surface-2/70 p-4">
+                <div className="text-xs uppercase tracking-wide text-slate-400">Hora de salida</div>
+                <div className="mt-1 text-lg font-semibold text-white">
+                  {flightPlanConfirmation?.timing?.departureLabel ?? "--:--"} UTC
+                </div>
+              </div>
+
+              <div className="rounded-xl border border-slate-700/70 bg-surface-2/70 p-4">
+                <div className="text-xs uppercase tracking-wide text-slate-400">Fecha afectada</div>
+                <div className="mt-1 text-lg font-semibold text-white">
+                  {flightPlanConfirmation?.timing?.effectiveDateLabel ?? "--"}
+                </div>
+                <div className="mt-1 text-sm text-info">
+                  {flightPlanConfirmation?.timing?.appliesToday ? "Afecta el vuelo de hoy" : "Afecta el vuelo del dia siguiente"}
+                </div>
+              </div>
+            </div>
+          </div>
+
+          <div className="rounded-2xl border border-warning/30 bg-warning/10 p-5">
+            <div className="text-sm font-semibold text-warning">Regla aplicada</div>
+            <p className="mt-2 text-sm leading-relaxed text-slate-200">
+              Si registras la cancelacion hasta las{" "}
+              <span className="font-semibold text-white">
+                {flightPlanConfirmation?.timing?.cutoffLabel ?? "--:--"} UTC
+              </span>
+              , afecta el mismo dia. Despues de esa hora, afecta el dia siguiente.
+            </p>
+          </div>
+        </div>
+
+        <div className="flex flex-col-reverse gap-3 border-t border-slate-800 px-6 py-5 sm:flex-row sm:justify-end">
+          <button
+            type="button"
+            onClick={() => setFlightPlanConfirmation(null)}
+            disabled={Boolean(cancelingFlightPlanId)}
+            className="inline-flex items-center justify-center rounded-lg border border-slate-700 bg-surface-2 px-4 py-2.5 text-sm font-semibold text-slate-200 transition-colors hover:bg-slate-800 disabled:cursor-not-allowed disabled:opacity-60"
+          >
+            Volver
+          </button>
+          <button
+            type="button"
+            onClick={confirmFlightPlanCancellation}
+            disabled={Boolean(cancelingFlightPlanId)}
+            className="inline-flex items-center justify-center rounded-lg border border-danger/50 bg-danger/15 px-4 py-2.5 text-sm font-semibold text-danger transition-colors hover:bg-danger/20 disabled:cursor-not-allowed disabled:opacity-60"
+          >
+            {cancelingFlightPlanId ? "Cancelando..." : "Confirmar cancelacion"}
+          </button>
+        </div>
+      </div>
+    </Modal>
+  );
 
   return (
     <div className="w-[min(360px,90vw)] lg:w-[360px] shrink-0 bg-surface-1 border-l border-slate-800 h-screen flex flex-col relative z-[9999]">
@@ -1852,6 +2261,7 @@ export default function RightPanel({
                   aria-label="Ordenar almacenes por"
                   className="w-full appearance-none rounded-lg border border-slate-800 bg-surface-2 py-1.5 pl-9 pr-8 text-sm text-slate-200 focus:border-slate-600 focus:outline-none"
                 >
+                  <option value="name">Ordenar: alfabetico</option>
                   <option value="occupancy">Ordenar: ocupacion</option>
                   <option value="nextDep">Ordenar: proxima salida (UT)</option>
                   <option value="nextArr">Ordenar: proxima llegada (UT)</option>
@@ -1967,11 +2377,13 @@ export default function RightPanel({
         )}
       </div>
 
-      <div key={`${activeTab}-${simulationLoaded ? "loaded" : "empty"}`} className="flex-1 overflow-y-auto m-4 no-scrollbar">
+      <div key={`${activeTab}-${simulationLoaded ? "loaded" : "empty"}`} className="app-scrollbar m-4 flex-1 overflow-y-auto">
           {tabContent}
       </div>
 
       <ColorLegend />
+      {flightPlansModal}
+      {flightPlanConfirmationModal}
     </div>
   );
 }
@@ -1984,6 +2396,7 @@ function TabBody({ loading, error, refetch, rows, empty, renderItem }) {
   return (
     <Virtuoso
       style={{ height: "100%" }}
+      components={{ Scroller: PanelScroller }}
       totalCount={rows.length}
       itemContent={(index) => renderItem(rows[index], index)}
     />

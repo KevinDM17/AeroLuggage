@@ -13,4 +13,5 @@ public class MaletaSimulacionResponse {
     private String fechaLlegada;
     private String estado;
     private String ubicacionActual;
+    private String horaLlegadaEstimada;
 }

@@ -5,9 +5,9 @@ import org.springframework.context.annotation.PropertySource;
 import org.springframework.stereotype.Component;
 
 @Component
-@ConfigurationProperties(prefix = "simulacion-dia-a-dia")
+@ConfigurationProperties(prefix = "operaciones-dia-a-dia")
 @PropertySource(value = "classpath:system_params.yml", factory = YamlPropertySourceFactory.class)
-public class SimulacionDiaADiaParams {
+public class OperacionesDiaADiaParams {
 
     private long tickIntervalMs = 1000L;
     private long heartbeatMs = 10000L;

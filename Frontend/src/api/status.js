@@ -6,12 +6,11 @@ import { mockGetStatus } from "./mock";
  * Polling cada VITE_POLL_INTERVAL_MS.
  *
  * Shape que consumen los componentes:
- *   { date, time, bagsInTransit, bagsDelivered, bagsUnassigned,
- *     activeFlights, freeCapacityPct }
+ *   { date, time, bagsInTransit, bagsDelivered, activeFlights }
  *
  * El back puede devolver:
  *   a) Mismos nombres en ingles (acordado en API_CONTRACT.md), o
- *   b) Nombres en espanol (maletasEnTransito, vuelosActivos, capacidadLibrePct, ...)
+ *   b) Nombres en espanol (maletasEnTransito, vuelosActivos, ...)
  * El adapter tolera ambos.
  */
 const adaptStatus = (s) => {
@@ -21,9 +20,7 @@ const adaptStatus = (s) => {
     time:            s.time ?? s.horaActual  ?? s.hora  ?? "",
     bagsInTransit:   s.bagsInTransit   ?? s.maletasEnTransito   ?? 0,
     bagsDelivered:   s.bagsDelivered   ?? s.maletasEntregadas   ?? 0,
-    bagsUnassigned:  s.bagsUnassigned  ?? s.maletasNoAsignadas  ?? s.maletasSinRuta ?? 0,
     activeFlights:   s.activeFlights   ?? s.vuelosActivos       ?? 0,
-    freeCapacityPct: s.freeCapacityPct ?? s.capacidadLibrePct   ?? s.porcentajeCapacidadLibre ?? 0,
   };
 };
 
