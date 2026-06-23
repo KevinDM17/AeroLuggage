@@ -1049,6 +1049,12 @@ export default function RightPanel({
 }) {
   const toast = useToast();
   const [activeTab, setActiveTab] = useState("flights");
+  // Refs a las listas virtualizadas para poder desplazar hasta un item concreto
+  // cuando se selecciona un almacen/UT en el mapa (req 6/8). scrollTarget guarda
+  // la peticion pendiente hasta que la pestaña correcta y sus filas esten listas.
+  const flightsVirtuosoRef = useRef(null);
+  const airportsVirtuosoRef = useRef(null);
+  const [scrollTarget, setScrollTarget] = useState(null);
   const [query, setQuery] = useState("");
   const [flightStatusFilter, setFlightStatusFilter] = useState("DEFAULT");
   const [flightOriginFilter, setFlightOriginFilter] = useState("ALL");
@@ -1858,6 +1864,53 @@ export default function RightPanel({
     }
   }, [activeTab, visibleFlights, flightSemaforo, flightOriginFilter, flightDestFilter, flightCodePattern, query, flightStatusFilter, setMapDim]);
 
+  // Mapa -> panel (req 6/8): al hacer click en un almacen (aeropuerto) o en una
+  // unidad de transporte (vuelo) en el mapa, saltar a su pestaña y dejar pedido
+  // el desplazamiento hasta el item correspondiente.
+  useEffect(() => {
+    if (!panelFocus) return;
+    const targetTab =
+      panelFocus.kind === "airport" ? "airports" :
+      panelFocus.kind === "flight" ? "flights" : null;
+    if (!targetTab) return;
+    if (activeTab !== targetTab) onTabChange(targetTab);
+    setScrollTarget({ kind: panelFocus.kind, id: panelFocus.id, ts: panelFocus.ts });
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [panelFocus]);
+
+  // Ejecuta el desplazamiento una vez que la pestaña correcta esta activa y sus
+  // filas estan disponibles. Reintenta por frames porque la lista virtualizada
+  // (Virtuoso) puede montarse despues del cambio de pestaña.
+  useEffect(() => {
+    if (!scrollTarget) return undefined;
+    const isAirport = scrollTarget.kind === "airport";
+    const targetTab = isAirport ? "airports" : "flights";
+    if (activeTab !== targetTab) return undefined;
+    const rows = isAirport ? airportsFiltered : visibleFlights;
+    const index = rows.findIndex((row) =>
+      isAirport
+        ? (row.iata ?? row.idAeropuerto) === scrollTarget.id
+        : (row.idVueloInstancia ?? row.id) === scrollTarget.id
+    );
+    if (index < 0) return undefined;
+    const virtuosoRef = isAirport ? airportsVirtuosoRef : flightsVirtuosoRef;
+    let cancelled = false;
+    let frame = 0;
+    let tries = 0;
+    const tryScroll = () => {
+      if (cancelled) return;
+      const inst = virtuosoRef.current;
+      if (inst?.scrollToIndex) {
+        inst.scrollToIndex({ index, align: "center", behavior: "smooth" });
+        setScrollTarget(null);
+        return;
+      }
+      if (tries++ < 30) frame = requestAnimationFrame(tryScroll);
+    };
+    frame = requestAnimationFrame(tryScroll);
+    return () => { cancelled = true; cancelAnimationFrame(frame); };
+  }, [scrollTarget, activeTab, visibleFlights, airportsFiltered]);
+
   const handleItemExpand = useCallback((entity) => {
     setSelected(entity);
   }, [setSelected]);
@@ -1870,6 +1923,7 @@ export default function RightPanel({
     flights: (
       <TabBody
         {...flights}
+        virtuosoRef={flightsVirtuosoRef}
         empty="Ejecuta la simulacion para cargar los vuelos del periodo."
         rows={visibleFlights}
         renderItem={(f, index) => (
@@ -1929,6 +1983,7 @@ export default function RightPanel({
     airports: (
       <TabBody
         {...airports}
+        virtuosoRef={airportsVirtuosoRef}
         empty="Ejecuta la simulacion para cargar los aeropuertos del periodo."
         rows={airportsFiltered}
         renderItem={(a, index) => (
@@ -2429,13 +2484,14 @@ export default function RightPanel({
   );
 }
 
-function TabBody({ loading, error, refetch, rows, empty, renderItem }) {
+function TabBody({ loading, error, refetch, rows, empty, renderItem, virtuosoRef }) {
   if (loading) return <LoadingState />;
   if (error) return <ErrorState error={error} onRetry={refetch} />;
   if (!rows || rows.length === 0) return <EmptyState title="Sin resultados" message={empty} />;
 
   return (
     <Virtuoso
+      ref={virtuosoRef}
       style={{ height: "100%" }}
       components={{ Scroller: PanelScroller }}
       totalCount={rows.length}
