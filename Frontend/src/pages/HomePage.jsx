@@ -89,7 +89,7 @@ export default function HomePage() {
               Si no existe, se muestra un marcador de reserva. */}
           {logoError ? (
             <div
-              className="flex h-28 w-28 sm:h-32 sm:w-32 items-center justify-center rounded-2xl border-2 border-dashed border-slate-700 bg-surface-1/60"
+              className="flex h-40 w-40 sm:h-48 sm:w-48 items-center justify-center rounded-full border-2 border-dashed border-slate-700 bg-surface-1/60"
               aria-label="Espacio reservado para el logo"
             >
               <span className="text-[11px] uppercase tracking-widest text-slate-500">Logo</span>
@@ -99,7 +99,7 @@ export default function HomePage() {
               src="/logo.png"
               alt="AeroLuggage"
               onError={() => setLogoError(true)}
-              className="h-28 w-28 sm:h-32 sm:w-32 object-contain"
+              className="h-40 w-40 sm:h-48 sm:w-48 rounded-full object-cover bg-surface-1 ring-2 ring-slate-700/60 shadow-lg"
             />
           )}
 

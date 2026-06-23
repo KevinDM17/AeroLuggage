@@ -46,7 +46,7 @@ export default function Sidebar({ onClose, closeOnNavigate = false }) {
         <div className="flex items-center gap-3 min-w-0">
           {/* Logo (Frontend/public/logo.png). Si no existe, se usa el ícono SVG. */}
           {logoError ? (
-            <div className="text-blue-500 shrink-0">
+            <div className="flex h-12 w-12 shrink-0 items-center justify-center rounded-full bg-surface-2 text-blue-500 ring-1 ring-slate-700/60">
               <svg
                 viewBox="0 0 24 24"
                 fill="none"
@@ -66,7 +66,7 @@ export default function Sidebar({ onClose, closeOnNavigate = false }) {
               src="/logo.png"
               alt="AeroLuggage"
               onError={() => setLogoError(true)}
-              className="w-7 h-7 shrink-0 object-contain"
+              className="w-12 h-12 shrink-0 rounded-full object-cover bg-surface-2 ring-1 ring-slate-700/60"
             />
           )}
           <span className="text-lg font-bold text-white tracking-wide truncate">AeroLuggage</span>
