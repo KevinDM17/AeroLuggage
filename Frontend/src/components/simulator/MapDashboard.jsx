@@ -1,4 +1,4 @@
-import { Building, CheckCircle2, ChevronDown, ChevronUp, Luggage, Plane, Warehouse } from "lucide-react";
+import { Building, CheckCircle2, ChevronDown, ChevronUp, Gauge, Luggage, Plane, Warehouse } from "lucide-react";
 import { useState } from "react";
 import { useLocation } from "react-router-dom";
 import AirportMap from "../map/AirportMap";
@@ -73,44 +73,43 @@ export default function MapDashboard({
         )}
       </div>
 
-      {title && (
-        <div className="absolute top-3 left-16 z-[2500] max-w-[calc(100%-8rem)]">
-          <div className="bg-surface-1/60 backdrop-blur px-3 py-1.5 rounded-lg">
-            <h1 className="text-lg sm:text-xl font-bold tracking-tight text-white truncate">{title}</h1>
-          </div>
-        </div>
-      )}
-
-      {showKpis ? (
-        <div className="absolute top-14 left-2 z-[2000] w-44">
-          <div className="relative bg-surface-1/80 backdrop-blur border border-slate-700/50 rounded-lg p-1 pt-5">
-            <button
-              type="button"
-              onClick={() => setShowKpis(false)}
-              className="absolute top-1 right-1 z-[4000] text-slate-400 hover:text-white transition-colors"
-              title="Ocultar métricas"
-            >
-              <ChevronUp className="w-3.5 h-3.5" />
-            </button>
-            <div className="flex flex-col">
+      {/* Barra superior izquierda. Empieza en left-14 para dejar libre el botón
+          de la barra lateral (hamburguesa, fijo en top-3 left-3). Contiene el
+          desplegable de Métricas y, a su derecha, el título de la vista. */}
+      <div className="absolute top-3 left-14 z-[2500] flex items-center gap-2 max-w-[calc(100%-9rem)]">
+        {/* Métricas: botón + desplegable. Abre y cierra desde el mismo lugar. */}
+        <div className="relative shrink-0">
+          <button
+            type="button"
+            onClick={() => setShowKpis((v) => !v)}
+            aria-expanded={showKpis}
+            className="flex items-center gap-1.5 rounded-lg bg-surface-1/70 hover:bg-surface-1/90 backdrop-blur border border-slate-700/50 px-2 py-1.5 transition-colors"
+            title={showKpis ? "Ocultar métricas" : "Mostrar métricas"}
+          >
+            <Gauge className="w-3.5 h-3.5 text-info" />
+            <span className="text-[10px] font-bold uppercase tracking-wider text-slate-400">Métricas</span>
+            {showKpis
+              ? <ChevronUp className="w-3.5 h-3.5 text-slate-400" />
+              : <ChevronDown className="w-3.5 h-3.5 text-slate-400" />}
+          </button>
+          {showKpis && (
+            <div className="absolute top-full left-0 mt-1 w-44 flex flex-col rounded-lg bg-surface-1/90 backdrop-blur border border-slate-700/50 px-1 py-1 shadow-lg">
               <Kpi icon={Luggage} label="En Tránsito" value={bagsInTransit.toLocaleString()} tone="info" />
               <Kpi icon={CheckCircle2} label="Entregadas" value={bagsDelivered.toLocaleString()} tone="success" />
               <Kpi icon={Plane} label="Vuelos Activos" value={activeFlights} tone="fuchsia" />
               <Kpi icon={Building} label="Ocup. Aerop." value={`${airportCapacityPct}%`} tone={airportCapacityTone} />
               <Kpi icon={Warehouse} label="Ocup. Vuelos" value={`${flightCapacityPct}%`} tone={flightCapacityTone} />
             </div>
-          </div>
+          )}
         </div>
-      ) : (
-        <button
-          type="button"
-          onClick={() => setShowKpis(true)}
-          className="absolute top-14 left-2 z-[4000] bg-surface-1/70 hover:bg-surface-1/90 backdrop-blur border border-slate-700/50 rounded-full p-1 text-slate-400 hover:text-white transition-colors"
-          title="Mostrar métricas"
-        >
-          <ChevronDown className="w-3.5 h-3.5" />
-        </button>
-      )}
+
+        {/* Título de la vista */}
+        {title && (
+          <div className="min-w-0 bg-surface-1/60 backdrop-blur px-3 py-1.5 rounded-lg">
+            <h1 className="text-lg sm:text-xl font-bold tracking-tight text-white truncate">{title}</h1>
+          </div>
+        )}
+      </div>
 
       <button
         type="button"
