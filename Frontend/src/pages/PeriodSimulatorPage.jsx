@@ -523,9 +523,11 @@ export default function PeriodSimulatorPage() {
       const updatedFlights = new Map(prev.flights);
       const metadata = new Map(flightMetadataRef.current);
 
-      // FASE 1: Remover FINALIZADO y CANCELADO inmediatamente
+      // FASE 1: Remover FINALIZADO (e===3) inmediatamente. Los CANCELADO (e===4)
+      // se CONSERVAN para poder filtrarlos por estado en la lista; FASE 2 les
+      // pondra status "CANCELADO" y no se dibujan en el mapa (solo EN_PROGRESO).
       for (const st of tick.estadosVuelos ?? []) {
-        if (st.e === 3 || st.e === 4) {
+        if (st.e === 3) {
           updatedFlights.delete(st.id);
           metadata.delete(st.id);
         }
@@ -543,9 +545,12 @@ export default function PeriodSimulatorPage() {
         }
       }
 
-      // FASE 3: Añadir nuevos CONFIRMADO (1) o EN_PROGRESO (2) desde metadata
+      // FASE 3: Añadir desde metadata los vuelos que aún no están en la lista:
+      // CONFIRMADO (1), EN_PROGRESO (2) o CANCELADO (4). El CANCELADO es clave
+      // porque en periodo solo se pueden cancelar vuelos PROGRAMADO, que nunca
+      // estuvieron en la lista; así aparecen para poder filtrarlos por estado.
       for (const st of tick.estadosVuelos ?? []) {
-        if ((st.e === 1 || st.e === 2) && !updatedFlights.has(st.id)) {
+        if ((st.e === 1 || st.e === 2 || st.e === 4) && !updatedFlights.has(st.id)) {
           const meta = metadata.get(st.id);
           if (meta) {
             updatedFlights.set(st.id, {

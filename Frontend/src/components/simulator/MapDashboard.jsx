@@ -1,4 +1,4 @@
-import { Building, CheckCircle2, ChevronDown, ChevronUp, Luggage, Plane, Warehouse } from "lucide-react";
+import { Building, CheckCircle2, ChevronDown, ChevronUp, Gauge, Luggage, Plane, Warehouse } from "lucide-react";
 import { useState } from "react";
 import { useLocation } from "react-router-dom";
 import AirportMap from "../map/AirportMap";
@@ -33,7 +33,7 @@ export default function MapDashboard({
   const flightCapacityTone =
     flightCapacityPct >= 85 ? "danger" : flightCapacityPct >= 65 ? "warning" : "success";
 
-  const [showKpis, setShowKpis] = useState(true);
+  const [showKpis, setShowKpis] = useState(false);
   const [showBottom, setShowBottom] = useState(true);
 
   return (
@@ -73,71 +73,43 @@ export default function MapDashboard({
         )}
       </div>
 
-      {title && (
-        <div className="absolute top-3 left-16 z-[2500] max-w-[calc(100%-8rem)]">
-          <div className="bg-surface-1/60 backdrop-blur px-3 py-1.5 rounded-lg">
+      {/* Barra superior izquierda. Empieza en left-14 para dejar libre el botón
+          de la barra lateral (hamburguesa, fijo en top-3 left-3). Contiene el
+          desplegable de Métricas y, a su derecha, el título de la vista. */}
+      <div className="absolute top-3 left-14 z-[2500] flex items-center gap-2 max-w-[calc(100%-9rem)]">
+        {/* Métricas: botón + desplegable. Abre y cierra desde el mismo lugar. */}
+        <div className="relative shrink-0">
+          <button
+            type="button"
+            onClick={() => setShowKpis((v) => !v)}
+            aria-expanded={showKpis}
+            className="flex items-center gap-1.5 rounded-lg bg-surface-1/70 hover:bg-surface-1/90 backdrop-blur border border-slate-700/50 px-2 py-1.5 transition-colors"
+            title={showKpis ? "Ocultar métricas" : "Mostrar métricas"}
+          >
+            <Gauge className="w-3.5 h-3.5 text-info" />
+            <span className="text-[10px] font-bold uppercase tracking-wider text-slate-400">Métricas</span>
+            {showKpis
+              ? <ChevronUp className="w-3.5 h-3.5 text-slate-400" />
+              : <ChevronDown className="w-3.5 h-3.5 text-slate-400" />}
+          </button>
+          {showKpis && (
+            <div className="absolute top-full left-0 mt-1 w-44 flex flex-col rounded-lg bg-surface-1/90 backdrop-blur border border-slate-700/50 px-1 py-1 shadow-lg">
+              <Kpi icon={Luggage} label="En Tránsito" value={bagsInTransit.toLocaleString()} tone="info" />
+              <Kpi icon={CheckCircle2} label="Entregadas" value={bagsDelivered.toLocaleString()} tone="success" />
+              <Kpi icon={Plane} label="Vuelos Activos" value={activeFlights} tone="fuchsia" />
+              <Kpi icon={Building} label="Ocup. Aerop." value={`${airportCapacityPct}%`} tone={airportCapacityTone} />
+              <Kpi icon={Warehouse} label="Ocup. Vuelos" value={`${flightCapacityPct}%`} tone={flightCapacityTone} />
+            </div>
+          )}
+        </div>
+
+        {/* Título de la vista */}
+        {title && (
+          <div className="min-w-0 bg-surface-1/60 backdrop-blur px-3 py-1.5 rounded-lg">
             <h1 className="text-lg sm:text-xl font-bold tracking-tight text-white truncate">{title}</h1>
           </div>
-        </div>
-      )}
-
-      {showKpis && (
-        <div className="absolute top-2 left-2 right-2 z-[2000] px-14">
-          <div className="relative bg-surface-1/75 backdrop-blur border border-slate-700/50 rounded-xl pl-2 pr-9 py-1.5">
-            <div className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-5 gap-1.5 sm:gap-2">
-              <Kpi
-                icon={Luggage}
-                label="Maletas en Tránsito"
-                value={bagsInTransit.toLocaleString()}
-                tone="info"
-              />
-              <Kpi
-                icon={CheckCircle2}
-                label="Maletas Entregadas"
-                value={bagsDelivered.toLocaleString()}
-                tone="success"
-              />
-              <Kpi
-                icon={Plane}
-                label="Vuelos Activos"
-                value={activeFlights}
-                tone="fuchsia"
-              />
-              <Kpi
-                icon={Building}
-                label="Ocupación Aeropuertos"
-                value={`${airportCapacityPct}%`}
-                tone={airportCapacityTone}
-              />
-              <Kpi
-                icon={Warehouse}
-                label="Ocupación Vuelos"
-                value={`${flightCapacityPct}%`}
-                tone={flightCapacityTone}
-              />
-            </div>
-            <button
-              type="button"
-              onClick={() => setShowKpis(false)}
-              className="absolute top-1/2 right-2 -translate-y-1/2 z-[4000] bg-surface-1/60 hover:bg-surface-1/80 backdrop-blur border border-slate-700/50 rounded-full p-1 text-slate-400 hover:text-white transition-colors"
-              title="Ocultar métricas"
-            >
-              <ChevronUp className="w-3.5 h-3.5" />
-            </button>
-          </div>
-        </div>
-      )}
-
-      {!showKpis && (
-        <button
-          type="button"
-          onClick={() => setShowKpis(true)}
-          className="absolute top-2 left-1/2 -translate-x-1/2 z-[4000] bg-surface-1/60 hover:bg-surface-1/80 backdrop-blur border border-slate-700/50 rounded-full p-1 text-slate-400 hover:text-white transition-colors"
-          title="Mostrar métricas"
-        >
-          <ChevronDown className="w-3.5 h-3.5" />
-        </button>
-      )}
+        )}
+      </div>
 
       <button
         type="button"
@@ -162,21 +134,17 @@ const TONE_CLASSES = {
 function Kpi({ icon: Icon, label, value, tone = "info" }) {
   const valueClass = TONE_CLASSES[tone] ?? TONE_CLASSES.info;
   return (
-    <div className="bg-surface-1/70 backdrop-blur border border-slate-800 rounded-lg px-2.5 py-1 flex items-center gap-2 min-w-0">
-      <div className={`shrink-0 ${valueClass}`}>
-        <Icon className="w-4 h-4" />
-      </div>
-      <div className="min-w-0 flex-1">
-        <div
-          className="text-[10px] text-slate-400 font-medium uppercase tracking-wide leading-tight truncate"
-          title={label}
-        >
-          {label}
-        </div>
-        <div className={`text-base sm:text-lg font-bold tabular-nums leading-none mt-0.5 ${valueClass}`}>
-          {value}
-        </div>
-      </div>
+    <div className="flex items-center gap-1.5 px-1 py-0.5 min-w-0">
+      <Icon className={`w-3 h-3 shrink-0 ${valueClass}`} />
+      <span
+        className="flex-1 min-w-0 text-[9px] text-slate-400 font-medium uppercase tracking-wide truncate"
+        title={label}
+      >
+        {label}
+      </span>
+      <span className={`shrink-0 text-[11px] font-bold tabular-nums leading-none ${valueClass}`}>
+        {value}
+      </span>
     </div>
   );
 }

@@ -84,6 +84,55 @@ const PLANE_ICON_MAPPING = {
   plane: { x: 0, y: 0, width: PLANE_ICON_SIZE_PX, height: PLANE_ICON_SIZE_PX, mask: true },
 };
 
+/* Sprite blanco de un edificio de aeropuerto (terminal + torre de control).
+ * Representa un aeropuerto sin confundirse con los aviones en vuelo. Es una
+ * máscara que deck.gl colorea con getColor según la ocupación. Se dibuja con
+ * primitivas de canvas en un espacio 24x24. */
+const AIRPORT_BUILDING_SIZE_PX = 64;
+
+let airportBuildingUrl = null;
+function getAirportBuildingUrl() {
+  if (airportBuildingUrl) return airportBuildingUrl;
+  const size = AIRPORT_BUILDING_SIZE_PX;
+  const canvas = document.createElement("canvas");
+  canvas.width = size;
+  canvas.height = size;
+  const ctx = canvas.getContext("2d");
+  if (!ctx) return null;
+  ctx.fillStyle = "#ffffff";
+  ctx.scale(size / 24, size / 24);
+
+  // Torre de control: antena + cabina (sala de control) + fuste.
+  ctx.fillRect(5.1, 1.5, 0.9, 2.2); // antena
+  ctx.beginPath();
+  ctx.moveTo(2.8, 4);
+  ctx.lineTo(8.2, 4);
+  ctx.lineTo(7.4, 7);
+  ctx.lineTo(3.6, 7);
+  ctx.closePath();
+  ctx.fill();
+  ctx.fillRect(4.1, 7, 2.9, 13.5); // fuste
+
+  // Terminal: edificio con techo inclinado que baja al alejarse de la torre.
+  ctx.beginPath();
+  ctx.moveTo(7, 20.5);
+  ctx.lineTo(7, 11.5);
+  ctx.lineTo(21, 14.5);
+  ctx.lineTo(21, 20.5);
+  ctx.closePath();
+  ctx.fill();
+
+  // Suelo / base.
+  ctx.fillRect(2.5, 20.5, 19, 2);
+
+  airportBuildingUrl = canvas.toDataURL("image/png");
+  return airportBuildingUrl;
+}
+
+const AIRPORT_BUILDING_MAPPING = {
+  airport: { x: 0, y: 0, width: AIRPORT_BUILDING_SIZE_PX, height: AIRPORT_BUILDING_SIZE_PX, mask: true },
+};
+
 const MAX_FLIGHTS_ON_MAP = 1000;
 
 const MAP_STYLE = import.meta.env.VITE_MAP_STYLE_URL
@@ -142,20 +191,23 @@ function AirportMap({
     setPanelFocus({ ...entity, ts: Date.now() });
   }, [setSelected, setPanelFocus]);
 
-  /* Popup con datos del vuelo al hacer click en un avion.
-   * - clickedFlightId: id del vuelo cuya tarjeta se muestra.
-   * - manifest: pedidos/maletas a bordo, pedidos al back cuando se abre.
-   * Se limpia al clickear fondo vacio del mapa. */
-  const [clickedFlightId, setClickedFlightId] = useState(null);
+  /* Tarjeta con datos del vuelo: se muestra SOLO al pasar el mouse por encima de
+   * un avion NO vacio (used > 0). El click solo selecciona (enlace con el panel).
+   * - manifest: pedidos/maletas a bordo, pedidos al back mientras se sobrevuela. */
   const [clickedAirportId, setClickedAirportId] = useState(null);
   const [hoveredPlaneId, setHoveredPlaneId] = useState(null);
   const [hoveredAirportId, setHoveredAirportId] = useState(null);
   const [manifest, setManifest] = useState({ status: "idle", pedidos: 0, maletas: 0 });
 
-  const clickedFlight = useMemo(() => {
-    if (!clickedFlightId) return null;
-    return (flights ?? []).find((f) => (f.id ?? f.idVueloInstancia) === clickedFlightId) ?? null;
-  }, [clickedFlightId, flights]);
+  // Vuelo sobrevolado, solo si NO esta vacio (lleva al menos una maleta).
+  const hoveredFlight = useMemo(() => {
+    if (!hoveredPlaneId) return null;
+    const f = (flights ?? []).find((fl) => (fl.id ?? fl.idVueloInstancia) === hoveredPlaneId);
+    if (!f || Number(f.used ?? 0) <= 0) return null;
+    return f;
+  }, [hoveredPlaneId, flights]);
+
+  const hoveredFlightId = hoveredFlight ? (hoveredFlight.id ?? hoveredFlight.idVueloInstancia) : null;
 
   const clickedAirport = useMemo(() => {
     if (!clickedAirportId) return null;
@@ -163,13 +215,13 @@ function AirportMap({
   }, [clickedAirportId, airportsByIata]);
 
   useEffect(() => {
-    if (!clickedFlightId || !flightManifestLoader) {
+    if (!hoveredFlightId || !flightManifestLoader) {
       setManifest({ status: "idle", pedidos: 0, maletas: 0 });
       return undefined;
     }
     let cancelled = false;
     setManifest({ status: "loading", pedidos: 0, maletas: 0 });
-    flightManifestLoader(clickedFlightId)
+    flightManifestLoader(hoveredFlightId)
       .then((data) => {
         if (cancelled) return;
         setManifest({
@@ -183,11 +235,10 @@ function AirportMap({
         setManifest({ status: "error", pedidos: 0, maletas: 0 });
       });
     return () => { cancelled = true; };
-  }, [clickedFlightId, flightManifestLoader]);
+  }, [hoveredFlightId, flightManifestLoader]);
 
   const handleDeckClick = useCallback((info) => {
     if (!info?.object) {
-      setClickedFlightId(null);
       setClickedAirportId(null);
       setHoveredPlaneId(null);
       setHoveredAirportId(null);
@@ -283,9 +334,33 @@ function AirportMap({
     }).filter(Boolean);
   }, [flights, airportsByIata]);
 
+  /* Filtro de almacenes activo en el panel -> en el mapa solo mostramos los
+   * vuelos (y sus lineas) relacionados con esos aeropuertos: los que salen de o
+   * se dirigen a alguno de ellos. El resto se ocultan por completo.
+   * null = sin filtro de aeropuertos -> se muestran todos. */
+  const relatedFlightIds = useMemo(() => {
+    const set = mapDim.airports;
+    if (!set) return null;
+    const ids = new Set();
+    for (const r of routesGeometry) {
+      if (set.has(r.origin?.iata) || set.has(r.destination?.iata)) ids.add(r.id);
+    }
+    return ids;
+  }, [mapDim.airports, routesGeometry]);
+
+  const visibleRoutesGeometry = useMemo(
+    () => (relatedFlightIds ? routesGeometry.filter((r) => relatedFlightIds.has(r.id)) : routesGeometry),
+    [routesGeometry, relatedFlightIds]
+  );
+
   /* Estado de las posiciones animadas — viene del worker. */
   const [planes, setPlanes] = useState([]);
   const workerRef = useRef(null);
+
+  const visiblePlanes = useMemo(
+    () => (relatedFlightIds ? planes.filter((p) => relatedFlightIds.has(p.id)) : planes),
+    [planes, relatedFlightIds]
+  );
 
   /* Levantar el worker una vez. */
   useEffect(() => {
@@ -344,9 +419,9 @@ function AirportMap({
 
     /* Polylines de rutas. Las vacias se pintan blancas discontinuas para
      * distinguirlas a simple vista del trafico real. */
-    if (showFlights && showRouteLines && routesGeometry.length > 0) {
-      const loadedRoutes = routesGeometry.filter((r) => !r.isEmpty);
-      const emptyRoutes = routesGeometry.filter((r) => r.isEmpty);
+    if (showFlights && showRouteLines && visibleRoutesGeometry.length > 0) {
+      const loadedRoutes = visibleRoutesGeometry.filter((r) => !r.isEmpty);
+      const emptyRoutes = visibleRoutesGeometry.filter((r) => r.isEmpty);
 
       if (loadedRoutes.length > 0) {
         ls.push(
@@ -422,35 +497,47 @@ function AirportMap({
         })
       );
 
-      /* Punto central del aeropuerto (clicable -> enlaza al panel, req 6). */
-      ls.push(
-        new ScatterplotLayer({
-          id: "airport-dot",
-          data: airportList,
-          getPosition: (a) => [a.lng, a.lat],
-          getFillColor: (a) => {
-            if (a.iata === selectedAirportId) return hexToRgba(tokens.info, 255);
-            if (a.iata === hoveredAirportId) return hexToRgba(tokens.info, 255);
-            const s = occupancyStatus(a.used, a.capacity);
-            return hexToRgba(STATUS_HEX[s], airportDimmed(a) ? 35 : 255);
-          },
-          getRadius: (a) => (a.iata === hoveredAirportId || a.iata === selectedAirportId) ? 8 : 6,
-          radiusUnits: "pixels",
-          stroked: false,
-          updateTriggers: { getFillColor: [mapDim.airports, selectedAirportId, hoveredAirportId] },
-        })
-      );
+      /* Ícono de edificio de aeropuerto (terminal + torre). Máscara coloreada
+       * por ocupación; se distingue de los aviones en vuelo. Azul al
+       * seleccionar/hover. */
+      const airportBuildingUrl = getAirportBuildingUrl();
+      if (airportBuildingUrl) {
+        ls.push(
+          new IconLayer({
+            id: "airport-icons",
+            data: airportList,
+            iconAtlas: airportBuildingUrl,
+            iconMapping: AIRPORT_BUILDING_MAPPING,
+            getIcon: () => "airport",
+            getPosition: (a) => [a.lng, a.lat],
+            getColor: (a) => {
+              if (a.iata === selectedAirportId || a.iata === hoveredAirportId) return hexToRgba(tokens.info, 255);
+              const s = occupancyStatus(a.used, a.capacity);
+              return hexToRgba(STATUS_HEX[s], airportDimmed(a) ? 45 : 255);
+            },
+            getSize: (a) => (a.iata === hoveredAirportId || a.iata === selectedAirportId) ? 28 : 23,
+            sizeUnits: "pixels",
+            updateTriggers: {
+              getColor: [mapDim.airports, selectedAirportId, hoveredAirportId],
+              getSize: [hoveredAirportId, selectedAirportId],
+            },
+          })
+        );
+      }
 
-      /* Códigos IATA. */
+      /* Nombre descriptivo del aeropuerto (ciudad). */
       ls.push(
         new TextLayer({
           id: "airport-labels",
           data: airportList,
           getPosition: (a) => [a.lng, a.lat],
-          getText: (a) => a.iata,
+          getText: (a) => {
+            const label = a.city || a.name || a.iata || "";
+            return label.length > 22 ? `${label.slice(0, 21)}…` : label;
+          },
           getSize: 11,
           getColor: [255, 255, 255, 255],
-          getPixelOffset: [0, 16],
+          getPixelOffset: [0, 22],
           fontFamily: "sans-serif",
           fontWeight: "bold",
           background: true,
@@ -461,7 +548,7 @@ function AirportMap({
     }
 
     /* Aviones — hitbox invisible (captura clicks en radio amplio) + IconLayer visual. */
-    if (showFlights && planes.length > 0) {
+    if (showFlights && visiblePlanes.length > 0) {
       const iconUrl = getPlaneIconUrl();
       const flightDimmed = (d) => mapDim.flights && !mapDim.flights.has(d.id);
       const selectedFlightId = selected?.kind === "flight" ? selected.id : null;
@@ -470,7 +557,7 @@ function AirportMap({
       ls.push(
         new ScatterplotLayer({
           id: "planes-hitbox",
-          data: planes,
+          data: visiblePlanes,
           getPosition: (d) => [d.lng, d.lat],
           getRadius: 20,
           radiusUnits: "pixels",
@@ -479,12 +566,11 @@ function AirportMap({
           onClick: (info) => {
             if (info?.object?.id) {
               selectFromMap({ kind: "flight", id: info.object.id });
-              setClickedFlightId(info.object.id);
               return true;
             }
             return false;
           },
-          updateTriggers: { getPosition: planes },
+          updateTriggers: { getPosition: visiblePlanes },
         })
       );
 
@@ -492,7 +578,7 @@ function AirportMap({
         ls.push(
           new IconLayer({
             id: "planes",
-            data: planes,
+            data: visiblePlanes,
             iconAtlas: iconUrl,
             iconMapping: PLANE_ICON_MAPPING,
             getIcon: () => "plane",
@@ -507,9 +593,9 @@ function AirportMap({
             getSize: (d) => (d.id === hoveredPlaneId || d.id === selectedFlightId) ? 22 : 18,
             sizeUnits: "pixels",
             updateTriggers: {
-              getPosition: planes,
-              getAngle: planes,
-              getColor: [planes, mapDim.flights, selectedFlightId, hoveredPlaneId],
+              getPosition: visiblePlanes,
+              getAngle: visiblePlanes,
+              getColor: [visiblePlanes, mapDim.flights, selectedFlightId, hoveredPlaneId],
               getSize: [hoveredPlaneId, selectedFlightId],
             },
           })
@@ -582,7 +668,7 @@ function AirportMap({
 
     return ls;
   }, [
-    showFlights, showRouteLines, routesGeometry, airportList, planes,
+    showFlights, showRouteLines, routesGeometry, visibleRoutesGeometry, airportList, planes, visiblePlanes,
     highlightGeometry, highlightAirports, mapDim, selected, selectedAirport, selectedFlightLine, selectFromMap,
     hoveredPlaneId, hoveredAirportId,
   ]);
@@ -616,11 +702,10 @@ function AirportMap({
           }}
         />
       </MapGL>
-      {clickedFlight && (
+      {hoveredFlight && (
         <FlightInfoCard
-          flight={clickedFlight}
+          flight={hoveredFlight}
           manifest={manifest}
-          onClose={() => { setClickedFlightId(null); setSelected(null); }}
         />
       )}
       {clickedAirport && (
@@ -648,18 +733,20 @@ function FlightInfoCard({ flight, manifest, onClose }) {
     <div className="absolute top-1/2 right-3 -translate-y-1/2 z-[3500] w-72 rounded-xl border border-info/40 bg-surface-1/95 backdrop-blur px-4 py-3 shadow-lg shadow-info/10 text-slate-200">
       <div className="flex items-start justify-between gap-2">
         <div>
-          <div className="text-[10px] uppercase tracking-wider text-info font-semibold">Vuelo seleccionado</div>
+          <div className="text-[10px] uppercase tracking-wider text-info font-semibold">Vuelo</div>
           <div className="font-bold text-base text-white">{flight.id ?? flight.idVueloInstancia}</div>
           <div className="text-xs text-slate-400 mt-0.5">{flight.origin} → {flight.dest}</div>
         </div>
-        <button
-          type="button"
-          onClick={onClose}
-          aria-label="Cerrar"
-          className="rounded-md border border-slate-700 bg-surface-2/60 p-1 text-slate-300 hover:text-white hover:bg-surface-2"
-        >
-          <span className="block leading-none text-xs px-1">×</span>
-        </button>
+        {onClose && (
+          <button
+            type="button"
+            onClick={onClose}
+            aria-label="Cerrar"
+            className="rounded-md border border-slate-700 bg-surface-2/60 p-1 text-slate-300 hover:text-white hover:bg-surface-2"
+          >
+            <span className="block leading-none text-xs px-1">×</span>
+          </button>
+        )}
       </div>
 
       <div className="mt-3 grid grid-cols-2 gap-2 text-xs">
