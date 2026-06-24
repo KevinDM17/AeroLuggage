@@ -302,9 +302,11 @@ export function useOperationsSession({ enabled, setSimulationPanelData, resetSim
         "status",
         (st, flight) => ({ used: getUpdatedFlightOccupancy(st, flight) }),
       );
+      // Los FINALIZADO se retiran (ya cumplieron su ciclo). Los CANCELADO se
+      // CONSERVAN en la lista para poder filtrarlos por estado; no aparecen en
+      // el mapa porque este solo dibuja vuelos EN_PROGRESO.
       for (const [id, flight] of updatedFlights) {
-        const status = flight?.status;
-        if (status === "FINALIZADO" || status === "CANCELADO") {
+        if (flight?.status === "FINALIZADO") {
           updatedFlights.delete(id);
         }
       }

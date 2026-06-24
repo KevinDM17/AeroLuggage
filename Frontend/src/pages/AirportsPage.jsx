@@ -14,11 +14,13 @@ import {
   obtenerMaletasOperacionesDiaADia,
   cancelarVueloProgramadoOperacionesDiaADia,
   obtenerRutasOperacionesDiaADia,
+  obtenerVuelosOperacionesDiaADia,
   crearAeropuertoOperacionesDiaADia,
   eliminarAeropuertoOperacionesDiaADia,
   obtenerAeropuertosOperacionesDiaADia,
 } from "../api/simulator";
 import { adaptAirport } from "../api/airports";
+import { adaptFlightInstance } from "../api/flightInstances";
 import { listFlightPlans } from "../api/flights";
 
 const colorByOccupancy = (pct) =>
@@ -346,9 +348,10 @@ export default function AirportsPage() {
     setCancelingFlightPlanId(flightPlanId);
     try {
       await cancelarVueloProgramadoOperacionesDiaADia(flightPlanId);
-      const [rutasData, maletasData] = await Promise.all([
+      const [rutasData, maletasData, vuelosData] = await Promise.all([
         obtenerRutasOperacionesDiaADia().catch(() => []),
         obtenerMaletasOperacionesDiaADia().catch(() => []),
+        obtenerVuelosOperacionesDiaADia().catch(() => []),
       ]);
       setSimulationPanelData((prev) => {
         const bagOrigen = new Map();
@@ -373,7 +376,15 @@ export default function AirportsPage() {
             ticksAusente: 0,
           });
         }
-        return { ...prev, routes, bags };
+        // Re-incluir la lista de vuelos (ya trae CANCELADO) para que el vuelo
+        // cancelado aparezca al instante en la pestaña Vuelos.
+        const flights = new Map(prev.flights ?? new Map());
+        for (const raw of (vuelosData ?? [])) {
+          const f = adaptFlightInstance(raw);
+          const id = f.idVueloInstancia ?? f.id;
+          flights.set(id, { ...flights.get(id), ...f, ticksAusente: 0 });
+        }
+        return { ...prev, routes, bags, flights };
       });
       toast.push({
         type: "success",

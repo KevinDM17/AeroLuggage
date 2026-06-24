@@ -84,6 +84,55 @@ const PLANE_ICON_MAPPING = {
   plane: { x: 0, y: 0, width: PLANE_ICON_SIZE_PX, height: PLANE_ICON_SIZE_PX, mask: true },
 };
 
+/* Sprite blanco de un edificio de aeropuerto (terminal + torre de control).
+ * Representa un aeropuerto sin confundirse con los aviones en vuelo. Es una
+ * máscara que deck.gl colorea con getColor según la ocupación. Se dibuja con
+ * primitivas de canvas en un espacio 24x24. */
+const AIRPORT_BUILDING_SIZE_PX = 64;
+
+let airportBuildingUrl = null;
+function getAirportBuildingUrl() {
+  if (airportBuildingUrl) return airportBuildingUrl;
+  const size = AIRPORT_BUILDING_SIZE_PX;
+  const canvas = document.createElement("canvas");
+  canvas.width = size;
+  canvas.height = size;
+  const ctx = canvas.getContext("2d");
+  if (!ctx) return null;
+  ctx.fillStyle = "#ffffff";
+  ctx.scale(size / 24, size / 24);
+
+  // Torre de control: antena + cabina (sala de control) + fuste.
+  ctx.fillRect(5.1, 1.5, 0.9, 2.2); // antena
+  ctx.beginPath();
+  ctx.moveTo(2.8, 4);
+  ctx.lineTo(8.2, 4);
+  ctx.lineTo(7.4, 7);
+  ctx.lineTo(3.6, 7);
+  ctx.closePath();
+  ctx.fill();
+  ctx.fillRect(4.1, 7, 2.9, 13.5); // fuste
+
+  // Terminal: edificio con techo inclinado que baja al alejarse de la torre.
+  ctx.beginPath();
+  ctx.moveTo(7, 20.5);
+  ctx.lineTo(7, 11.5);
+  ctx.lineTo(21, 14.5);
+  ctx.lineTo(21, 20.5);
+  ctx.closePath();
+  ctx.fill();
+
+  // Suelo / base.
+  ctx.fillRect(2.5, 20.5, 19, 2);
+
+  airportBuildingUrl = canvas.toDataURL("image/png");
+  return airportBuildingUrl;
+}
+
+const AIRPORT_BUILDING_MAPPING = {
+  airport: { x: 0, y: 0, width: AIRPORT_BUILDING_SIZE_PX, height: AIRPORT_BUILDING_SIZE_PX, mask: true },
+};
+
 const MAX_FLIGHTS_ON_MAP = 1000;
 
 const MAP_STYLE = import.meta.env.VITE_MAP_STYLE_URL
@@ -448,35 +497,47 @@ function AirportMap({
         })
       );
 
-      /* Punto central del aeropuerto (clicable -> enlaza al panel, req 6). */
-      ls.push(
-        new ScatterplotLayer({
-          id: "airport-dot",
-          data: airportList,
-          getPosition: (a) => [a.lng, a.lat],
-          getFillColor: (a) => {
-            if (a.iata === selectedAirportId) return hexToRgba(tokens.info, 255);
-            if (a.iata === hoveredAirportId) return hexToRgba(tokens.info, 255);
-            const s = occupancyStatus(a.used, a.capacity);
-            return hexToRgba(STATUS_HEX[s], airportDimmed(a) ? 35 : 255);
-          },
-          getRadius: (a) => (a.iata === hoveredAirportId || a.iata === selectedAirportId) ? 8 : 6,
-          radiusUnits: "pixels",
-          stroked: false,
-          updateTriggers: { getFillColor: [mapDim.airports, selectedAirportId, hoveredAirportId] },
-        })
-      );
+      /* Ícono de edificio de aeropuerto (terminal + torre). Máscara coloreada
+       * por ocupación; se distingue de los aviones en vuelo. Azul al
+       * seleccionar/hover. */
+      const airportBuildingUrl = getAirportBuildingUrl();
+      if (airportBuildingUrl) {
+        ls.push(
+          new IconLayer({
+            id: "airport-icons",
+            data: airportList,
+            iconAtlas: airportBuildingUrl,
+            iconMapping: AIRPORT_BUILDING_MAPPING,
+            getIcon: () => "airport",
+            getPosition: (a) => [a.lng, a.lat],
+            getColor: (a) => {
+              if (a.iata === selectedAirportId || a.iata === hoveredAirportId) return hexToRgba(tokens.info, 255);
+              const s = occupancyStatus(a.used, a.capacity);
+              return hexToRgba(STATUS_HEX[s], airportDimmed(a) ? 45 : 255);
+            },
+            getSize: (a) => (a.iata === hoveredAirportId || a.iata === selectedAirportId) ? 28 : 23,
+            sizeUnits: "pixels",
+            updateTriggers: {
+              getColor: [mapDim.airports, selectedAirportId, hoveredAirportId],
+              getSize: [hoveredAirportId, selectedAirportId],
+            },
+          })
+        );
+      }
 
-      /* Códigos IATA. */
+      /* Nombre descriptivo del aeropuerto (ciudad). */
       ls.push(
         new TextLayer({
           id: "airport-labels",
           data: airportList,
           getPosition: (a) => [a.lng, a.lat],
-          getText: (a) => a.iata,
+          getText: (a) => {
+            const label = a.city || a.name || a.iata || "";
+            return label.length > 22 ? `${label.slice(0, 21)}…` : label;
+          },
           getSize: 11,
           getColor: [255, 255, 255, 255],
-          getPixelOffset: [0, 16],
+          getPixelOffset: [0, 22],
           fontFamily: "sans-serif",
           fontWeight: "bold",
           background: true,
