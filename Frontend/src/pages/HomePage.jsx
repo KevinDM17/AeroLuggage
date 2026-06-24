@@ -1,3 +1,4 @@
+import { useState } from "react";
 import { useNavigate } from "react-router-dom";
 import {
   RotateCw,
@@ -77,19 +78,30 @@ const FEATURES = [
 
 export default function HomePage() {
   const navigate = useNavigate();
+  const [logoError, setLogoError] = useState(false);
 
   return (
     <div className="w-full h-full overflow-y-auto bg-surface-0 text-slate-200">
       <div className="mx-auto max-w-6xl px-4 sm:px-8 py-10 sm:py-14">
         {/* Encabezado con espacio para el logo */}
         <header className="flex flex-col items-center text-center gap-6 mb-12 sm:mb-16">
-          {/* Espacio reservado para el logo (se reemplazará luego). */}
-          <div
-            className="flex h-28 w-28 sm:h-32 sm:w-32 items-center justify-center rounded-2xl border-2 border-dashed border-slate-700 bg-surface-1/60"
-            aria-label="Espacio reservado para el logo"
-          >
-            <span className="text-[11px] uppercase tracking-widest text-slate-500">Logo</span>
-          </div>
+          {/* Logo de la app. Coloca el archivo en Frontend/public/logo.png.
+              Si no existe, se muestra un marcador de reserva. */}
+          {logoError ? (
+            <div
+              className="flex h-40 w-40 sm:h-48 sm:w-48 items-center justify-center rounded-full border-2 border-dashed border-slate-700 bg-surface-1/60"
+              aria-label="Espacio reservado para el logo"
+            >
+              <span className="text-[11px] uppercase tracking-widest text-slate-500">Logo</span>
+            </div>
+          ) : (
+            <img
+              src="/logo.png"
+              alt="AeroLuggage"
+              onError={() => setLogoError(true)}
+              className="h-40 w-40 sm:h-48 sm:w-48 rounded-full object-cover bg-surface-1 ring-2 ring-slate-700/60 shadow-lg"
+            />
+          )}
 
           <div>
             <h1 className="text-3xl sm:text-5xl font-extrabold tracking-tight text-white">
@@ -101,15 +113,6 @@ export default function HomePage() {
               de extremo a extremo.
             </p>
           </div>
-
-          <button
-            type="button"
-            onClick={() => navigate("/operaciones")}
-            className="inline-flex items-center gap-2 rounded-lg bg-blue-600 px-5 py-2.5 text-sm font-semibold text-white transition-colors hover:bg-blue-500"
-          >
-            Ir a operaciones día a día
-            <ArrowRight className="h-4 w-4" />
-          </button>
         </header>
 
         {/* Accesos rápidos */}
@@ -140,22 +143,20 @@ export default function HomePage() {
           </div>
         </section>
 
-        {/* Características */}
-        <section className="mb-4">
-          <h2 className="mb-5 text-sm font-bold uppercase tracking-wider text-slate-400">
+        {/* Características — contenido informativo (no accionable): sin contenedor
+            tipo card para no confundirlo con los accesos rápidos clicables. */}
+        <section className="mb-4 border-t border-slate-800 pt-10">
+          <h2 className="mb-6 text-sm font-bold uppercase tracking-wider text-slate-400">
             ¿Qué puedes hacer aquí?
           </h2>
-          <div className="grid grid-cols-1 sm:grid-cols-3 gap-4">
+          <div className="grid grid-cols-1 sm:grid-cols-3 gap-x-8 gap-y-8">
             {FEATURES.map(({ icon: Icon, title, desc }) => (
-              <div
-                key={title}
-                className="rounded-xl border border-slate-800 bg-surface-1 p-5"
-              >
-                <div className="mb-3 inline-flex rounded-lg border border-slate-800 bg-surface-2 p-2.5 text-info">
-                  <Icon className="h-5 w-5" />
+              <div key={title} className="flex gap-3">
+                <Icon className="h-6 w-6 shrink-0 text-info" />
+                <div>
+                  <h3 className="font-bold text-white">{title}</h3>
+                  <p className="mt-1 text-sm text-slate-400">{desc}</p>
                 </div>
-                <h3 className="font-bold text-white">{title}</h3>
-                <p className="mt-1 text-sm text-slate-400">{desc}</p>
               </div>
             ))}
           </div>

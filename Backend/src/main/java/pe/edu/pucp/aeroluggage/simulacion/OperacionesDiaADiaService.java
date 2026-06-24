@@ -670,8 +670,11 @@ public class OperacionesDiaADiaService {
                 aplicarEventoAhora(e);
             }
         }
-        vuelosInstancia.values().removeIf(v -> v.getEstado() == EstadoVuelo.FINALIZADO
-                || v.getEstado() == EstadoVuelo.CANCELADO);
+        // Solo se retiran los FINALIZADO (cumplieron su ciclo). Los CANCELADO se
+        // CONSERVAN en el set vivo para que se sigan emitiendo al frontend (con
+        // estado CANCELADO) y puedan verse/filtrarse en la lista de vuelos. No
+        // aparecen en el mapa porque este solo dibuja vuelos EN_PROGRESO.
+        vuelosInstancia.values().removeIf(v -> v.getEstado() == EstadoVuelo.FINALIZADO);
     }
 
     private void depurarVuelos(final LocalDateTime ahora) {
@@ -1659,7 +1662,8 @@ public class OperacionesDiaADiaService {
         return vuelosInstancia.values().stream()
                 .filter(v -> v != null)
                 .filter(v -> v.getEstado() == EstadoVuelo.EN_PROGRESO
-                        || v.getEstado() == EstadoVuelo.CONFIRMADO)
+                        || v.getEstado() == EstadoVuelo.CONFIRMADO
+                        || v.getEstado() == EstadoVuelo.CANCELADO)
                 .collect(Collectors.toList());
     }
 

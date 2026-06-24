@@ -20,6 +20,7 @@ export default function Sidebar({ onClose, closeOnNavigate = false }) {
   const [flightsOpen, setFlightsOpen] = useState(
     location.pathname.startsWith("/flights")
   );
+  const [logoError, setLogoError] = useState(false);
 
   const handleNavigate = (to) => {
     if (location.pathname !== to) {
@@ -43,21 +44,31 @@ export default function Sidebar({ onClose, closeOnNavigate = false }) {
     <div className="w-64 shrink-0 bg-surface-1 border-r border-slate-800 h-screen flex flex-col text-slate-300 relative z-[9999]">
       <div className="px-4 py-5 flex items-center justify-between gap-2 border-b border-transparent">
         <div className="flex items-center gap-3 min-w-0">
-          <div className="text-blue-500 shrink-0">
-            <svg
-              viewBox="0 0 24 24"
-              fill="none"
-              stroke="currentColor"
-              strokeWidth="2"
-              strokeLinecap="round"
-              strokeLinejoin="round"
-              className="w-7 h-7"
-            >
-              <path d="M21 16V8a2 2 0 0 0-1-1.73l-7-4a2 2 0 0 0-2 0l-7 4A2 2 0 0 0 3 8v8a2 2 0 0 0 1 1.73l7 4a2 2 0 0 0 2 0l7-4A2 2 0 0 0 21 16z" />
-              <polyline points="3.27 6.96 12 12.01 20.73 6.96" />
-              <line x1="12" y1="22.08" x2="12" y2="12" />
-            </svg>
-          </div>
+          {/* Logo (Frontend/public/logo.png). Si no existe, se usa el ícono SVG. */}
+          {logoError ? (
+            <div className="flex h-12 w-12 shrink-0 items-center justify-center rounded-full bg-surface-2 text-blue-500 ring-1 ring-slate-700/60">
+              <svg
+                viewBox="0 0 24 24"
+                fill="none"
+                stroke="currentColor"
+                strokeWidth="2"
+                strokeLinecap="round"
+                strokeLinejoin="round"
+                className="w-7 h-7"
+              >
+                <path d="M21 16V8a2 2 0 0 0-1-1.73l-7-4a2 2 0 0 0-2 0l-7 4A2 2 0 0 0 3 8v8a2 2 0 0 0 1 1.73l7 4a2 2 0 0 0 2 0l7-4A2 2 0 0 0 21 16z" />
+                <polyline points="3.27 6.96 12 12.01 20.73 6.96" />
+                <line x1="12" y1="22.08" x2="12" y2="12" />
+              </svg>
+            </div>
+          ) : (
+            <img
+              src="/logo.png"
+              alt="AeroLuggage"
+              onError={() => setLogoError(true)}
+              className="w-12 h-12 shrink-0 rounded-full object-cover bg-surface-2 ring-1 ring-slate-700/60"
+            />
+          )}
           <span className="text-lg font-bold text-white tracking-wide truncate">AeroLuggage</span>
         </div>
         {onClose && (

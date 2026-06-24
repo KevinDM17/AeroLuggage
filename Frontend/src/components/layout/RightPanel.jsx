@@ -1,7 +1,7 @@
 import { forwardRef, memo, useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { Virtuoso } from "react-virtuoso";
 import { useLocation } from "react-router-dom";
-import { Ban, Filter, PanelRightClose, MapPin, Globe, Info, ChevronDown, Plane, RefreshCw, Package, Luggage, ArrowDownUp, ArrowUp, ArrowDown, Route, X, Crosshair } from "lucide-react";
+import { Ban, Filter, PanelRightClose, Globe, Info, ChevronDown, Plane, RefreshCw, Package, Luggage, ArrowDownUp, ArrowUp, ArrowDown, Route, X, Crosshair } from "lucide-react";
 import { useFetch } from "../../hooks/useFetch";
 import { useStompPublish, useStompSubscribe } from "../../hooks/useStomp";
 import { cancelFlight, listFlightPlans, listFlights } from "../../api/flights";
@@ -9,7 +9,8 @@ import { listOrders } from "../../api/orders";
 import { listAirports } from "../../api/airports";
 import { listMaletas } from "../../api/maletas";
 import { listRutas } from "../../api/rutas";
-import { cancelarVueloProgramadoOperacionesDiaADia, obtenerContenidoAlmacen, obtenerEnviosOperacionesDiaADia, obtenerEnviosPanel, obtenerMaletasOperacionesDiaADia, obtenerManifiestoVuelo, obtenerManifiestoVueloOperacionesDiaADia, obtenerRutaMaleta, obtenerRutaMaletaOperacionesDiaADia, obtenerRutasEnvio, obtenerRutasEnvioOperacionesDiaADia, obtenerRutasOperacionesDiaADia } from "../../api/simulator";
+import { cancelarVueloProgramadoOperacionesDiaADia, obtenerContenidoAlmacen, obtenerEnviosOperacionesDiaADia, obtenerEnviosPanel, obtenerMaletasOperacionesDiaADia, obtenerManifiestoVuelo, obtenerManifiestoVueloOperacionesDiaADia, obtenerRutaMaleta, obtenerRutaMaletaOperacionesDiaADia, obtenerRutasEnvio, obtenerRutasEnvioOperacionesDiaADia, obtenerRutasOperacionesDiaADia, obtenerVuelosOperacionesDiaADia, obtenerSnapshotSimulacionPeriodo } from "../../api/simulator";
+import { adaptFlightInstance } from "../../api/flightInstances";
 import { apiGet, USE_MOCK } from "../../api/client";
 import { useMapFocus } from "../../context/MapFocusContext";
 import Modal from "../ui/Modal";
@@ -423,6 +424,28 @@ const toEscala = (v) => ({
   llegada: v?.fechaLlegada,
 });
 
+/* El backend devuelve UNA ruta por maleta. Aqui agrupamos por itinerario
+ * (secuencia de codigos de vuelo) para obtener, por cada ruta distinta:
+ *   - escalas: tramos del itinerario
+ *   - maletas: TODAS las maletas que viajan por esa ruta
+ *   - cantidad: cuantas maletas la usan
+ * El orden de los grupos es estable (orden de aparicion) para que coincida
+ * entre "Ver rutas" (mapa) y el detalle de la fila. */
+function agruparRutasEnvio(rutas) {
+  const grupos = new Map();
+  for (const r of rutas ?? []) {
+    const escalas = (r?.vuelos ?? []).map(toEscala);
+    const clave = escalas.map((e) => e.codigo).join(">");
+    let g = grupos.get(clave);
+    if (!g) {
+      g = { clave, escalas, maletas: [] };
+      grupos.set(clave, g);
+    }
+    if (r?.idMaleta) g.maletas.push(r.idMaleta);
+  }
+  return [...grupos.values()].map((g) => ({ ...g, cantidad: g.maletas.length }));
+}
+
 // Seccion plegable con render DIFERIDO: los hijos no se montan hasta abrirla,
 // asi las listas pesadas no cargan el DOM mientras estan cerradas.
 function Collapsible({ title, defaultOpen = false, children }) {
@@ -443,10 +466,31 @@ function Collapsible({ title, defaultOpen = false, children }) {
   );
 }
 
-const EnvioItem = memo(function EnvioItem({ envio, showOrigin = true, onShowRoute }) {
+const EnvioItem = memo(function EnvioItem({ envio, showOrigin = true, onShowRoute, onLoadRutas }) {
   const [expanded, setExpanded] = useState(false);
-  const uts = envio.uts ?? [];
-  const utResumen = uts.length === 0 ? "sin asignar" : uts.length <= 2 ? uts.join(", ") : `${uts[0]} +${uts.length - 1}`;
+  // Rutas agrupadas (cada una con sus maletas), pedidas al back al expandir.
+  // No mostramos UT ni escalas aqui: ese detalle vive en "Ver rutas".
+  const [rutas, setRutas] = useState([]);
+  const [rutasStatus, setRutasStatus] = useState("idle");
+
+  useEffect(() => {
+    if (!expanded || !onLoadRutas) return undefined;
+    let cancelled = false;
+    setRutasStatus("loading");
+    Promise.resolve(onLoadRutas(envio.id))
+      .then((data) => {
+        if (cancelled) return;
+        setRutas(Array.isArray(data) ? data : []);
+        setRutasStatus("ready");
+      })
+      .catch(() => {
+        if (cancelled) return;
+        setRutas([]);
+        setRutasStatus("error");
+      });
+    return () => { cancelled = true; };
+  }, [expanded, envio.id, onLoadRutas]);
+
   return (
     <div className="flex flex-col border-b border-slate-800/50 h-full cursor-pointer hover:bg-slate-800 transition-colors duration-200" onClick={() => setExpanded(!expanded)}>
       <div className="flex items-start justify-between gap-2">
@@ -458,7 +502,9 @@ const EnvioItem = memo(function EnvioItem({ envio, showOrigin = true, onShowRout
         </div>
         <div className="flex shrink-0 flex-col items-end gap-1 text-right">
           <div className="text-xs font-medium text-slate-300">{envio.bags} mal.</div>
-          <div className="text-[10px] text-slate-400">UT: {utResumen}</div>
+          {envio.horaEntrega && (
+            <div className="text-[10px] text-slate-400">Entregado: {formatHoraPlan(envio.horaEntrega)}</div>
+          )}
           {onShowRoute && (
             <button
               type="button"
@@ -471,18 +517,28 @@ const EnvioItem = memo(function EnvioItem({ envio, showOrigin = true, onShowRout
         </div>
       </div>
       {expanded && (
-        <div className="mt-2 space-y-1 text-[11px] text-slate-400" onClick={(e) => e.stopPropagation()}>
-          <div>UT: <span className="text-slate-200">{uts.length ? uts.join(", ") : "—"}</span></div>
-          {envio.horaEntrega && (
-            <div>Entregado: <span className="text-slate-200">{formatHoraPlan(envio.horaEntrega)}</span></div>
-          )}
+        <div className="mt-2 space-y-2 text-[11px] text-slate-400" onClick={(e) => e.stopPropagation()}>
+          {rutasStatus === "loading" && <div className="text-slate-500">Cargando rutas…</div>}
+          {rutasStatus === "error" && <div className="text-danger">No se pudieron cargar las rutas.</div>}
+          {rutasStatus === "ready" && rutas.length === 0 && <div className="text-slate-500">Sin rutas asignadas.</div>}
+          {rutasStatus === "ready" && rutas.map((r, ri) => (
+            <div key={ri} className="rounded-md border border-slate-800 bg-surface-2/40 px-2 py-1.5">
+              <div className="mb-1 flex items-center justify-between gap-2">
+                <span className="text-[10px] font-semibold uppercase tracking-wide text-slate-300">Ruta {ri + 1}</span>
+                <span className="shrink-0 text-[10px] text-slate-400">{r.cantidad} maleta{r.cantidad !== 1 ? "s" : ""}</span>
+              </div>
+              <div className="leading-relaxed text-slate-200">
+                {r.maletas.length ? r.maletas.join(", ") : "—"}
+              </div>
+            </div>
+          ))}
         </div>
       )}
     </div>
   );
 });
 
-function EnvioSeccion({ title, envios, showOrigin = true, defaultOpen = false, max = 200, onShowRoute }) {
+function EnvioSeccion({ title, envios, showOrigin = true, defaultOpen = false, max = 200, onShowRoute, onLoadRutas }) {
   const shown = envios.slice(0, max);
   return (
     <Collapsible title={`${title} (${envios.length})`} defaultOpen={defaultOpen}>
@@ -490,7 +546,7 @@ function EnvioSeccion({ title, envios, showOrigin = true, defaultOpen = false, m
         <div className="pl-1 text-[11px] text-slate-500">Sin envios.</div>
       ) : (
         <>
-          {shown.map((e, i) => <EnvioItem key={`${e.id}-${i}`} envio={e} showOrigin={showOrigin} onShowRoute={onShowRoute} />)}
+          {shown.map((e, i) => <EnvioItem key={`${e.id}-${i}`} envio={e} showOrigin={showOrigin} onShowRoute={onShowRoute} onLoadRutas={onLoadRutas} />)}
           {envios.length > shown.length && (
             <div className="pt-1 text-[10px] text-slate-500">… y {envios.length - shown.length} mas (usa los filtros)</div>
           )}
@@ -513,6 +569,8 @@ const AirportItem = memo(function AirportItem({
 }) {
   const [expanded, setExpanded] = useState(false);
   const pct = apt.capacity > 0 ? Math.round((apt.used / apt.capacity) * 100) : 0;
+  const code = apt.iata ?? apt.idAeropuerto ?? "";
+  const displayName = apt.city || apt.name || code; // nombre descriptivo
 
   // Contenido del almacen (envios/maletas presentes) pedido al back al expandir.
   const airportKey = apt.iata ?? apt.idAeropuerto;
@@ -561,8 +619,10 @@ const AirportItem = memo(function AirportItem({
     }}>
       <div className="flex justify-between items-center gap-2">
         <div className="min-w-0">
-          <h4 className="font-bold text-lg text-slate-200">{apt.iata}</h4>
-          <p className="truncate text-[11px] text-slate-500">{apt.city}</p>
+          <h4 className="truncate font-bold text-lg text-slate-200">{displayName}</h4>
+          {displayName !== code && (
+            <p className="text-[11px] font-semibold uppercase tracking-wide text-slate-500">{code}</p>
+          )}
         </div>
         <div className="flex items-center gap-2 shrink-0">
           <span className="rounded-full border border-slate-700/70 bg-surface-2/70 px-2 py-1 text-[11px] font-semibold text-slate-300">
@@ -594,7 +654,6 @@ const AirportItem = memo(function AirportItem({
       </div>
       <div className="mt-2 flex justify-between items-start gap-3 pt-1">
         <div className="flex flex-col gap-0.5">
-          <div className="flex items-center gap-1 text-[10px] text-slate-400"><MapPin className="w-3 h-3 shrink-0" /> {apt.city}</div>
           <div className="flex items-center gap-1 text-[10px] text-slate-400"><Globe className="w-3 h-3 shrink-0" /> {apt.continent}</div>
         </div>
         <div className="flex flex-col items-end min-w-0">
@@ -1049,6 +1108,12 @@ export default function RightPanel({
 }) {
   const toast = useToast();
   const [activeTab, setActiveTab] = useState("flights");
+  // Refs a las listas virtualizadas para poder desplazar hasta un item concreto
+  // cuando se selecciona un almacen/UT en el mapa (req 6/8). scrollTarget guarda
+  // la peticion pendiente hasta que la pestaña correcta y sus filas esten listas.
+  const flightsVirtuosoRef = useRef(null);
+  const airportsVirtuosoRef = useRef(null);
+  const [scrollTarget, setScrollTarget] = useState(null);
   const [query, setQuery] = useState("");
   const [flightStatusFilter, setFlightStatusFilter] = useState("DEFAULT");
   const [flightOriginFilter, setFlightOriginFilter] = useState("ALL");
@@ -1199,6 +1264,29 @@ export default function RightPanel({
         title: "Vuelo cancelado",
         message: pendingFlightPlanCancellation.toastMessage,
       });
+      // Re-fetch del snapshot para traer el vuelo recién cancelado a la lista.
+      // El stream del tick no basta: la instancia cancelada puede tener un id
+      // que el frontend no cargó en metadata. El snapshot trae hot+cold con
+      // estado, así que mezclamos los CANCELADO (no se dibujan en el mapa, que
+      // solo muestra EN_PROGRESO).
+      if (sessionId && !USE_MOCK) {
+        obtenerSnapshotSimulacionPeriodo(sessionId)
+          .then((snap) => {
+            const cancelados = (snap?.vuelosInstancia ?? [])
+              .map(adaptFlightInstance)
+              .filter((f) => normalizeFlightStatus(f.status) === "CANCELADO");
+            if (cancelados.length === 0) return;
+            setSimulationPanelData?.((prev) => {
+              const flights = new Map(prev?.flights ?? new Map());
+              for (const f of cancelados) {
+                const id = f.idVueloInstancia ?? f.id;
+                flights.set(id, { ...flights.get(id), ...f, ticksAusente: 0 });
+              }
+              return { ...prev, flights };
+            });
+          })
+          .catch(() => {});
+      }
       closeFlightPlansModal();
       return;
     }
@@ -1213,7 +1301,7 @@ export default function RightPanel({
       setCancelingFlightPlanId(null);
       setFlightPlanConfirmation(null);
     }
-  }, [closeFlightPlansModal, pendingFlightPlanCancellation, periodStatusMessage, toast]);
+  }, [closeFlightPlansModal, pendingFlightPlanCancellation, periodStatusMessage, toast, sessionId, setSimulationPanelData]);
 
   const flightsFetch = useFetch(() => (isSimulator ? Promise.resolve([]) : listFlights()), [isSimulator]);
   const ordersFetch = useFetch(() => (isSimulator ? Promise.resolve([]) : listOrders()), [isSimulator]);
@@ -1411,9 +1499,10 @@ export default function RightPanel({
     try {
       if (isOperacionesDiaADia) {
         await cancelarVueloProgramadoOperacionesDiaADia(flightPlanId);
-        const [rutasData, maletasData] = await Promise.all([
+        const [rutasData, maletasData, vuelosData] = await Promise.all([
           obtenerRutasOperacionesDiaADia().catch(() => []),
           obtenerMaletasOperacionesDiaADia().catch(() => []),
+          obtenerVuelosOperacionesDiaADia().catch(() => []),
         ]);
         setSimulationPanelData?.((previous) => {
           const bagOrigen = new Map();
@@ -1438,7 +1527,15 @@ export default function RightPanel({
               ticksAusente: 0,
             });
           }
-          return { ...previous, routes, bags };
+          // Mezclar la lista de vuelos re-obtenida (ya incluye CANCELADO) para que
+          // el vuelo cancelado aparezca de inmediato sin esperar un tick ni recargar.
+          const flights = new Map(previous?.flights ?? new Map());
+          for (const raw of (vuelosData ?? [])) {
+            const f = adaptFlightInstance(raw);
+            const id = f.idVueloInstancia ?? f.id;
+            flights.set(id, { ...flights.get(id), ...f, ticksAusente: 0 });
+          }
+          return { ...previous, routes, bags, flights };
         });
         toast.push({
           type: "warning",
@@ -1770,18 +1867,11 @@ export default function RightPanel({
         const rutas = isOperacionesDiaADia
           ? await obtenerRutasEnvioOperacionesDiaADia(idPedido)
           : await obtenerRutasEnvio(sessionId, idPedido);
-        const rutasVistas = new Set();
-        const rutasNorm = [];
+        const grupos = agruparRutasEnvio(rutas);
         const legSeen = new Set();
         const legs = [];
-        for (const r of rutas ?? []) {
-          const escalas = (r?.vuelos ?? []).map(toEscala);
-          const clave = escalas.map((e) => e.codigo).join(">");
-          if (!rutasVistas.has(clave)) {
-            rutasVistas.add(clave);
-            rutasNorm.push({ idMaleta: r.idMaleta, escalas });
-          }
-          for (const e of escalas) {
+        for (const g of grupos) {
+          for (const e of g.escalas) {
             const lk = `${e.origen}-${e.destino}`;
             if (!legSeen.has(lk)) {
               legSeen.add(lk);
@@ -1795,8 +1885,8 @@ export default function RightPanel({
         }
         setMapHighlight({
           kind: "envio",
-          label: `Envio ${idPedido} (${rutasNorm.length} ruta${rutasNorm.length !== 1 ? "s" : ""})`,
-          rutas: rutasNorm,
+          label: `Envio ${idPedido} (${grupos.length} ruta${grupos.length !== 1 ? "s" : ""})`,
+          rutas: grupos,
           legs,
         });
         const codes = new Set();
@@ -1808,6 +1898,19 @@ export default function RightPanel({
       }
     },
     [sessionId, isOperacionesDiaADia, setMapHighlight, setMapFocus, centroideDe, toast]
+  );
+
+  // Rutas agrupadas (con sus maletas) de un envio, para el detalle de la fila al
+  // expandirla. Reusa el mismo endpoint que "Ver rutas".
+  const loadEnvioRutas = useCallback(
+    async (idPedido) => {
+      if (!idPedido || !sessionId || USE_MOCK) return [];
+      const rutas = isOperacionesDiaADia
+        ? await obtenerRutasEnvioOperacionesDiaADia(idPedido)
+        : await obtenerRutasEnvio(sessionId, idPedido);
+      return agruparRutasEnvio(rutas);
+    },
+    [sessionId, isOperacionesDiaADia]
   );
 
   // Enfocar un almacen (req 5) o una UT (req 7) en el mapa desde el panel.
@@ -1858,6 +1961,53 @@ export default function RightPanel({
     }
   }, [activeTab, visibleFlights, flightSemaforo, flightOriginFilter, flightDestFilter, flightCodePattern, query, flightStatusFilter, setMapDim]);
 
+  // Mapa -> panel (req 6/8): al hacer click en un almacen (aeropuerto) o en una
+  // unidad de transporte (vuelo) en el mapa, saltar a su pestaña y dejar pedido
+  // el desplazamiento hasta el item correspondiente.
+  useEffect(() => {
+    if (!panelFocus) return;
+    const targetTab =
+      panelFocus.kind === "airport" ? "airports" :
+      panelFocus.kind === "flight" ? "flights" : null;
+    if (!targetTab) return;
+    if (activeTab !== targetTab) onTabChange(targetTab);
+    setScrollTarget({ kind: panelFocus.kind, id: panelFocus.id, ts: panelFocus.ts });
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [panelFocus]);
+
+  // Ejecuta el desplazamiento una vez que la pestaña correcta esta activa y sus
+  // filas estan disponibles. Reintenta por frames porque la lista virtualizada
+  // (Virtuoso) puede montarse despues del cambio de pestaña.
+  useEffect(() => {
+    if (!scrollTarget) return undefined;
+    const isAirport = scrollTarget.kind === "airport";
+    const targetTab = isAirport ? "airports" : "flights";
+    if (activeTab !== targetTab) return undefined;
+    const rows = isAirport ? airportsFiltered : visibleFlights;
+    const index = rows.findIndex((row) =>
+      isAirport
+        ? (row.iata ?? row.idAeropuerto) === scrollTarget.id
+        : (row.idVueloInstancia ?? row.id) === scrollTarget.id
+    );
+    if (index < 0) return undefined;
+    const virtuosoRef = isAirport ? airportsVirtuosoRef : flightsVirtuosoRef;
+    let cancelled = false;
+    let frame = 0;
+    let tries = 0;
+    const tryScroll = () => {
+      if (cancelled) return;
+      const inst = virtuosoRef.current;
+      if (inst?.scrollToIndex) {
+        inst.scrollToIndex({ index, align: "center", behavior: "smooth" });
+        setScrollTarget(null);
+        return;
+      }
+      if (tries++ < 30) frame = requestAnimationFrame(tryScroll);
+    };
+    frame = requestAnimationFrame(tryScroll);
+    return () => { cancelled = true; cancelAnimationFrame(frame); };
+  }, [scrollTarget, activeTab, visibleFlights, airportsFiltered]);
+
   const handleItemExpand = useCallback((entity) => {
     setSelected(entity);
   }, [setSelected]);
@@ -1870,6 +2020,7 @@ export default function RightPanel({
     flights: (
       <TabBody
         {...flights}
+        virtuosoRef={flightsVirtuosoRef}
         empty="Ejecuta la simulacion para cargar los vuelos del periodo."
         rows={visibleFlights}
         renderItem={(f, index) => (
@@ -1899,12 +2050,14 @@ export default function RightPanel({
             title="Planificados (por transportar)"
             envios={filterEnvios(enviosData.planificados)}
             onShowRoute={showEnvioRoutes}
+            onLoadRutas={loadEnvioRutas}
             defaultOpen
           />
           <EnvioSeccion
             title="En vuelos"
             envios={filterEnvios(enviosData.enVuelos)}
             onShowRoute={showEnvioRoutes}
+            onLoadRutas={loadEnvioRutas}
             defaultOpen
           />
         </div>
@@ -1929,6 +2082,7 @@ export default function RightPanel({
     airports: (
       <TabBody
         {...airports}
+        virtuosoRef={airportsVirtuosoRef}
         empty="Ejecuta la simulacion para cargar los aeropuertos del periodo."
         rows={airportsFiltered}
         renderItem={(a, index) => (
@@ -2127,11 +2281,14 @@ export default function RightPanel({
               <X className="h-3 w-3" /> Quitar
             </button>
           </div>
-          <div className="max-h-40 space-y-2 overflow-y-auto no-scrollbar">
+          <div className="max-h-48 space-y-3 overflow-y-auto no-scrollbar">
             {mapHighlight.rutas.map((r, ri) => (
               <div key={ri}>
                 {mapHighlight.kind === "envio" && (
-                  <div className="mb-1 text-[10px] font-semibold uppercase tracking-wide text-slate-400">Maleta {r.idMaleta}</div>
+                  <div className="mb-1 flex items-center justify-between gap-2">
+                    <span className="text-[10px] font-semibold uppercase tracking-wide text-slate-300">Ruta {ri + 1}</span>
+                    <span className="shrink-0 text-[10px] text-slate-400">{r.cantidad} maleta{r.cantidad !== 1 ? "s" : ""}</span>
+                  </div>
                 )}
                 {r.escalas.length === 0 ? (
                   <div className="text-[11px] text-slate-500">Sin escalas.</div>
@@ -2144,6 +2301,12 @@ export default function RightPanel({
                       </li>
                     ))}
                   </ol>
+                )}
+                {mapHighlight.kind === "envio" && r.maletas?.length > 0 && (
+                  <div className="mt-1 text-[10px] leading-relaxed text-slate-400">
+                    <span className="text-slate-500">Maletas: </span>
+                    {r.maletas.join(", ")}
+                  </div>
                 )}
               </div>
             ))}
@@ -2429,13 +2592,14 @@ export default function RightPanel({
   );
 }
 
-function TabBody({ loading, error, refetch, rows, empty, renderItem }) {
+function TabBody({ loading, error, refetch, rows, empty, renderItem, virtuosoRef }) {
   if (loading) return <LoadingState />;
   if (error) return <ErrorState error={error} onRetry={refetch} />;
   if (!rows || rows.length === 0) return <EmptyState title="Sin resultados" message={empty} />;
 
   return (
     <Virtuoso
+      ref={virtuosoRef}
       style={{ height: "100%" }}
       components={{ Scroller: PanelScroller }}
       totalCount={rows.length}
