@@ -107,6 +107,9 @@ public class OperacionesDiaADiaService {
     private final ConcurrentHashMap<String, Pedido> pedidos = new ConcurrentHashMap<>();
     private final ConcurrentHashMap<String, Maleta> maletasPorId = new ConcurrentHashMap<>();
     private final ConcurrentHashMap<String, Ruta> rutasPorMaleta = new ConcurrentHashMap<>();
+    // Maletas entregadas en las ultimas 4h, retenidas para el panel "Entregados"
+    // (en operaciones las entregadas se quitan del estado vivo). Se purgan por edad.
+    private final ConcurrentHashMap<String, MaletaEntregadaReciente> maletasEntregadasRecientes = new ConcurrentHashMap<>();
     private final AtomicInteger totalMaletasEntregadas = new AtomicInteger(0);
     private final Set<String> idsEntregadasEnTick = new HashSet<>();
     private final Map<String, String> idsCompletadasEnTick = new HashMap<>();
@@ -261,6 +264,7 @@ public class OperacionesDiaADiaService {
             pedidos.clear();
             maletasPorId.clear();
             rutasPorMaleta.clear();
+            maletasEntregadasRecientes.clear();
 
             log.info("[AeroLuggage/OperacionesDiaADia] - INICIADA: sessionId={}, fecha={}, aeropuertos={}, vuelosProgramados={}, vuelosInstancia={}",
                     sessionId, hoy, aeropuertos.size(), vuelosProgramados.size(), vuelosInstancia.size());
@@ -780,6 +784,31 @@ public class OperacionesDiaADiaService {
             if (a != null) a.setMaletasActuales(Math.max(0, a.getMaletasActuales() - 1));
         }
         maletaRepositorio.actualizar(m);
+
+        // Retener la maleta entregada (con su ruta resuelta) para el panel
+        // "Entregados (ultimas 4h)". Se captura aqui porque la ruta se acaba de
+        // remover y los vuelos podrian limpiarse despues.
+        if (idPedido != null) {
+            final String origenPedido = m.getPedido() != null && m.getPedido().getAeropuertoOrigen() != null
+                    ? m.getPedido().getAeropuertoOrigen().getIdAeropuerto() : null;
+            final String destinoPedido = m.getPedido() != null && m.getPedido().getAeropuertoDestino() != null
+                    ? m.getPedido().getAeropuertoDestino().getIdAeropuerto() : null;
+            final List<String> utsEntrega = new ArrayList<>();
+            final List<String> origenesEntrega = new ArrayList<>();
+            final List<String> destinosEntrega = new ArrayList<>();
+            if (r != null) {
+                for (final String subId : r.getSubrutaIds()) {
+                    final VueloInstancia v = vuelosInstancia.get(subId);
+                    if (v == null) continue;
+                    if (v.getCodigo() != null) utsEntrega.add(v.getCodigo());
+                    if (v.getAeropuertoOrigen() != null) origenesEntrega.add(v.getAeropuertoOrigen().getIdAeropuerto());
+                    if (v.getAeropuertoDestino() != null) destinosEntrega.add(v.getAeropuertoDestino().getIdAeropuerto());
+                }
+            }
+            maletasEntregadasRecientes.put(m.getIdMaleta(), new MaletaEntregadaReciente(
+                    m.getIdMaleta(), idPedido, origenPedido, destinoPedido,
+                    utsEntrega, origenesEntrega, destinosEntrega, ahora));
+        }
 
         if (idPedido != null) {
             final boolean pendientes = maletasPorId.values().stream()
@@ -1625,6 +1654,19 @@ public class OperacionesDiaADiaService {
     public Collection<Pedido> getPedidos() { touchSession(); return pedidos.values(); }
     public List<Pedido> getPedidosNoEntregados() { return pedidoRepositorio.obtenerNoEntregados(); }
     public Collection<Maleta> getMaletas() { return maletaRepositorio.obtenerNoEntregadas(); }
+
+    /** Info minima de una maleta entregada, retenida para el panel "Entregados". */
+    public record MaletaEntregadaReciente(String idMaleta, String idPedido, String origin, String dest,
+            List<String> uts, List<String> origenesRuta, List<String> destinosRuta,
+            LocalDateTime fechaEntrega) {}
+
+    /** Maletas entregadas en las ultimas 4h (purga las mas antiguas en cada consulta). */
+    public List<MaletaEntregadaReciente> getMaletasEntregadasRecientes() {
+        final LocalDateTime corte = LocalDateTime.now(ZoneOffset.UTC).minusHours(4);
+        maletasEntregadasRecientes.values().removeIf(
+                r -> r.fechaEntrega() == null || r.fechaEntrega().isBefore(corte));
+        return new ArrayList<>(maletasEntregadasRecientes.values());
+    }
     public Collection<Ruta> getRutas() { return rutaRepositorio.obtenerActivasPlanificadas(); }
     public Ruta getRutaPorMaleta(final String idMaleta) {
         touchSession();

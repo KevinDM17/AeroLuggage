@@ -191,10 +191,10 @@ function AirportMap({
     setPanelFocus({ ...entity, ts: Date.now() });
   }, [setSelected, setPanelFocus]);
 
-  /* Tarjeta con datos del vuelo: se muestra SOLO al pasar el mouse por encima de
-   * un avion NO vacio (used > 0). El click solo selecciona (enlace con el panel).
+  /* Tarjetas con datos: se muestran SOLO al pasar el mouse por encima (hover),
+   * tanto del avion (NO vacio) como del aeropuerto. El click solo selecciona
+   * (enlace con el panel).
    * - manifest: pedidos/maletas a bordo, pedidos al back mientras se sobrevuela. */
-  const [clickedAirportId, setClickedAirportId] = useState(null);
   const [hoveredPlaneId, setHoveredPlaneId] = useState(null);
   const [hoveredAirportId, setHoveredAirportId] = useState(null);
   const [manifest, setManifest] = useState({ status: "idle", pedidos: 0, maletas: 0 });
@@ -209,10 +209,11 @@ function AirportMap({
 
   const hoveredFlightId = hoveredFlight ? (hoveredFlight.id ?? hoveredFlight.idVueloInstancia) : null;
 
-  const clickedAirport = useMemo(() => {
-    if (!clickedAirportId) return null;
-    return airportsByIata.get(clickedAirportId) ?? null;
-  }, [clickedAirportId, airportsByIata]);
+  // Aeropuerto sobrevolado -> su tarjeta de datos.
+  const hoveredAirport = useMemo(() => {
+    if (!hoveredAirportId) return null;
+    return airportsByIata.get(hoveredAirportId) ?? null;
+  }, [hoveredAirportId, airportsByIata]);
 
   useEffect(() => {
     if (!hoveredFlightId || !flightManifestLoader) {
@@ -239,7 +240,6 @@ function AirportMap({
 
   const handleDeckClick = useCallback((info) => {
     if (!info?.object) {
-      setClickedAirportId(null);
       setHoveredPlaneId(null);
       setHoveredAirportId(null);
       setSelected(null);
@@ -472,7 +472,6 @@ function AirportMap({
           onClick: (info) => {
             if (info?.object?.iata) {
               selectFromMap({ kind: "airport", id: info.object.iata });
-              setClickedAirportId(info.object.iata);
               return true;
             }
             return false;
@@ -708,11 +707,8 @@ function AirportMap({
           manifest={manifest}
         />
       )}
-      {clickedAirport && (
-        <AirportInfoCard
-          airport={clickedAirport}
-          onClose={() => { setClickedAirportId(null); setSelected(null); }}
-        />
+      {hoveredAirport && (
+        <AirportInfoCard airport={hoveredAirport} />
       )}
     </div>
   );
@@ -786,20 +782,21 @@ function AirportInfoCard({ airport, onClose }) {
   return (
     <div className="absolute top-1/2 left-3 -translate-y-1/2 z-[3500] w-64 rounded-xl border border-blue-400/40 bg-surface-1/95 backdrop-blur px-4 py-3 shadow-lg shadow-blue-400/10 text-slate-200">
       <div className="flex items-start justify-between gap-2">
-        <div>
+        <div className="min-w-0">
           <div className="text-[10px] uppercase tracking-wider text-blue-400 font-semibold">Aeropuerto</div>
-          <div className="font-bold text-base text-white">{airport.iata}</div>
-          <div className="text-xs text-slate-400 mt-0.5">{airport.name}</div>
-          <div className="text-[10px] text-slate-500">{airport.city} · {airport.continent}</div>
+          <div className="truncate font-bold text-base text-white">{airport.city || airport.name || airport.iata}</div>
+          <div className="text-[10px] text-slate-500">{airport.iata} · {airport.continent}</div>
         </div>
-        <button
-          type="button"
-          onClick={onClose}
-          aria-label="Cerrar"
-          className="rounded-md border border-slate-700 bg-surface-2/60 p-1 text-slate-300 hover:text-white hover:bg-surface-2"
-        >
-          <span className="block leading-none text-xs px-1">×</span>
-        </button>
+        {onClose && (
+          <button
+            type="button"
+            onClick={onClose}
+            aria-label="Cerrar"
+            className="rounded-md border border-slate-700 bg-surface-2/60 p-1 text-slate-300 hover:text-white hover:bg-surface-2"
+          >
+            <span className="block leading-none text-xs px-1">×</span>
+          </button>
+        )}
       </div>
 
       <div className="mt-3 grid grid-cols-2 gap-2 text-xs">

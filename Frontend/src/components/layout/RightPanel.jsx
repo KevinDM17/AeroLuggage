@@ -466,7 +466,7 @@ function Collapsible({ title, defaultOpen = false, children }) {
   );
 }
 
-const EnvioItem = memo(function EnvioItem({ envio, showOrigin = true, onShowRoute, onLoadRutas }) {
+const EnvioItem = memo(function EnvioItem({ envio, showOrigin = true, onShowRoute, onLoadRutas, category, isSelected, onFocus, onDeselect }) {
   const [expanded, setExpanded] = useState(false);
   // Rutas agrupadas (cada una con sus maletas), pedidas al back al expandir.
   // No mostramos UT ni escalas aqui: ese detalle vive en "Ver rutas".
@@ -492,7 +492,7 @@ const EnvioItem = memo(function EnvioItem({ envio, showOrigin = true, onShowRout
   }, [expanded, envio.id, onLoadRutas]);
 
   return (
-    <div className="flex flex-col border-b border-slate-800/50 h-full cursor-pointer hover:bg-slate-800 transition-colors duration-200" onClick={() => setExpanded(!expanded)}>
+    <div className={`flex flex-col border-b border-slate-800/50 h-full cursor-pointer transition-colors duration-200 ${isSelected ? "rounded-lg bg-info/5 ring-1 ring-info/60" : "hover:bg-slate-800"}`} onClick={() => setExpanded(!expanded)}>
       <div className="flex items-start justify-between gap-2">
         <div className="min-w-0">
           <h4 className="truncate text-sm font-bold text-slate-200">{envio.id}</h4>
@@ -505,15 +505,39 @@ const EnvioItem = memo(function EnvioItem({ envio, showOrigin = true, onShowRout
           {envio.horaEntrega && (
             <div className="text-[10px] text-slate-400">Entregado: {formatHoraPlan(envio.horaEntrega)}</div>
           )}
-          {onShowRoute && (
-            <button
-              type="button"
-              onClick={(ev) => { ev.stopPropagation(); onShowRoute(envio.id); }}
-              className="inline-flex items-center gap-1 rounded-md border border-info/40 bg-info/10 px-2 py-0.5 text-[10px] font-bold uppercase tracking-wide text-info transition-colors hover:bg-info/20"
-            >
-              <Route className="h-3 w-3" /> Ver rutas
-            </button>
-          )}
+          <div className="flex items-center gap-1">
+            {isSelected && onDeselect && (
+              <button
+                type="button"
+                onClick={(ev) => { ev.stopPropagation(); onDeselect(); }}
+                aria-label={`Quitar seleccion de ${envio.id}`}
+                title="Quitar seleccion"
+                className="rounded-md border border-slate-600/60 bg-slate-700/40 p-1 text-slate-200 transition-colors hover:bg-slate-700/70"
+              >
+                <X className="h-3 w-3" />
+              </button>
+            )}
+            {onFocus && (
+              <button
+                type="button"
+                onClick={(ev) => { ev.stopPropagation(); onFocus(envio, category); }}
+                aria-label={`Enfocar ${envio.id} en el mapa`}
+                title={category === "flight" ? "Enfocar vuelo y ruta" : "Enfocar almacen"}
+                className="rounded-md border border-info/40 bg-info/10 p-1 text-info transition-colors hover:bg-info/20"
+              >
+                <Crosshair className="h-3 w-3" />
+              </button>
+            )}
+            {onShowRoute && (
+              <button
+                type="button"
+                onClick={(ev) => { ev.stopPropagation(); onShowRoute(envio.id); }}
+                className="inline-flex items-center gap-1 rounded-md border border-info/40 bg-info/10 px-2 py-0.5 text-[10px] font-bold uppercase tracking-wide text-info transition-colors hover:bg-info/20"
+              >
+                <Route className="h-3 w-3" /> Ver rutas
+              </button>
+            )}
+          </div>
         </div>
       </div>
       {expanded && (
@@ -538,7 +562,7 @@ const EnvioItem = memo(function EnvioItem({ envio, showOrigin = true, onShowRout
   );
 });
 
-function EnvioSeccion({ title, envios, showOrigin = true, defaultOpen = false, max = 200, onShowRoute, onLoadRutas }) {
+function EnvioSeccion({ title, envios, showOrigin = true, defaultOpen = false, max = 200, onShowRoute, onLoadRutas, category, selectedEnvioId, onFocus, onDeselect }) {
   const shown = envios.slice(0, max);
   return (
     <Collapsible title={`${title} (${envios.length})`} defaultOpen={defaultOpen}>
@@ -546,7 +570,7 @@ function EnvioSeccion({ title, envios, showOrigin = true, defaultOpen = false, m
         <div className="pl-1 text-[11px] text-slate-500">Sin envios.</div>
       ) : (
         <>
-          {shown.map((e, i) => <EnvioItem key={`${e.id}-${i}`} envio={e} showOrigin={showOrigin} onShowRoute={onShowRoute} onLoadRutas={onLoadRutas} />)}
+          {shown.map((e, i) => <EnvioItem key={`${e.id}-${i}`} envio={e} showOrigin={showOrigin} onShowRoute={onShowRoute} onLoadRutas={onLoadRutas} category={category} isSelected={selectedEnvioId === e.id} onFocus={onFocus} onDeselect={onDeselect} />)}
           {envios.length > shown.length && (
             <div className="pt-1 text-[10px] text-slate-500">… y {envios.length - shown.length} mas (usa los filtros)</div>
           )}
@@ -1127,8 +1151,9 @@ export default function RightPanel({
   const [airportSortDir, setAirportSortDir] = useState("asc");
   const [envioOriginFilter, setEnvioOriginFilter] = useState("ALL");
   const [envioDestFilter, setEnvioDestFilter] = useState("ALL");
-  const [enviosData, setEnviosData] = useState({ planificados: [], enVuelos: [] });
+  const [enviosData, setEnviosData] = useState({ planificados: [], enVuelos: [], entregados: [] });
   const [enviosStatus, setEnviosStatus] = useState("idle");
+  const [selectedEnvioId, setSelectedEnvioId] = useState(null);
   const [airportSemaforo, setAirportSemaforo] = useState("ALL");
   const [flightSemaforo, setFlightSemaforo] = useState("ALL");
   const [cancelingFlightId, setCancelingFlightId] = useState(null);
@@ -1694,7 +1719,7 @@ export default function RightPanel({
   // tick, para no recargar (la data se mantiene hasta que el usuario refresca).
   const fetchEnvios = useCallback(() => {
     if (USE_MOCK || !sessionId) {
-      setEnviosData({ planificados: [], enVuelos: [] });
+      setEnviosData({ planificados: [], enVuelos: [], entregados: [] });
       setEnviosStatus("ready");
       return Promise.resolve();
     }
@@ -1706,11 +1731,12 @@ export default function RightPanel({
           setEnviosData({
             planificados: data?.planificados ?? [],
             enVuelos: data?.enVuelos ?? [],
+            entregados: data?.entregadosUltimas4h ?? [],
           });
           setEnviosStatus("ready");
         })
         .catch(() => {
-          setEnviosData({ planificados: [], enVuelos: [] });
+          setEnviosData({ planificados: [], enVuelos: [], entregados: [] });
           setEnviosStatus("error");
         });
     }
@@ -1720,11 +1746,12 @@ export default function RightPanel({
         setEnviosData({
           planificados: data?.planificados ?? [],
           enVuelos: data?.enVuelos ?? [],
+          entregados: data?.entregadosUltimas4h ?? [],
         });
         setEnviosStatus("ready");
       })
       .catch(() => {
-        setEnviosData({ planificados: [], enVuelos: [] });
+        setEnviosData({ planificados: [], enVuelos: [], entregados: [] });
         setEnviosStatus("error");
       });
   }, [sessionId, isOperacionesDiaADia, isPeriodo]);
@@ -1736,7 +1763,7 @@ export default function RightPanel({
   const enviosAirportOptions = useMemo(() => {
     const origins = new Set();
     const dests = new Set();
-    for (const e of [...enviosData.planificados, ...enviosData.enVuelos]) {
+    for (const e of [...enviosData.planificados, ...enviosData.enVuelos, ...(enviosData.entregados ?? [])]) {
       for (const a of e.origenesRuta ?? []) origins.add(a);
       for (const a of e.destinosRuta ?? []) dests.add(a);
     }
@@ -1937,6 +1964,32 @@ export default function RightPanel({
     [airportCoords, setSelected, setMapFocus]
   );
 
+  // Seleccionar un pedido y enfocarlo en el mapa:
+  //  - "flight" (en vuelos): resalta su(s) ruta(s) y enfoca la cámara (avión + ruta).
+  //  - "warehouse" (planificado): enfoca el almacén de origen donde esperan las maletas.
+  const focusEnvio = useCallback(
+    (envio, category) => {
+      if (!envio?.id) return;
+      setSelectedEnvioId(envio.id);
+      if (category === "flight") {
+        showEnvioRoutes(envio.id);                 // avión + ruta
+      } else if (category === "delivered" && envio.dest) {
+        focusAirportOnMap(envio.dest);             // ya entregado -> almacén destino
+      } else if (envio.origin) {
+        focusAirportOnMap(envio.origin);           // planificado -> almacén de origen
+      } else {
+        showEnvioRoutes(envio.id);
+      }
+    },
+    [showEnvioRoutes, focusAirportOnMap]
+  );
+
+  const deselectEnvio = useCallback(() => {
+    setSelectedEnvioId(null);
+    setMapHighlight(null);
+    setSelected(null);
+  }, [setMapHighlight, setSelected]);
+
   // Panel -> mapa: refleja el filtro de almacenes (semaforo y otros) (req 10/12).
   useEffect(() => {
     const active = airportSemaforo !== "ALL" || airportRegionFilter !== "ALL"
@@ -2051,6 +2104,10 @@ export default function RightPanel({
             envios={filterEnvios(enviosData.planificados)}
             onShowRoute={showEnvioRoutes}
             onLoadRutas={loadEnvioRutas}
+            category="warehouse"
+            selectedEnvioId={selectedEnvioId}
+            onFocus={focusEnvio}
+            onDeselect={deselectEnvio}
             defaultOpen
           />
           <EnvioSeccion
@@ -2058,7 +2115,21 @@ export default function RightPanel({
             envios={filterEnvios(enviosData.enVuelos)}
             onShowRoute={showEnvioRoutes}
             onLoadRutas={loadEnvioRutas}
+            category="flight"
+            selectedEnvioId={selectedEnvioId}
+            onFocus={focusEnvio}
+            onDeselect={deselectEnvio}
             defaultOpen
+          />
+          <EnvioSeccion
+            title="Entregados (ultimas 4h)"
+            envios={filterEnvios(enviosData.entregados ?? [])}
+            onShowRoute={showEnvioRoutes}
+            onLoadRutas={loadEnvioRutas}
+            category="delivered"
+            selectedEnvioId={selectedEnvioId}
+            onFocus={focusEnvio}
+            onDeselect={deselectEnvio}
           />
         </div>
       )
