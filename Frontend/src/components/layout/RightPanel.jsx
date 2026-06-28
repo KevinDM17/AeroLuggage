@@ -82,7 +82,7 @@ const PanelScroller = forwardRef(function PanelScroller({ style, className, chil
   );
 });
 
-const FlightItem = memo(function FlightItem({ flight, onCancel, canceling, loadManifest, onFocus, onDeselect, isSelected, onExpand, onCollapse }) {
+const FlightItem = memo(function FlightItem({ flight, onCancel, canceling, loadManifest, onFocus, onDeselect, isSelected, forceExpanded = false, onExpand, onCollapse }) {
   const [expanded, setExpanded] = useState(false);
   const pct = flight.capacity > 0 ? Math.round((flight.used / flight.capacity) * 100) : 0;
   const normalizedStatus = normalizeFlightStatus(flight.status);
@@ -94,6 +94,10 @@ const FlightItem = memo(function FlightItem({ flight, onCancel, canceling, loadM
   const flightKey = flight.idVueloInstancia ?? flight.id;
   const [manifest, setManifest] = useState(EMPTY_MANIFEST);
   const [manifestStatus, setManifestStatus] = useState("idle");
+
+  useEffect(() => {
+    if (forceExpanded) setExpanded(true);
+  }, [forceExpanded]);
 
   useEffect(() => {
     if (!expanded || !loadManifest) return undefined;
@@ -586,6 +590,7 @@ const AirportItem = memo(function AirportItem({
   onFocus,
   onDeselect,
   isSelected,
+  forceExpanded = false,
   onShowFlightPlans,
   showFlightPlansAction = false,
   onExpand,
@@ -600,6 +605,10 @@ const AirportItem = memo(function AirportItem({
   const airportKey = apt.iata ?? apt.idAeropuerto;
   const [contenido, setContenido] = useState(EMPTY_CONTENIDO);
   const [contenidoStatus, setContenidoStatus] = useState("idle");
+
+  useEffect(() => {
+    if (forceExpanded) setExpanded(true);
+  }, [forceExpanded]);
 
   useEffect(() => {
     if (!expanded || !loadContenido) return undefined;
@@ -1165,7 +1174,7 @@ export default function RightPanel({
   const [flightPlanConfirmation, setFlightPlanConfirmation] = useState(null);
   const publish = useStompPublish();
   const sessionId = simulationPanelData?.sessionId ?? null;
-  const { mapHighlight, setMapHighlight, selected, setSelected, setMapFocus, panelFocus, setMapDim, setFlightManifestLoader } = useMapFocus();
+  const { mapHighlight, setMapHighlight, selected, setSelected, setMapFocus, panelFocus, setMapDim, setCancellationNotice, setFlightManifestLoader } = useMapFocus();
   const location = useLocation();
   const isOperacionesDiaADia = location.pathname === "/operaciones";
   const isPeriodo = location.pathname === "/simulator/period";
@@ -1289,6 +1298,14 @@ export default function RightPanel({
         title: "Vuelo cancelado",
         message: pendingFlightPlanCancellation.toastMessage,
       });
+      if (pendingFlightPlanCancellation.origin) {
+        setCancellationNotice({
+          airportCode: pendingFlightPlanCancellation.origin,
+          flightId: pendingFlightPlanCancellation.idVueloProgramado,
+          message: pendingFlightPlanCancellation.toastMessage,
+          ts: Date.now(),
+        });
+      }
       // Re-fetch del snapshot para traer el vuelo recién cancelado a la lista.
       // El stream del tick no basta: la instancia cancelada puede tener un id
       // que el frontend no cargó en metadata. El snapshot trae hot+cold con
@@ -1326,7 +1343,7 @@ export default function RightPanel({
       setCancelingFlightPlanId(null);
       setFlightPlanConfirmation(null);
     }
-  }, [closeFlightPlansModal, pendingFlightPlanCancellation, periodStatusMessage, toast, sessionId, setSimulationPanelData]);
+  }, [closeFlightPlansModal, pendingFlightPlanCancellation, periodStatusMessage, toast, sessionId, setCancellationNotice, setSimulationPanelData]);
 
   const flightsFetch = useFetch(() => (isSimulator ? Promise.resolve([]) : listFlights()), [isSimulator]);
   const ordersFetch = useFetch(() => (isSimulator ? Promise.resolve([]) : listOrders()), [isSimulator]);
@@ -1422,14 +1439,10 @@ export default function RightPanel({
     const sourceFlights = Array.isArray(flights.data) ? flights.data : [];
     const q = query.trim().toLowerCase();
     const pattern = flightCodePattern.trim().toLowerCase();
-    const hasExtraCriteria =
-      q !== "" || pattern !== "" || flightOriginFilter !== "ALL" || flightDestFilter !== "ALL" || flightSemaforo !== "ALL";
 
     // Alcance por estado.
     let filtered;
     if (flightStatusFilter === "ALL") {
-      // "Todos" sin ningun otro criterio: evitamos volcar todo el periodo de golpe.
-      if (!hasExtraCriteria) return [];
       filtered = sourceFlights;
     } else if (flightStatusFilter === "DEFAULT") {
       filtered = sourceFlights.filter((f) => FILTER_STATUSES.has(normalizeFlightStatus(f?.status)));
@@ -1489,7 +1502,7 @@ export default function RightPanel({
     setCancelingFlightId(flightId);
     try {
       if (isSimulator) {
-        markFlightAsCanceled(flight.id);
+        markFlightAsCanceled(flightId);
         if (sessionId) {
           publish("/app/simulacion/periodo/cancelar-vuelo", {
             sessionId,
@@ -1505,6 +1518,14 @@ export default function RightPanel({
         title: "Vuelo cancelado",
         message: flightId,
       });
+      if (flight?.origin) {
+        setCancellationNotice({
+          airportCode: flight.origin,
+          flightId,
+          message: `${flightId} cancelado`,
+          ts: Date.now(),
+        });
+      }
     } catch (err) {
       toast.push({
         type: "error",
@@ -1567,6 +1588,14 @@ export default function RightPanel({
           title: "Vuelo cancelado",
           message: `${flightPlan.origin} -> ${flightPlan.dest} · ${timing.effectiveDateLabel}`,
         });
+        if (flightPlan.origin) {
+          setCancellationNotice({
+            airportCode: flightPlan.origin,
+            flightId: flightPlanId,
+            message: `${flightPlan.origin} -> ${flightPlan.dest} - ${timing.effectiveDateLabel}`,
+            ts: Date.now(),
+          });
+        }
         closeFlightPlansModal();
         return;
       }
@@ -1577,12 +1606,22 @@ export default function RightPanel({
           title: "Vuelo cancelado",
           message: `${flightPlan.origin} -> ${flightPlan.dest} · ${timing.effectiveDateLabel}`,
         });
+        if (flightPlan.origin) {
+          setCancellationNotice({
+            airportCode: flightPlan.origin,
+            flightId: flightPlanId,
+            message: `${flightPlan.origin} -> ${flightPlan.dest} - ${timing.effectiveDateLabel}`,
+            ts: Date.now(),
+          });
+        }
         closeFlightPlansModal();
         return;
       }
 
       setPendingFlightPlanCancellation({
         idVueloProgramado: flightPlanId,
+        origin: flightPlan.origin,
+        dest: flightPlan.dest,
         toastMessage: `${flightPlan.origin} -> ${flightPlan.dest} · ${timing.effectiveDateLabel}`,
       });
       await publish("/app/simulacion/periodo/cancelar-vuelo-programado", {
@@ -1714,6 +1753,22 @@ export default function RightPanel({
     airportSortKey, airportSortDir, nextFlightTimesByAirport,
   ]);
 
+  const pinnedVisibleFlights = useMemo(() => {
+    if (selected?.kind !== "flight") return visibleFlights;
+    const index = visibleFlights.findIndex((f) => (f.idVueloInstancia ?? f.id) === selected.id);
+    if (index <= 0) return visibleFlights;
+    const row = visibleFlights[index];
+    return [row, ...visibleFlights.slice(0, index), ...visibleFlights.slice(index + 1)];
+  }, [visibleFlights, selected]);
+
+  const pinnedAirportsFiltered = useMemo(() => {
+    if (selected?.kind !== "airport") return airportsFiltered;
+    const index = airportsFiltered.findIndex((a) => (a.iata ?? a.idAeropuerto) === selected.id);
+    if (index <= 0) return airportsFiltered;
+    const row = airportsFiltered[index];
+    return [row, ...airportsFiltered.slice(0, index), ...airportsFiltered.slice(index + 1)];
+  }, [airportsFiltered, selected]);
+
   // Envios del panel (planificados / en vuelos / entregados 4h). Se pide al
   // back al entrar a la pestana Pedidos y con el boton refrescar; NO en cada
   // tick, para no recargar (la data se mantiene hasta que el usuario refresca).
@@ -1787,6 +1842,12 @@ export default function RightPanel({
     }
     return rows;
   }, [envioOriginFilter, envioDestFilter, query, cityByIata]);
+
+  const enviosFilteredForMap = useMemo(() => ([
+    ...filterEnvios(enviosData.planificados),
+    ...filterEnvios(enviosData.enVuelos),
+    ...filterEnvios(enviosData.entregados ?? []),
+  ]), [enviosData, filterEnvios]);
 
   const maletasFiltered = useMemo(() => {
     return filterByText(maletasVisibles, ["idMaleta", "idPedido", "estado", "ubicacionActual"]);
@@ -2014,6 +2075,25 @@ export default function RightPanel({
     }
   }, [activeTab, visibleFlights, flightSemaforo, flightOriginFilter, flightDestFilter, flightCodePattern, query, flightStatusFilter, setMapDim]);
 
+  // Panel -> mapa: filtros de envios/pedidos. Se limita por aeropuertos de ruta
+  // porque las UT del panel son codigos de vuelo, no siempre ids de instancia.
+  useEffect(() => {
+    if (activeTab !== "orders") return;
+    const active = envioOriginFilter !== "ALL" || envioDestFilter !== "ALL" || query.trim() !== "";
+    if (active) {
+      const codes = new Set();
+      for (const e of enviosFilteredForMap) {
+        if (e.origin) codes.add(e.origin);
+        if (e.dest) codes.add(e.dest);
+        for (const c of e.origenesRuta ?? []) codes.add(c);
+        for (const c of e.destinosRuta ?? []) codes.add(c);
+      }
+      setMapDim((prev) => ({ ...prev, airports: codes, flights: null }));
+    } else {
+      setMapDim((prev) => (prev.airports || prev.flights ? { ...prev, airports: null, flights: null } : prev));
+    }
+  }, [activeTab, enviosFilteredForMap, envioOriginFilter, envioDestFilter, query, setMapDim]);
+
   // Mapa -> panel (req 6/8): al hacer click en un almacen (aeropuerto) o en una
   // unidad de transporte (vuelo) en el mapa, saltar a su pestaña y dejar pedido
   // el desplazamiento hasta el item correspondiente.
@@ -2036,7 +2116,7 @@ export default function RightPanel({
     const isAirport = scrollTarget.kind === "airport";
     const targetTab = isAirport ? "airports" : "flights";
     if (activeTab !== targetTab) return undefined;
-    const rows = isAirport ? airportsFiltered : visibleFlights;
+    const rows = isAirport ? pinnedAirportsFiltered : pinnedVisibleFlights;
     const index = rows.findIndex((row) =>
       isAirport
         ? (row.iata ?? row.idAeropuerto) === scrollTarget.id
@@ -2051,7 +2131,7 @@ export default function RightPanel({
       if (cancelled) return;
       const inst = virtuosoRef.current;
       if (inst?.scrollToIndex) {
-        inst.scrollToIndex({ index, align: "center", behavior: "smooth" });
+        inst.scrollToIndex({ index, align: index === 0 ? "start" : "center", behavior: "smooth" });
         setScrollTarget(null);
         return;
       }
@@ -2059,7 +2139,7 @@ export default function RightPanel({
     };
     frame = requestAnimationFrame(tryScroll);
     return () => { cancelled = true; cancelAnimationFrame(frame); };
-  }, [scrollTarget, activeTab, visibleFlights, airportsFiltered]);
+  }, [scrollTarget, activeTab, pinnedVisibleFlights, pinnedAirportsFiltered]);
 
   const handleItemExpand = useCallback((entity) => {
     setSelected(entity);
@@ -2075,10 +2155,11 @@ export default function RightPanel({
         {...flights}
         virtuosoRef={flightsVirtuosoRef}
         empty="Ejecuta la simulacion para cargar los vuelos del periodo."
-        rows={visibleFlights}
+        rows={pinnedVisibleFlights}
+        keyForRow={(f, index) => f.idVueloInstancia ?? f.id ?? index}
         renderItem={(f, index) => (
           <FlightItem
-            key={`${f.id}-${index}`}
+            key={f.idVueloInstancia ?? f.id ?? index}
             flight={f}
             onCancel={handleCancelFlight}
             canceling={cancelingFlightId === f.id}
@@ -2088,6 +2169,7 @@ export default function RightPanel({
             onExpand={(id) => handleItemExpand({ kind: "flight", id })}
             onCollapse={handleItemCollapse}
             isSelected={selected?.kind === "flight" && selected.id === (f.idVueloInstancia ?? f.id)}
+            forceExpanded={selected?.kind === "flight" && selected.id === (f.idVueloInstancia ?? f.id)}
           />
         )}
       />
@@ -2155,7 +2237,8 @@ export default function RightPanel({
         {...airports}
         virtuosoRef={airportsVirtuosoRef}
         empty="Ejecuta la simulacion para cargar los aeropuertos del periodo."
-        rows={airportsFiltered}
+        rows={pinnedAirportsFiltered}
+        keyForRow={(a, index) => a.iata ?? a.idAeropuerto ?? index}
         renderItem={(a, index) => (
           <AirportItem
             key={a.iata ?? a.idAeropuerto ?? index}
@@ -2166,6 +2249,7 @@ export default function RightPanel({
             onExpand={(id) => handleItemExpand({ kind: "airport", id })}
             onCollapse={handleItemCollapse}
             isSelected={selected?.kind === "airport" && selected.id === (a.iata ?? a.idAeropuerto)}
+            forceExpanded={selected?.kind === "airport" && selected.id === (a.iata ?? a.idAeropuerto)}
             onShowFlightPlans={openFlightPlansModal}
             showFlightPlansAction={isPeriodo || isOperacionesDiaADia}
           />
@@ -2663,7 +2747,7 @@ export default function RightPanel({
   );
 }
 
-function TabBody({ loading, error, refetch, rows, empty, renderItem, virtuosoRef }) {
+function TabBody({ loading, error, refetch, rows, empty, renderItem, virtuosoRef, keyForRow }) {
   if (loading) return <LoadingState />;
   if (error) return <ErrorState error={error} onRetry={refetch} />;
   if (!rows || rows.length === 0) return <EmptyState title="Sin resultados" message={empty} />;
@@ -2674,6 +2758,7 @@ function TabBody({ loading, error, refetch, rows, empty, renderItem, virtuosoRef
       style={{ height: "100%" }}
       components={{ Scroller: PanelScroller }}
       totalCount={rows.length}
+      computeItemKey={(index) => keyForRow ? keyForRow(rows[index], index) : index}
       itemContent={(index) => renderItem(rows[index], index)}
     />
   );

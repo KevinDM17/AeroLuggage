@@ -34,6 +34,7 @@ export default function MainLayout() {
   const [mapFocus, setMapFocus] = useState(null);
   const [panelFocus, setPanelFocus] = useState(null);
   const [mapDim, setMapDim] = useState({ airports: null, flights: null });
+  const [cancellationNotice, setCancellationNotice] = useState(null);
   const [flightManifestLoader, setFlightManifestLoader] = useState(null);
   const location = useLocation();
   const previousIsSimulatorRef = useRef(null);
@@ -57,6 +58,7 @@ export default function MainLayout() {
     setMapFocus(null);
     setPanelFocus(null);
     setMapDim({ airports: null, flights: null });
+    setCancellationNotice(null);
   }, []);
 
   const collapseSidebars = useCallback(() => {
@@ -94,6 +96,10 @@ export default function MainLayout() {
     }
   }, [location.pathname, isDesktop]);
 
+  useEffect(() => {
+    if (showRightPanel && panelFocus) setRightOpen(true);
+  }, [showRightPanel, panelFocus]);
+
   // Al cambiar de vista, limpiar resaltados/selección/filtros reflejados.
   useEffect(() => {
     setMapHighlight(null);
@@ -101,6 +107,7 @@ export default function MainLayout() {
     setMapFocus(null);
     setPanelFocus(null);
     setMapDim({ airports: null, flights: null });
+    setCancellationNotice(null);
   }, [location.pathname]);
 
   const showLeftHamburger = !leftOpen;
@@ -132,7 +139,7 @@ export default function MainLayout() {
   );
 
   return (
-    <MapFocusContext.Provider value={{ mapHighlight, setMapHighlight, selected, setSelected, mapFocus, setMapFocus, panelFocus, setPanelFocus, mapDim, setMapDim, flightManifestLoader, setFlightManifestLoader }}>
+    <MapFocusContext.Provider value={{ mapHighlight, setMapHighlight, selected, setSelected, mapFocus, setMapFocus, panelFocus, setPanelFocus, mapDim, setMapDim, cancellationNotice, setCancellationNotice, flightManifestLoader, setFlightManifestLoader }}>
     <div className="flex h-screen overflow-hidden bg-surface-1 text-slate-200 font-sans relative">
       {showLeftHamburger && (
         <button

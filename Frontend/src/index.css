@@ -55,4 +55,17 @@
     -ms-overflow-style: none;
     scrollbar-width: none;
   }
+  .aero-map-popup .maplibregl-popup-content,
+  .aero-map-popup .mapboxgl-popup-content {
+    padding: 0 !important;
+    background: transparent !important;
+    border: 0 !important;
+    border-radius: 0 !important;
+    box-shadow: none !important;
+  }
+  .aero-map-popup .maplibregl-popup-tip,
+  .aero-map-popup .mapboxgl-popup-tip {
+    border-top-color: rgba(11, 14, 20, 0.95) !important;
+    border-bottom-color: rgba(11, 14, 20, 0.95) !important;
+  }
 }

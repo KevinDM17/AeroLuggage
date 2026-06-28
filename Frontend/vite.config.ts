@@ -39,14 +39,14 @@ export default defineConfig(({mode}) => {
       // mejor la descarga inicial.
       rollupOptions: {
         output: {
-          manualChunks: {
-            maplibre: ['maplibre-gl', 'react-map-gl/maplibre'],
-            deckgl: [
-              '@deck.gl/core',
-              '@deck.gl/react',
-              '@deck.gl/layers',
-              '@deck.gl/mapbox',
-            ],
+          manualChunks(id) {
+            if (id.includes('node_modules/maplibre-gl') || id.includes('node_modules/react-map-gl')) {
+              return 'maplibre';
+            }
+            if (id.includes('node_modules/@deck.gl') || id.includes('node_modules/deck.gl')) {
+              return 'deckgl';
+            }
+            return undefined;
           },
         },
       },
