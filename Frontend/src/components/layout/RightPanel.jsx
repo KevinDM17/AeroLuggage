@@ -82,7 +82,7 @@ const PanelScroller = forwardRef(function PanelScroller({ style, className, chil
   );
 });
 
-const FlightItem = memo(function FlightItem({ flight, onCancel, canceling, loadManifest, onFocus, onDeselect, isSelected, onExpand, onCollapse }) {
+const FlightItem = memo(function FlightItem({ flight, onCancel, canceling, loadManifest, onFocus, onDeselect, isSelected, forceExpanded = false, onExpand, onCollapse }) {
   const [expanded, setExpanded] = useState(false);
   const pct = flight.capacity > 0 ? Math.round((flight.used / flight.capacity) * 100) : 0;
   const normalizedStatus = normalizeFlightStatus(flight.status);
@@ -94,6 +94,10 @@ const FlightItem = memo(function FlightItem({ flight, onCancel, canceling, loadM
   const flightKey = flight.idVueloInstancia ?? flight.id;
   const [manifest, setManifest] = useState(EMPTY_MANIFEST);
   const [manifestStatus, setManifestStatus] = useState("idle");
+
+  useEffect(() => {
+    if (forceExpanded) setExpanded(true);
+  }, [forceExpanded]);
 
   useEffect(() => {
     if (!expanded || !loadManifest) return undefined;
@@ -466,7 +470,7 @@ function Collapsible({ title, defaultOpen = false, children }) {
   );
 }
 
-const EnvioItem = memo(function EnvioItem({ envio, showOrigin = true, onShowRoute, onLoadRutas }) {
+const EnvioItem = memo(function EnvioItem({ envio, showOrigin = true, onShowRoute, onLoadRutas, category, isSelected, onFocus, onDeselect }) {
   const [expanded, setExpanded] = useState(false);
   // Rutas agrupadas (cada una con sus maletas), pedidas al back al expandir.
   // No mostramos UT ni escalas aqui: ese detalle vive en "Ver rutas".
@@ -492,7 +496,7 @@ const EnvioItem = memo(function EnvioItem({ envio, showOrigin = true, onShowRout
   }, [expanded, envio.id, onLoadRutas]);
 
   return (
-    <div className="flex flex-col border-b border-slate-800/50 h-full cursor-pointer hover:bg-slate-800 transition-colors duration-200" onClick={() => setExpanded(!expanded)}>
+    <div className={`flex flex-col border-b border-slate-800/50 h-full cursor-pointer transition-colors duration-200 ${isSelected ? "rounded-lg bg-info/5 ring-1 ring-info/60" : "hover:bg-slate-800"}`} onClick={() => setExpanded(!expanded)}>
       <div className="flex items-start justify-between gap-2">
         <div className="min-w-0">
           <h4 className="truncate text-sm font-bold text-slate-200">{envio.id}</h4>
@@ -505,15 +509,39 @@ const EnvioItem = memo(function EnvioItem({ envio, showOrigin = true, onShowRout
           {envio.horaEntrega && (
             <div className="text-[10px] text-slate-400">Entregado: {formatHoraPlan(envio.horaEntrega)}</div>
           )}
-          {onShowRoute && (
-            <button
-              type="button"
-              onClick={(ev) => { ev.stopPropagation(); onShowRoute(envio.id); }}
-              className="inline-flex items-center gap-1 rounded-md border border-info/40 bg-info/10 px-2 py-0.5 text-[10px] font-bold uppercase tracking-wide text-info transition-colors hover:bg-info/20"
-            >
-              <Route className="h-3 w-3" /> Ver rutas
-            </button>
-          )}
+          <div className="flex items-center gap-1">
+            {isSelected && onDeselect && (
+              <button
+                type="button"
+                onClick={(ev) => { ev.stopPropagation(); onDeselect(); }}
+                aria-label={`Quitar seleccion de ${envio.id}`}
+                title="Quitar seleccion"
+                className="rounded-md border border-slate-600/60 bg-slate-700/40 p-1 text-slate-200 transition-colors hover:bg-slate-700/70"
+              >
+                <X className="h-3 w-3" />
+              </button>
+            )}
+            {onFocus && (
+              <button
+                type="button"
+                onClick={(ev) => { ev.stopPropagation(); onFocus(envio, category); }}
+                aria-label={`Enfocar ${envio.id} en el mapa`}
+                title={category === "flight" ? "Enfocar vuelo y ruta" : "Enfocar almacen"}
+                className="rounded-md border border-info/40 bg-info/10 p-1 text-info transition-colors hover:bg-info/20"
+              >
+                <Crosshair className="h-3 w-3" />
+              </button>
+            )}
+            {onShowRoute && (
+              <button
+                type="button"
+                onClick={(ev) => { ev.stopPropagation(); onShowRoute(envio.id); }}
+                className="inline-flex items-center gap-1 rounded-md border border-info/40 bg-info/10 px-2 py-0.5 text-[10px] font-bold uppercase tracking-wide text-info transition-colors hover:bg-info/20"
+              >
+                <Route className="h-3 w-3" /> Ver rutas
+              </button>
+            )}
+          </div>
         </div>
       </div>
       {expanded && (
@@ -538,7 +566,7 @@ const EnvioItem = memo(function EnvioItem({ envio, showOrigin = true, onShowRout
   );
 });
 
-function EnvioSeccion({ title, envios, showOrigin = true, defaultOpen = false, max = 200, onShowRoute, onLoadRutas }) {
+function EnvioSeccion({ title, envios, showOrigin = true, defaultOpen = false, max = 200, onShowRoute, onLoadRutas, category, selectedEnvioId, onFocus, onDeselect }) {
   const shown = envios.slice(0, max);
   return (
     <Collapsible title={`${title} (${envios.length})`} defaultOpen={defaultOpen}>
@@ -546,7 +574,7 @@ function EnvioSeccion({ title, envios, showOrigin = true, defaultOpen = false, m
         <div className="pl-1 text-[11px] text-slate-500">Sin envios.</div>
       ) : (
         <>
-          {shown.map((e, i) => <EnvioItem key={`${e.id}-${i}`} envio={e} showOrigin={showOrigin} onShowRoute={onShowRoute} onLoadRutas={onLoadRutas} />)}
+          {shown.map((e, i) => <EnvioItem key={`${e.id}-${i}`} envio={e} showOrigin={showOrigin} onShowRoute={onShowRoute} onLoadRutas={onLoadRutas} category={category} isSelected={selectedEnvioId === e.id} onFocus={onFocus} onDeselect={onDeselect} />)}
           {envios.length > shown.length && (
             <div className="pt-1 text-[10px] text-slate-500">… y {envios.length - shown.length} mas (usa los filtros)</div>
           )}
@@ -562,6 +590,7 @@ const AirportItem = memo(function AirportItem({
   onFocus,
   onDeselect,
   isSelected,
+  forceExpanded = false,
   onShowFlightPlans,
   showFlightPlansAction = false,
   onExpand,
@@ -576,6 +605,10 @@ const AirportItem = memo(function AirportItem({
   const airportKey = apt.iata ?? apt.idAeropuerto;
   const [contenido, setContenido] = useState(EMPTY_CONTENIDO);
   const [contenidoStatus, setContenidoStatus] = useState("idle");
+
+  useEffect(() => {
+    if (forceExpanded) setExpanded(true);
+  }, [forceExpanded]);
 
   useEffect(() => {
     if (!expanded || !loadContenido) return undefined;
@@ -1127,8 +1160,9 @@ export default function RightPanel({
   const [airportSortDir, setAirportSortDir] = useState("asc");
   const [envioOriginFilter, setEnvioOriginFilter] = useState("ALL");
   const [envioDestFilter, setEnvioDestFilter] = useState("ALL");
-  const [enviosData, setEnviosData] = useState({ planificados: [], enVuelos: [] });
+  const [enviosData, setEnviosData] = useState({ planificados: [], enVuelos: [], entregados: [] });
   const [enviosStatus, setEnviosStatus] = useState("idle");
+  const [selectedEnvioId, setSelectedEnvioId] = useState(null);
   const [airportSemaforo, setAirportSemaforo] = useState("ALL");
   const [flightSemaforo, setFlightSemaforo] = useState("ALL");
   const [cancelingFlightId, setCancelingFlightId] = useState(null);
@@ -1140,7 +1174,7 @@ export default function RightPanel({
   const [flightPlanConfirmation, setFlightPlanConfirmation] = useState(null);
   const publish = useStompPublish();
   const sessionId = simulationPanelData?.sessionId ?? null;
-  const { mapHighlight, setMapHighlight, selected, setSelected, setMapFocus, panelFocus, setMapDim, setFlightManifestLoader } = useMapFocus();
+  const { mapHighlight, setMapHighlight, selected, setSelected, setMapFocus, panelFocus, setMapDim, setCancellationNotice, setFlightManifestLoader } = useMapFocus();
   const location = useLocation();
   const isOperacionesDiaADia = location.pathname === "/operaciones";
   const isPeriodo = location.pathname === "/simulator/period";
@@ -1264,6 +1298,14 @@ export default function RightPanel({
         title: "Vuelo cancelado",
         message: pendingFlightPlanCancellation.toastMessage,
       });
+      if (pendingFlightPlanCancellation.origin) {
+        setCancellationNotice({
+          airportCode: pendingFlightPlanCancellation.origin,
+          flightId: pendingFlightPlanCancellation.idVueloProgramado,
+          message: pendingFlightPlanCancellation.toastMessage,
+          ts: Date.now(),
+        });
+      }
       // Re-fetch del snapshot para traer el vuelo recién cancelado a la lista.
       // El stream del tick no basta: la instancia cancelada puede tener un id
       // que el frontend no cargó en metadata. El snapshot trae hot+cold con
@@ -1301,7 +1343,7 @@ export default function RightPanel({
       setCancelingFlightPlanId(null);
       setFlightPlanConfirmation(null);
     }
-  }, [closeFlightPlansModal, pendingFlightPlanCancellation, periodStatusMessage, toast, sessionId, setSimulationPanelData]);
+  }, [closeFlightPlansModal, pendingFlightPlanCancellation, periodStatusMessage, toast, sessionId, setCancellationNotice, setSimulationPanelData]);
 
   const flightsFetch = useFetch(() => (isSimulator ? Promise.resolve([]) : listFlights()), [isSimulator]);
   const ordersFetch = useFetch(() => (isSimulator ? Promise.resolve([]) : listOrders()), [isSimulator]);
@@ -1397,14 +1439,10 @@ export default function RightPanel({
     const sourceFlights = Array.isArray(flights.data) ? flights.data : [];
     const q = query.trim().toLowerCase();
     const pattern = flightCodePattern.trim().toLowerCase();
-    const hasExtraCriteria =
-      q !== "" || pattern !== "" || flightOriginFilter !== "ALL" || flightDestFilter !== "ALL" || flightSemaforo !== "ALL";
 
     // Alcance por estado.
     let filtered;
     if (flightStatusFilter === "ALL") {
-      // "Todos" sin ningun otro criterio: evitamos volcar todo el periodo de golpe.
-      if (!hasExtraCriteria) return [];
       filtered = sourceFlights;
     } else if (flightStatusFilter === "DEFAULT") {
       filtered = sourceFlights.filter((f) => FILTER_STATUSES.has(normalizeFlightStatus(f?.status)));
@@ -1464,7 +1502,7 @@ export default function RightPanel({
     setCancelingFlightId(flightId);
     try {
       if (isSimulator) {
-        markFlightAsCanceled(flight.id);
+        markFlightAsCanceled(flightId);
         if (sessionId) {
           publish("/app/simulacion/periodo/cancelar-vuelo", {
             sessionId,
@@ -1480,6 +1518,14 @@ export default function RightPanel({
         title: "Vuelo cancelado",
         message: flightId,
       });
+      if (flight?.origin) {
+        setCancellationNotice({
+          airportCode: flight.origin,
+          flightId,
+          message: `${flightId} cancelado`,
+          ts: Date.now(),
+        });
+      }
     } catch (err) {
       toast.push({
         type: "error",
@@ -1542,6 +1588,14 @@ export default function RightPanel({
           title: "Vuelo cancelado",
           message: `${flightPlan.origin} -> ${flightPlan.dest} · ${timing.effectiveDateLabel}`,
         });
+        if (flightPlan.origin) {
+          setCancellationNotice({
+            airportCode: flightPlan.origin,
+            flightId: flightPlanId,
+            message: `${flightPlan.origin} -> ${flightPlan.dest} - ${timing.effectiveDateLabel}`,
+            ts: Date.now(),
+          });
+        }
         closeFlightPlansModal();
         return;
       }
@@ -1552,12 +1606,22 @@ export default function RightPanel({
           title: "Vuelo cancelado",
           message: `${flightPlan.origin} -> ${flightPlan.dest} · ${timing.effectiveDateLabel}`,
         });
+        if (flightPlan.origin) {
+          setCancellationNotice({
+            airportCode: flightPlan.origin,
+            flightId: flightPlanId,
+            message: `${flightPlan.origin} -> ${flightPlan.dest} - ${timing.effectiveDateLabel}`,
+            ts: Date.now(),
+          });
+        }
         closeFlightPlansModal();
         return;
       }
 
       setPendingFlightPlanCancellation({
         idVueloProgramado: flightPlanId,
+        origin: flightPlan.origin,
+        dest: flightPlan.dest,
         toastMessage: `${flightPlan.origin} -> ${flightPlan.dest} · ${timing.effectiveDateLabel}`,
       });
       await publish("/app/simulacion/periodo/cancelar-vuelo-programado", {
@@ -1694,7 +1758,7 @@ export default function RightPanel({
   // tick, para no recargar (la data se mantiene hasta que el usuario refresca).
   const fetchEnvios = useCallback(() => {
     if (USE_MOCK || !sessionId) {
-      setEnviosData({ planificados: [], enVuelos: [] });
+      setEnviosData({ planificados: [], enVuelos: [], entregados: [] });
       setEnviosStatus("ready");
       return Promise.resolve();
     }
@@ -1706,11 +1770,12 @@ export default function RightPanel({
           setEnviosData({
             planificados: data?.planificados ?? [],
             enVuelos: data?.enVuelos ?? [],
+            entregados: data?.entregadosUltimas4h ?? [],
           });
           setEnviosStatus("ready");
         })
         .catch(() => {
-          setEnviosData({ planificados: [], enVuelos: [] });
+          setEnviosData({ planificados: [], enVuelos: [], entregados: [] });
           setEnviosStatus("error");
         });
     }
@@ -1720,11 +1785,12 @@ export default function RightPanel({
         setEnviosData({
           planificados: data?.planificados ?? [],
           enVuelos: data?.enVuelos ?? [],
+          entregados: data?.entregadosUltimas4h ?? [],
         });
         setEnviosStatus("ready");
       })
       .catch(() => {
-        setEnviosData({ planificados: [], enVuelos: [] });
+        setEnviosData({ planificados: [], enVuelos: [], entregados: [] });
         setEnviosStatus("error");
       });
   }, [sessionId, isOperacionesDiaADia, isPeriodo]);
@@ -1736,7 +1802,7 @@ export default function RightPanel({
   const enviosAirportOptions = useMemo(() => {
     const origins = new Set();
     const dests = new Set();
-    for (const e of [...enviosData.planificados, ...enviosData.enVuelos]) {
+    for (const e of [...enviosData.planificados, ...enviosData.enVuelos, ...(enviosData.entregados ?? [])]) {
       for (const a of e.origenesRuta ?? []) origins.add(a);
       for (const a of e.destinosRuta ?? []) dests.add(a);
     }
@@ -1760,6 +1826,12 @@ export default function RightPanel({
     }
     return rows;
   }, [envioOriginFilter, envioDestFilter, query, cityByIata]);
+
+  const enviosFilteredForMap = useMemo(() => ([
+    ...filterEnvios(enviosData.planificados),
+    ...filterEnvios(enviosData.enVuelos),
+    ...filterEnvios(enviosData.entregados ?? []),
+  ]), [enviosData, filterEnvios]);
 
   const maletasFiltered = useMemo(() => {
     return filterByText(maletasVisibles, ["idMaleta", "idPedido", "estado", "ubicacionActual"]);
@@ -1937,29 +2009,88 @@ export default function RightPanel({
     [airportCoords, setSelected, setMapFocus]
   );
 
+  // Seleccionar un pedido y enfocarlo en el mapa:
+  //  - "flight" (en vuelos): resalta su(s) ruta(s) y enfoca la cámara (avión + ruta).
+  //  - "warehouse" (planificado): enfoca el almacén de origen donde esperan las maletas.
+  const focusEnvio = useCallback(
+    (envio, category) => {
+      if (!envio?.id) return;
+      setSelectedEnvioId(envio.id);
+      if (category === "flight") {
+        showEnvioRoutes(envio.id);                 // avión + ruta
+      } else if (category === "delivered" && envio.dest) {
+        focusAirportOnMap(envio.dest);             // ya entregado -> almacén destino
+      } else if (envio.origin) {
+        focusAirportOnMap(envio.origin);           // planificado -> almacén de origen
+      } else {
+        showEnvioRoutes(envio.id);
+      }
+    },
+    [showEnvioRoutes, focusAirportOnMap]
+  );
+
+  const deselectEnvio = useCallback(() => {
+    setSelectedEnvioId(null);
+    setMapHighlight(null);
+    setSelected(null);
+  }, [setMapHighlight, setSelected]);
+
+  const normalizedQuery = query.trim().toLowerCase();
+  const normalizedFlightCodePattern = flightCodePattern.trim().toLowerCase();
+  const normalizedAirportCodePattern = airportCodePattern.trim().toLowerCase();
+
   // Panel -> mapa: refleja el filtro de almacenes (semaforo y otros) (req 10/12).
   useEffect(() => {
+    if (activeTab !== "airports") return;
     const active = airportSemaforo !== "ALL" || airportRegionFilter !== "ALL"
       || airportCodePattern.trim() !== "" || query.trim() !== "";
-    if (activeTab === "airports" && active) {
+    if (active) {
       const set = new Set(airportsFiltered.map((a) => a.iata ?? a.idAeropuerto));
-      setMapDim((prev) => ({ ...prev, airports: set }));
+      const fitKey = `airports:${airportSemaforo}|${airportRegionFilter}|${normalizedAirportCodePattern}|${normalizedQuery}`;
+      setMapDim((prev) => ({ ...prev, airports: set, flights: null, fitKey }));
     } else {
-      setMapDim((prev) => (prev.airports ? { ...prev, airports: null } : prev));
+      setMapDim((prev) => (prev.airports || prev.flights || prev.fitKey ? { ...prev, airports: null, flights: null, fitKey: null } : prev));
     }
-  }, [activeTab, airportsFiltered, airportSemaforo, airportRegionFilter, airportCodePattern, query, setMapDim]);
+  }, [activeTab, airportsFiltered, airportSemaforo, airportRegionFilter, airportCodePattern, normalizedAirportCodePattern, normalizedQuery, query, setMapDim]);
 
   // Panel -> mapa: refleja el filtro de UT (semaforo y otros) (req 11/13).
   useEffect(() => {
+    if (activeTab !== "flights") return;
     const active = flightSemaforo !== "ALL" || flightOriginFilter !== "ALL" || flightDestFilter !== "ALL"
       || flightCodePattern.trim() !== "" || query.trim() !== "" || flightStatusFilter !== "DEFAULT";
-    if (activeTab === "flights" && active) {
+    if (active) {
       const set = new Set(visibleFlights.map((f) => f.idVueloInstancia ?? f.id));
-      setMapDim((prev) => ({ ...prev, flights: set }));
+      const fitKey = `flights:${flightStatusFilter}|${flightSemaforo}|${flightOriginFilter}|${flightDestFilter}|${normalizedFlightCodePattern}|${normalizedQuery}`;
+      setMapDim((prev) => ({ ...prev, airports: null, flights: set, fitKey }));
     } else {
-      setMapDim((prev) => (prev.flights ? { ...prev, flights: null } : prev));
+      setMapDim((prev) => (prev.airports || prev.flights || prev.fitKey ? { ...prev, airports: null, flights: null, fitKey: null } : prev));
     }
-  }, [activeTab, visibleFlights, flightSemaforo, flightOriginFilter, flightDestFilter, flightCodePattern, query, flightStatusFilter, setMapDim]);
+  }, [activeTab, visibleFlights, flightSemaforo, flightOriginFilter, flightDestFilter, flightCodePattern, normalizedFlightCodePattern, normalizedQuery, query, flightStatusFilter, setMapDim]);
+
+  // Panel -> mapa: filtros de envios/pedidos. Se limita por aeropuertos de ruta
+  // porque las UT del panel son codigos de vuelo, no siempre ids de instancia.
+  useEffect(() => {
+    if (activeTab !== "orders") return;
+    const active = envioOriginFilter !== "ALL" || envioDestFilter !== "ALL" || query.trim() !== "";
+    if (active) {
+      const codes = new Set();
+      for (const e of enviosFilteredForMap) {
+        if (e.origin) codes.add(e.origin);
+        if (e.dest) codes.add(e.dest);
+        for (const c of e.origenesRuta ?? []) codes.add(c);
+        for (const c of e.destinosRuta ?? []) codes.add(c);
+      }
+      const fitKey = `orders:${envioOriginFilter}|${envioDestFilter}|${normalizedQuery}`;
+      setMapDim((prev) => ({ ...prev, airports: codes, flights: null, fitKey }));
+    } else {
+      setMapDim((prev) => (prev.airports || prev.flights || prev.fitKey ? { ...prev, airports: null, flights: null, fitKey: null } : prev));
+    }
+  }, [activeTab, enviosFilteredForMap, envioOriginFilter, envioDestFilter, normalizedQuery, query, setMapDim]);
+
+  useEffect(() => {
+    if (activeTab === "airports" || activeTab === "flights" || activeTab === "orders") return;
+    setMapDim((prev) => (prev.airports || prev.flights || prev.fitKey ? { ...prev, airports: null, flights: null, fitKey: null } : prev));
+  }, [activeTab, setMapDim]);
 
   // Mapa -> panel (req 6/8): al hacer click en un almacen (aeropuerto) o en una
   // unidad de transporte (vuelo) en el mapa, saltar a su pestaña y dejar pedido
@@ -2023,9 +2154,10 @@ export default function RightPanel({
         virtuosoRef={flightsVirtuosoRef}
         empty="Ejecuta la simulacion para cargar los vuelos del periodo."
         rows={visibleFlights}
+        keyForRow={(f, index) => f.idVueloInstancia ?? f.id ?? index}
         renderItem={(f, index) => (
           <FlightItem
-            key={`${f.id}-${index}`}
+            key={f.idVueloInstancia ?? f.id ?? index}
             flight={f}
             onCancel={handleCancelFlight}
             canceling={cancelingFlightId === f.id}
@@ -2035,6 +2167,7 @@ export default function RightPanel({
             onExpand={(id) => handleItemExpand({ kind: "flight", id })}
             onCollapse={handleItemCollapse}
             isSelected={selected?.kind === "flight" && selected.id === (f.idVueloInstancia ?? f.id)}
+            forceExpanded={selected?.kind === "flight" && selected.id === (f.idVueloInstancia ?? f.id)}
           />
         )}
       />
@@ -2051,6 +2184,10 @@ export default function RightPanel({
             envios={filterEnvios(enviosData.planificados)}
             onShowRoute={showEnvioRoutes}
             onLoadRutas={loadEnvioRutas}
+            category="warehouse"
+            selectedEnvioId={selectedEnvioId}
+            onFocus={focusEnvio}
+            onDeselect={deselectEnvio}
             defaultOpen
           />
           <EnvioSeccion
@@ -2058,7 +2195,21 @@ export default function RightPanel({
             envios={filterEnvios(enviosData.enVuelos)}
             onShowRoute={showEnvioRoutes}
             onLoadRutas={loadEnvioRutas}
+            category="flight"
+            selectedEnvioId={selectedEnvioId}
+            onFocus={focusEnvio}
+            onDeselect={deselectEnvio}
             defaultOpen
+          />
+          <EnvioSeccion
+            title="Entregados (ultimas 4h)"
+            envios={filterEnvios(enviosData.entregados ?? [])}
+            onShowRoute={showEnvioRoutes}
+            onLoadRutas={loadEnvioRutas}
+            category="delivered"
+            selectedEnvioId={selectedEnvioId}
+            onFocus={focusEnvio}
+            onDeselect={deselectEnvio}
           />
         </div>
       )
@@ -2085,6 +2236,7 @@ export default function RightPanel({
         virtuosoRef={airportsVirtuosoRef}
         empty="Ejecuta la simulacion para cargar los aeropuertos del periodo."
         rows={airportsFiltered}
+        keyForRow={(a, index) => a.iata ?? a.idAeropuerto ?? index}
         renderItem={(a, index) => (
           <AirportItem
             key={a.iata ?? a.idAeropuerto ?? index}
@@ -2095,6 +2247,7 @@ export default function RightPanel({
             onExpand={(id) => handleItemExpand({ kind: "airport", id })}
             onCollapse={handleItemCollapse}
             isSelected={selected?.kind === "airport" && selected.id === (a.iata ?? a.idAeropuerto)}
+            forceExpanded={selected?.kind === "airport" && selected.id === (a.iata ?? a.idAeropuerto)}
             onShowFlightPlans={openFlightPlansModal}
             showFlightPlansAction={isPeriodo || isOperacionesDiaADia}
           />
@@ -2592,7 +2745,7 @@ export default function RightPanel({
   );
 }
 
-function TabBody({ loading, error, refetch, rows, empty, renderItem, virtuosoRef }) {
+function TabBody({ loading, error, refetch, rows, empty, renderItem, virtuosoRef, keyForRow }) {
   if (loading) return <LoadingState />;
   if (error) return <ErrorState error={error} onRetry={refetch} />;
   if (!rows || rows.length === 0) return <EmptyState title="Sin resultados" message={empty} />;
@@ -2603,6 +2756,7 @@ function TabBody({ loading, error, refetch, rows, empty, renderItem, virtuosoRef
       style={{ height: "100%" }}
       components={{ Scroller: PanelScroller }}
       totalCount={rows.length}
+      computeItemKey={(index) => keyForRow ? keyForRow(rows[index], index) : index}
       itemContent={(index) => renderItem(rows[index], index)}
     />
   );

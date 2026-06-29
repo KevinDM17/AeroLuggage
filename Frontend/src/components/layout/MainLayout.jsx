@@ -33,7 +33,8 @@ export default function MainLayout() {
   const [selected, setSelected] = useState(null);
   const [mapFocus, setMapFocus] = useState(null);
   const [panelFocus, setPanelFocus] = useState(null);
-  const [mapDim, setMapDim] = useState({ airports: null, flights: null });
+  const [mapDim, setMapDim] = useState({ airports: null, flights: null, fitKey: null });
+  const [cancellationNotice, setCancellationNotice] = useState(null);
   const [flightManifestLoader, setFlightManifestLoader] = useState(null);
   const location = useLocation();
   const previousIsSimulatorRef = useRef(null);
@@ -56,7 +57,8 @@ export default function MainLayout() {
     setSelected(null);
     setMapFocus(null);
     setPanelFocus(null);
-    setMapDim({ airports: null, flights: null });
+    setMapDim({ airports: null, flights: null, fitKey: null });
+    setCancellationNotice(null);
   }, []);
 
   const collapseSidebars = useCallback(() => {
@@ -94,13 +96,18 @@ export default function MainLayout() {
     }
   }, [location.pathname, isDesktop]);
 
+  useEffect(() => {
+    if (showRightPanel && panelFocus) setRightOpen(true);
+  }, [showRightPanel, panelFocus]);
+
   // Al cambiar de vista, limpiar resaltados/selección/filtros reflejados.
   useEffect(() => {
     setMapHighlight(null);
     setSelected(null);
     setMapFocus(null);
     setPanelFocus(null);
-    setMapDim({ airports: null, flights: null });
+    setMapDim({ airports: null, flights: null, fitKey: null });
+    setCancellationNotice(null);
   }, [location.pathname]);
 
   const showLeftHamburger = !leftOpen;
@@ -132,7 +139,7 @@ export default function MainLayout() {
   );
 
   return (
-    <MapFocusContext.Provider value={{ mapHighlight, setMapHighlight, selected, setSelected, mapFocus, setMapFocus, panelFocus, setPanelFocus, mapDim, setMapDim, flightManifestLoader, setFlightManifestLoader }}>
+    <MapFocusContext.Provider value={{ mapHighlight, setMapHighlight, selected, setSelected, mapFocus, setMapFocus, panelFocus, setPanelFocus, mapDim, setMapDim, cancellationNotice, setCancellationNotice, flightManifestLoader, setFlightManifestLoader }}>
     <div className="flex h-screen overflow-hidden bg-surface-1 text-slate-200 font-sans relative">
       {showLeftHamburger && (
         <button

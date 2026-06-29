@@ -12,7 +12,9 @@ import { createContext, useContext } from "react";
  * - panelFocus: peticion de enfoque en el panel (mapa -> panel) -> req 6,8.
  *     { kind, id, ts }
  * - mapDim: reflejo de filtros del panel en el mapa -> req 10-13.
- *     { airports: Set<code> | null, flights: Set<id> | null }   (null = sin filtro)
+ *     { airports: Set<code> | null, flights: Set<id> | null, fitKey: string | null }   (null = sin filtro)
+ * - cancellationNotice: aviso efimero para ubicar una cancelacion sobre el mapa.
+ *     { airportCode, flightId, message, ts }
  */
 export const MapFocusContext = createContext({
   mapHighlight: null,
@@ -23,8 +25,10 @@ export const MapFocusContext = createContext({
   setMapFocus: () => {},
   panelFocus: null,
   setPanelFocus: () => {},
-  mapDim: { airports: null, flights: null },
+  mapDim: { airports: null, flights: null, fitKey: null },
   setMapDim: () => {},
+  cancellationNotice: null,
+  setCancellationNotice: () => {},
   // Loader de manifiesto de vuelo (pedidos + maletas) que el RightPanel publica
   // para que el mapa pueda mostrar la info al hacer click en un avion.
   flightManifestLoader: null,

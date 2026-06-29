@@ -13,7 +13,6 @@
   "dependencies": {
     "@deck.gl/layers": "^9.3.3",
     "@deck.gl/mapbox": "^9.3.3",
-    "@google/genai": "^1.29.0",
     "@stomp/stompjs": "^7.3.0",
     "@tailwindcss/vite": "^4.1.14",
     "@vitejs/plugin-react": "^5.0.4",
