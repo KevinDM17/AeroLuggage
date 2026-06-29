@@ -1753,22 +1753,6 @@ export default function RightPanel({
     airportSortKey, airportSortDir, nextFlightTimesByAirport,
   ]);
 
-  const pinnedVisibleFlights = useMemo(() => {
-    if (selected?.kind !== "flight") return visibleFlights;
-    const index = visibleFlights.findIndex((f) => (f.idVueloInstancia ?? f.id) === selected.id);
-    if (index <= 0) return visibleFlights;
-    const row = visibleFlights[index];
-    return [row, ...visibleFlights.slice(0, index), ...visibleFlights.slice(index + 1)];
-  }, [visibleFlights, selected]);
-
-  const pinnedAirportsFiltered = useMemo(() => {
-    if (selected?.kind !== "airport") return airportsFiltered;
-    const index = airportsFiltered.findIndex((a) => (a.iata ?? a.idAeropuerto) === selected.id);
-    if (index <= 0) return airportsFiltered;
-    const row = airportsFiltered[index];
-    return [row, ...airportsFiltered.slice(0, index), ...airportsFiltered.slice(index + 1)];
-  }, [airportsFiltered, selected]);
-
   // Envios del panel (planificados / en vuelos / entregados 4h). Se pide al
   // back al entrar a la pestana Pedidos y con el boton refrescar; NO en cada
   // tick, para no recargar (la data se mantiene hasta que el usuario refresca).
@@ -2051,29 +2035,37 @@ export default function RightPanel({
     setSelected(null);
   }, [setMapHighlight, setSelected]);
 
+  const normalizedQuery = query.trim().toLowerCase();
+  const normalizedFlightCodePattern = flightCodePattern.trim().toLowerCase();
+  const normalizedAirportCodePattern = airportCodePattern.trim().toLowerCase();
+
   // Panel -> mapa: refleja el filtro de almacenes (semaforo y otros) (req 10/12).
   useEffect(() => {
+    if (activeTab !== "airports") return;
     const active = airportSemaforo !== "ALL" || airportRegionFilter !== "ALL"
       || airportCodePattern.trim() !== "" || query.trim() !== "";
-    if (activeTab === "airports" && active) {
+    if (active) {
       const set = new Set(airportsFiltered.map((a) => a.iata ?? a.idAeropuerto));
-      setMapDim((prev) => ({ ...prev, airports: set }));
+      const fitKey = `airports:${airportSemaforo}|${airportRegionFilter}|${normalizedAirportCodePattern}|${normalizedQuery}`;
+      setMapDim((prev) => ({ ...prev, airports: set, flights: null, fitKey }));
     } else {
-      setMapDim((prev) => (prev.airports ? { ...prev, airports: null } : prev));
+      setMapDim((prev) => (prev.airports || prev.flights || prev.fitKey ? { ...prev, airports: null, flights: null, fitKey: null } : prev));
     }
-  }, [activeTab, airportsFiltered, airportSemaforo, airportRegionFilter, airportCodePattern, query, setMapDim]);
+  }, [activeTab, airportsFiltered, airportSemaforo, airportRegionFilter, airportCodePattern, normalizedAirportCodePattern, normalizedQuery, query, setMapDim]);
 
   // Panel -> mapa: refleja el filtro de UT (semaforo y otros) (req 11/13).
   useEffect(() => {
+    if (activeTab !== "flights") return;
     const active = flightSemaforo !== "ALL" || flightOriginFilter !== "ALL" || flightDestFilter !== "ALL"
       || flightCodePattern.trim() !== "" || query.trim() !== "" || flightStatusFilter !== "DEFAULT";
-    if (activeTab === "flights" && active) {
+    if (active) {
       const set = new Set(visibleFlights.map((f) => f.idVueloInstancia ?? f.id));
-      setMapDim((prev) => ({ ...prev, flights: set }));
+      const fitKey = `flights:${flightStatusFilter}|${flightSemaforo}|${flightOriginFilter}|${flightDestFilter}|${normalizedFlightCodePattern}|${normalizedQuery}`;
+      setMapDim((prev) => ({ ...prev, airports: null, flights: set, fitKey }));
     } else {
-      setMapDim((prev) => (prev.flights ? { ...prev, flights: null } : prev));
+      setMapDim((prev) => (prev.airports || prev.flights || prev.fitKey ? { ...prev, airports: null, flights: null, fitKey: null } : prev));
     }
-  }, [activeTab, visibleFlights, flightSemaforo, flightOriginFilter, flightDestFilter, flightCodePattern, query, flightStatusFilter, setMapDim]);
+  }, [activeTab, visibleFlights, flightSemaforo, flightOriginFilter, flightDestFilter, flightCodePattern, normalizedFlightCodePattern, normalizedQuery, query, flightStatusFilter, setMapDim]);
 
   // Panel -> mapa: filtros de envios/pedidos. Se limita por aeropuertos de ruta
   // porque las UT del panel son codigos de vuelo, no siempre ids de instancia.
@@ -2088,11 +2080,17 @@ export default function RightPanel({
         for (const c of e.origenesRuta ?? []) codes.add(c);
         for (const c of e.destinosRuta ?? []) codes.add(c);
       }
-      setMapDim((prev) => ({ ...prev, airports: codes, flights: null }));
+      const fitKey = `orders:${envioOriginFilter}|${envioDestFilter}|${normalizedQuery}`;
+      setMapDim((prev) => ({ ...prev, airports: codes, flights: null, fitKey }));
     } else {
-      setMapDim((prev) => (prev.airports || prev.flights ? { ...prev, airports: null, flights: null } : prev));
+      setMapDim((prev) => (prev.airports || prev.flights || prev.fitKey ? { ...prev, airports: null, flights: null, fitKey: null } : prev));
     }
-  }, [activeTab, enviosFilteredForMap, envioOriginFilter, envioDestFilter, query, setMapDim]);
+  }, [activeTab, enviosFilteredForMap, envioOriginFilter, envioDestFilter, normalizedQuery, query, setMapDim]);
+
+  useEffect(() => {
+    if (activeTab === "airports" || activeTab === "flights" || activeTab === "orders") return;
+    setMapDim((prev) => (prev.airports || prev.flights || prev.fitKey ? { ...prev, airports: null, flights: null, fitKey: null } : prev));
+  }, [activeTab, setMapDim]);
 
   // Mapa -> panel (req 6/8): al hacer click en un almacen (aeropuerto) o en una
   // unidad de transporte (vuelo) en el mapa, saltar a su pestaña y dejar pedido
@@ -2116,7 +2114,7 @@ export default function RightPanel({
     const isAirport = scrollTarget.kind === "airport";
     const targetTab = isAirport ? "airports" : "flights";
     if (activeTab !== targetTab) return undefined;
-    const rows = isAirport ? pinnedAirportsFiltered : pinnedVisibleFlights;
+    const rows = isAirport ? airportsFiltered : visibleFlights;
     const index = rows.findIndex((row) =>
       isAirport
         ? (row.iata ?? row.idAeropuerto) === scrollTarget.id
@@ -2131,7 +2129,7 @@ export default function RightPanel({
       if (cancelled) return;
       const inst = virtuosoRef.current;
       if (inst?.scrollToIndex) {
-        inst.scrollToIndex({ index, align: index === 0 ? "start" : "center", behavior: "smooth" });
+        inst.scrollToIndex({ index, align: "center", behavior: "smooth" });
         setScrollTarget(null);
         return;
       }
@@ -2139,7 +2137,7 @@ export default function RightPanel({
     };
     frame = requestAnimationFrame(tryScroll);
     return () => { cancelled = true; cancelAnimationFrame(frame); };
-  }, [scrollTarget, activeTab, pinnedVisibleFlights, pinnedAirportsFiltered]);
+  }, [scrollTarget, activeTab, visibleFlights, airportsFiltered]);
 
   const handleItemExpand = useCallback((entity) => {
     setSelected(entity);
@@ -2155,7 +2153,7 @@ export default function RightPanel({
         {...flights}
         virtuosoRef={flightsVirtuosoRef}
         empty="Ejecuta la simulacion para cargar los vuelos del periodo."
-        rows={pinnedVisibleFlights}
+        rows={visibleFlights}
         keyForRow={(f, index) => f.idVueloInstancia ?? f.id ?? index}
         renderItem={(f, index) => (
           <FlightItem
@@ -2237,7 +2235,7 @@ export default function RightPanel({
         {...airports}
         virtuosoRef={airportsVirtuosoRef}
         empty="Ejecuta la simulacion para cargar los aeropuertos del periodo."
-        rows={pinnedAirportsFiltered}
+        rows={airportsFiltered}
         keyForRow={(a, index) => a.iata ?? a.idAeropuerto ?? index}
         renderItem={(a, index) => (
           <AirportItem

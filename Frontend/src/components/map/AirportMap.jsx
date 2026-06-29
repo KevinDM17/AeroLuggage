@@ -185,6 +185,7 @@ function AirportMap({
   /* Vinculacion panel <-> mapa. */
   const { mapHighlight, selected, mapFocus, mapDim, cancellationNotice, setSelected, setPanelFocus, flightManifestLoader } = useMapFocus();
   const mapRef = useRef(null);
+  const filteredViewportCoordsRef = useRef([]);
   const [cancellationPopup, setCancellationPopup] = useState(null);
   const [dismissedCancellationTs, setDismissedCancellationTs] = useState(null);
 
@@ -435,14 +436,10 @@ function AirportMap({
 
   const filteredViewportKey = useMemo(() => {
     if (!mapDim.airports && !mapDim.flights) return null;
-    const airportIds = visibleAirportList.map((a) => a.iata).sort().join(",");
-    const routeIds = visibleRoutesGeometry.map((r) => r.id).sort().join(",");
-    return `${airportIds}|${routeIds}`;
-  }, [mapDim.airports, mapDim.flights, visibleAirportList, visibleRoutesGeometry]);
+    return mapDim.fitKey ?? null;
+  }, [mapDim.airports, mapDim.flights, mapDim.fitKey]);
 
   useEffect(() => {
-    if (!filteredViewportKey) return;
-
     const coords = [];
     for (const a of visibleAirportList) {
       if (Number.isFinite(a?.lng) && Number.isFinite(a?.lat)) coords.push([a.lng, a.lat]);
@@ -451,6 +448,13 @@ function AirportMap({
       if (Number.isFinite(r?.origin?.lng) && Number.isFinite(r?.origin?.lat)) coords.push([r.origin.lng, r.origin.lat]);
       if (Number.isFinite(r?.destination?.lng) && Number.isFinite(r?.destination?.lat)) coords.push([r.destination.lng, r.destination.lat]);
     }
+    filteredViewportCoordsRef.current = coords;
+  }, [visibleAirportList, visibleRoutesGeometry]);
+
+  useEffect(() => {
+    if (!filteredViewportKey) return;
+
+    const coords = filteredViewportCoordsRef.current;
     if (coords.length === 0) return;
 
     const ref = mapRef.current;
@@ -479,7 +483,7 @@ function AirportMap({
     });
 
     return () => window.cancelAnimationFrame(frame);
-  }, [filteredViewportKey, visibleAirportList, visibleRoutesGeometry]);
+  }, [filteredViewportKey]);
 
   /* Levantar el worker una vez. */
   useEffect(() => {

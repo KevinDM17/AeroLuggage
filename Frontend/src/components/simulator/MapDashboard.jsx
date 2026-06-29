@@ -96,7 +96,7 @@ export default function MapDashboard({
             <div className="absolute top-full left-0 mt-1 w-44 flex flex-col rounded-lg bg-surface-1/90 backdrop-blur border border-slate-700/50 px-1 py-1 shadow-lg">
               <Kpi icon={Luggage} label="En Tránsito" value={bagsInTransit.toLocaleString()} tone="info" />
               <Kpi icon={CheckCircle2} label="Entregadas" value={bagsDelivered.toLocaleString()} tone="success" />
-              <Kpi icon={Plane} label="Vuelos Activos" value={activeFlights} tone="fuchsia" />
+              <Kpi icon={Plane} label="Vuelos Activos" value={activeFlights} tone="info" />
               <Kpi icon={Building} label="Ocup. Aerop." value={`${airportCapacityPct}%`} tone={airportCapacityTone} />
               <Kpi icon={Warehouse} label="Ocup. Vuelos" value={`${flightCapacityPct}%`} tone={flightCapacityTone} />
             </div>

@@ -33,7 +33,7 @@ export default function MainLayout() {
   const [selected, setSelected] = useState(null);
   const [mapFocus, setMapFocus] = useState(null);
   const [panelFocus, setPanelFocus] = useState(null);
-  const [mapDim, setMapDim] = useState({ airports: null, flights: null });
+  const [mapDim, setMapDim] = useState({ airports: null, flights: null, fitKey: null });
   const [cancellationNotice, setCancellationNotice] = useState(null);
   const [flightManifestLoader, setFlightManifestLoader] = useState(null);
   const location = useLocation();
@@ -57,7 +57,7 @@ export default function MainLayout() {
     setSelected(null);
     setMapFocus(null);
     setPanelFocus(null);
-    setMapDim({ airports: null, flights: null });
+    setMapDim({ airports: null, flights: null, fitKey: null });
     setCancellationNotice(null);
   }, []);
 
@@ -106,7 +106,7 @@ export default function MainLayout() {
     setSelected(null);
     setMapFocus(null);
     setPanelFocus(null);
-    setMapDim({ airports: null, flights: null });
+    setMapDim({ airports: null, flights: null, fitKey: null });
     setCancellationNotice(null);
   }, [location.pathname]);
 
