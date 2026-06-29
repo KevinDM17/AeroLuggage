@@ -439,10 +439,55 @@ public class OperacionesDiaADiaRestController {
             }
         }
 
+        // Entregados (ultimas 4h): se arman desde las maletas entregadas retenidas,
+        // agrupadas por pedido. Solo se incluye un pedido si ya no tiene maletas
+        // activas pendientes (entrega completa).
+        final Map<String, List<OperacionesDiaADiaService.MaletaEntregadaReciente>> entregadasPorPedido =
+                new LinkedHashMap<>();
+        for (final OperacionesDiaADiaService.MaletaEntregadaReciente rec : service.getMaletasEntregadasRecientes()) {
+            if (rec == null || rec.idPedido() == null) continue;
+            entregadasPorPedido.computeIfAbsent(rec.idPedido(), k -> new ArrayList<>()).add(rec);
+        }
+        final List<EnvioPanelResponse> entregados = new ArrayList<>();
+        for (final Map.Entry<String, List<OperacionesDiaADiaService.MaletaEntregadaReciente>> entry
+                : entregadasPorPedido.entrySet()) {
+            if (maletasPorPedido.containsKey(entry.getKey())) continue; // aun tiene maletas activas
+            final List<OperacionesDiaADiaService.MaletaEntregadaReciente> recs = entry.getValue();
+            final LinkedHashSet<String> uts = new LinkedHashSet<>();
+            final LinkedHashSet<String> origenes = new LinkedHashSet<>();
+            final LinkedHashSet<String> destinos = new LinkedHashSet<>();
+            LocalDateTime ultimaEntrega = null;
+            String origin = null;
+            String dest = null;
+            for (final OperacionesDiaADiaService.MaletaEntregadaReciente rec : recs) {
+                uts.addAll(rec.uts());
+                origenes.addAll(rec.origenesRuta());
+                destinos.addAll(rec.destinosRuta());
+                if (origin == null) origin = rec.origin();
+                if (dest == null) dest = rec.dest();
+                if (rec.fechaEntrega() != null
+                        && (ultimaEntrega == null || rec.fechaEntrega().isAfter(ultimaEntrega))) {
+                    ultimaEntrega = rec.fechaEntrega();
+                }
+            }
+            if (origin != null) origenes.add(origin);
+            if (dest != null) destinos.add(dest);
+            entregados.add(EnvioPanelResponse.builder()
+                    .withId(entry.getKey())
+                    .withOrigin(origin)
+                    .withDest(dest)
+                    .withBags(recs.size())
+                    .withUts(new ArrayList<>(uts))
+                    .withOrigenesRuta(new ArrayList<>(origenes))
+                    .withDestinosRuta(new ArrayList<>(destinos))
+                    .withHoraEntrega(ultimaEntrega != null ? ultimaEntrega.format(FORMATO_FECHA_HORA) : null)
+                    .build());
+        }
+
         return EnviosPanelResponse.builder()
                 .withPlanificados(planificados)
                 .withEnVuelos(enVuelos)
-                .withEntregadosUltimas4h(List.of())
+                .withEntregadosUltimas4h(entregados)
                 .build();
     }
 
