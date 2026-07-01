@@ -11,15 +11,11 @@ import {
   Plane,
   Building,
   Package,
-  ChevronDown,
 } from "lucide-react";
 
 export default function Sidebar({ onClose, closeOnNavigate = false }) {
   const location = useLocation();
   const navigate = useNavigate();
-  const [flightsOpen, setFlightsOpen] = useState(
-    location.pathname.startsWith("/flights")
-  );
   const [logoError, setLogoError] = useState(false);
 
   const handleNavigate = (to) => {
@@ -137,40 +133,19 @@ export default function Sidebar({ onClose, closeOnNavigate = false }) {
             <span className="font-medium">Aeropuertos</span>
           </button>
 
-          <div>
-            <button
-              type="button"
-              onClick={() => setFlightsOpen((v) => !v)}
-              className={cn(
-                "flex w-full items-center gap-3 rounded-xl border px-3 py-2.5 text-left transition-all duration-200",
-                location.pathname.startsWith("/flights")
-                  ? "border-blue-500/35 bg-blue-500/12 text-blue-300 shadow-[0_10px_24px_rgba(37,99,235,0.14)]"
-                  : "border-transparent text-slate-400 hover:border-slate-800 hover:bg-slate-800/80 hover:text-slate-200",
-              )}
-            >
-              <Plane className="w-4 h-4" />
-              <span className="font-medium text-sm flex-1">Vuelos</span>
-              <ChevronDown className={cn("w-4 h-4 transition-transform", flightsOpen && "rotate-180")} />
-            </button>
-            {flightsOpen && (
-              <div className="flex flex-col gap-1 ml-[1.65rem] mt-1 pr-3 border-l border-slate-800 pl-4">
-                <button
-                  type="button"
-                  onClick={() => handleNavigate("/flights/plans")}
-                  className={navItemClass(location.pathname === "/flights/plans", true)}
-                >
-                  Planes de vuelo
-                </button>
-                <button
-                  type="button"
-                  onClick={() => handleNavigate("/flights/occurrences")}
-                  className={navItemClass(location.pathname === "/flights/occurrences", true)}
-                >
-                  Ocurrencia de vuelos
-                </button>
-              </div>
+          <button
+            type="button"
+            onClick={() => handleNavigate("/flights/plans")}
+            className={cn(
+              "flex w-full items-center gap-3 rounded-xl border px-3 py-2.5 text-left transition-all duration-200",
+              location.pathname === "/flights/plans"
+                ? "border-blue-500/35 bg-blue-500/12 text-blue-300 shadow-[0_10px_24px_rgba(37,99,235,0.14)]"
+                : "border-transparent text-slate-400 hover:border-slate-800 hover:bg-slate-800/80 hover:text-slate-200",
             )}
-          </div>
+          >
+            <Plane className="w-4 h-4" />
+            <span className="font-medium text-sm">Planes de vuelo</span>
+          </button>
 
           <button
             type="button"

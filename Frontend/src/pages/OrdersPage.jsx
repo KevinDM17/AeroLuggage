@@ -1,7 +1,7 @@
-import { useMemo, useState } from "react";
-import { useOutletContext } from "react-router-dom";
+import { useMemo, useState, useEffect, useCallback } from "react";
 import { Search, Calendar, Clock } from "lucide-react";
 import { LoadingState, EmptyState, ErrorState } from "../components/ui/States";
+import { listOrders } from "../api/orders";
 
 const statusBadge = (status) => {
   const s = String(status ?? "").toUpperCase();
@@ -26,30 +26,41 @@ const statusLabel = (status) => {
 };
 
 export default function OrdersPage() {
-  const { simulationPanelData } = useOutletContext();
   const [query, setQuery] = useState("");
+  const [orders, setOrders] = useState([]);
+  const [loading, setLoading] = useState(true);
+  const [error, setError] = useState(null);
 
-  const orders = simulationPanelData?.orders;
-  const loaded = simulationPanelData?.loaded;
-  const loading = !loaded;
-  const error = null;
-  const orderArray = orders ? Array.from(orders.values()) : [];
+  const loadOrders = useCallback(async () => {
+    setLoading(true);
+    try {
+      const data = await listOrders();
+      setOrders(Array.isArray(data) ? data : []);
+      setError(null);
+    } catch (err) {
+      setError(err.message);
+    } finally {
+      setLoading(false);
+    }
+  }, []);
+
+  useEffect(() => { loadOrders(); }, [loadOrders]);
 
   const filtered = useMemo(() => {
-    if (!orderArray.length) return [];
+    if (!orders.length) return [];
     const q = query.trim().toLowerCase();
-    if (!q) return orderArray;
-    return orderArray.filter((o) =>
+    if (!q) return orders;
+    return orders.filter((o) =>
       [o.id, o.origin, o.dest].some((v) => String(v).toLowerCase().includes(q))
     );
-  }, [orderArray, query]);
+  }, [orders, query]);
 
   return (
     <div className="flex-1 bg-surface-0 flex flex-col min-h-0 overflow-y-auto w-full h-full p-4 sm:p-8 text-slate-200">
       <div className="flex flex-col sm:flex-row justify-between sm:items-start gap-4 mb-8 pl-12 sm:pl-14">
         <div>
           <h1 className="text-2xl sm:text-4xl font-extrabold text-white mb-2">Tabla de Pedidos</h1>
-          <p className="text-slate-400 text-base sm:text-lg">Monitorea los envios y su estado en tiempo real.</p>
+          <p className="text-slate-400 text-base sm:text-lg">Consulta los pedidos registrados en el sistema.</p>
         </div>
       </div>
 
@@ -71,10 +82,10 @@ export default function OrdersPage() {
 
         {loading && <LoadingState label="Cargando pedidos..." />}
         {!loading && error && <ErrorState error={error} />}
-        {!loading && !error && orderArray.length === 0 && (
-          <EmptyState title="Sin pedidos" message="No hay pedidos en la sesion activa." />
+        {!loading && !error && orders.length === 0 && (
+          <EmptyState title="Sin pedidos" message="No hay pedidos registrados en el sistema." />
         )}
-        {!loading && !error && orderArray.length > 0 && filtered.length === 0 && (
+        {!loading && !error && orders.length > 0 && filtered.length === 0 && (
           <EmptyState title="Sin resultados" message={`Ningun pedido coincide con "${query}".`} />
         )}
         {!loading && !error && filtered.length > 0 && (
