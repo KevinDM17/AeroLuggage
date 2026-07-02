@@ -139,7 +139,43 @@ public class SimulacionSesionManager {
     public SimulacionEstadoDTO iniciar(
             final SimulacionIniciarRequest params,
             final SimpMessagingTemplate broker) {
+        return iniciarSesion(
+                params,
+                broker,
+                params.getTotalDias(),
+                simulacionParams.getDuracionDiaSimuladoMs(),
+                simulacionParams.getTickIntervalMs(),
+                simulacionParams.getVentana().getTamanioMinutos(),
+                simulacionParams.getVentana().getEspaciadoMinutos(),
+                "Simulación iniciada. Suscríbete a /topic/simulacion/"
+        );
+    }
 
+    public SimulacionEstadoDTO iniciarColapso(
+            final SimulacionIniciarRequest params,
+            final SimpMessagingTemplate broker) {
+        final SimulacionParams.EscenarioColapso colapso = simulacionParams.getColapso();
+        return iniciarSesion(
+                params,
+                broker,
+                0,
+                colapso.getDuracionDiaSimuladoMs(),
+                colapso.getTickIntervalMs(),
+                colapso.getVentana().getTamanioMinutos(),
+                colapso.getVentana().getEspaciadoMinutos(),
+                "Simulación hasta colapso iniciada. Suscríbete a /topic/simulacion/"
+        );
+    }
+
+    private SimulacionEstadoDTO iniciarSesion(
+            final SimulacionIniciarRequest params,
+            final SimpMessagingTemplate broker,
+            final int totalDias,
+            final long duracionDiaSimuladoMs,
+            final long tickIntervalMs,
+            final int windowSizeMinutes,
+            final int windowSpacingMinutes,
+            final String mensajeInicio) {
         final String sessionId = UUID.randomUUID().toString();
         final LocalDate fechaInicio = LocalDate.parse(params.getFechaInicio());
         final LocalTime horaInicio = params.getHoraInicio() != null && !params.getHoraInicio().isBlank()
@@ -149,10 +185,11 @@ public class SimulacionSesionManager {
                 sessionId,
                 fechaInicio,
                 horaInicio,
-                params.getTotalDias(),
-                simulacionParams.getDuracionDiaSimuladoMs(),
-                simulacionParams.getVentana().getTamanioMinutos(),
-                simulacionParams.getVentana().getEspaciadoMinutos(),
+                totalDias,
+                duracionDiaSimuladoMs,
+                tickIntervalMs,
+                windowSizeMinutes,
+                windowSpacingMinutes,
                 params.getHusoGMT()
         );
 
@@ -175,7 +212,7 @@ public class SimulacionSesionManager {
         return SimulacionEstadoDTO.builder()
                 .withSessionId(sessionId)
                 .withEstado(ESTADO_INICIADA)
-                .withMensaje("Simulaci\u00f3n iniciada. Suscr\u00edbete a /topic/simulacion/" + sessionId)
+                .withMensaje(mensajeInicio + sessionId)
                 .build();
     }
 
@@ -271,7 +308,7 @@ public class SimulacionSesionManager {
     }
 
     private void programarTarea(final SimulacionSesion sesion, final SimpMessagingTemplate broker) {
-        final long tickIntervalMs = simulacionParams.getTickIntervalMs();
+        final long tickIntervalMs = sesion.getTickIntervalMs();
         final ScheduledFuture<?> tarea = scheduler.scheduleWithFixedDelay(
                 () -> ejecutarIteracion(sesion, broker),
                 tickIntervalMs,

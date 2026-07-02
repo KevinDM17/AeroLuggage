@@ -82,41 +82,55 @@ export default function SimulatorPage() {
 
   const limaTime = formatLimaTime(currentSimTimeUtc);
 
-  const mapOverlay = hasActiveRun ? (
-    <div className="bg-surface-2/85 backdrop-blur border border-slate-700 shadow-[0_12px_35px_rgba(0,0,0,0.45)] rounded-xl px-4 py-3 flex items-center justify-center gap-5">
-      <div>
-        <div className="text-[10px] text-slate-400 font-medium uppercase tracking-wider">Fecha Lima, Peru (GMT-5)</div>
-        <div className="text-lg font-bold text-info tabular-nums">{limaTime.date}</div>
-      </div>
-      <div className="border-x-1 px-6">
-        <div className="text-[10px] text-slate-400 font-medium uppercase tracking-wider">Hora Lima, Peru (GMT-5)</div>
-        <div className="text-lg font-bold text-info tabular-nums">{limaTime.time}</div>
-      </div>
-      <div className="h-9 w-px bg-slate-700 shrink-0" />
-      <button
-        type="button"
-        onClick={() => setShowRouteLines((v) => !v)}
-        className={`rounded-lg px-3 py-1.5 text-sm font-medium whitespace-nowrap transition-colors ${
-          showRouteLines
-            ? "bg-blue-600/20 text-blue-400 border border-blue-500/40 hover:bg-blue-600/30"
-            : "bg-surface-2 text-slate-400 border border-slate-700 hover:text-slate-200"
-        }`}
-      >
-        Mostrar lineas
-      </button>
-      <div className="h-9 w-px bg-slate-700 shrink-0" />
-      <button type="button" onClick={() => setPedidoOpen(true)} className="self-center bg-blue-600 hover:bg-blue-500 text-white px-5 py-2.5 rounded-lg flex items-center gap-2 font-medium text-sm leading-none transition-colors shrink-0">
-        <Plus className="w-4 h-4" /> Agregar Pedido
-      </button>
-    </div>
-  ) : null;
+  const mapOverlays = hasActiveRun
+    ? [
+        {
+          id: "clock-panel",
+          content: (
+            <div className="bg-surface-2/85 backdrop-blur border border-slate-700 shadow-[0_12px_35px_rgba(0,0,0,0.45)] rounded-xl px-4 py-3 flex items-center gap-5">
+              <div>
+                <div className="text-[10px] text-slate-400 font-medium uppercase tracking-wider">Fecha Lima, Peru (GMT-5)</div>
+                <div className="text-lg font-bold text-info tabular-nums">{limaTime.date}</div>
+              </div>
+              <div className="h-10 w-px bg-slate-700 shrink-0" />
+              <div>
+                <div className="text-[10px] text-slate-400 font-medium uppercase tracking-wider">Hora Lima, Peru (GMT-5)</div>
+                <div className="text-lg font-bold text-info tabular-nums">{limaTime.time}</div>
+              </div>
+            </div>
+          ),
+        },
+        {
+          id: "actions-panel",
+          content: (
+            <div className="bg-surface-2/85 backdrop-blur border border-slate-700 shadow-[0_12px_35px_rgba(0,0,0,0.45)] rounded-xl px-4 py-3 flex items-center gap-4">
+              <button
+                type="button"
+                onClick={() => setShowRouteLines((v) => !v)}
+                className={`rounded-lg px-3 py-1.5 text-sm font-medium whitespace-nowrap transition-colors ${
+                  showRouteLines
+                    ? "bg-blue-600/20 text-blue-400 border border-blue-500/40 hover:bg-blue-600/30"
+                    : "bg-surface-2 text-slate-400 border border-slate-700 hover:text-slate-200"
+                }`}
+              >
+                Mostrar lineas
+              </button>
+              <div className="h-10 w-px bg-slate-700 shrink-0" />
+              <button type="button" onClick={() => setPedidoOpen(true)} className="self-center bg-blue-600 hover:bg-blue-500 text-white px-5 py-2.5 rounded-lg flex items-center gap-2 font-medium text-sm leading-none transition-colors shrink-0">
+                <Plus className="w-4 h-4" /> Agregar Pedido
+              </button>
+            </div>
+          ),
+        },
+      ]
+    : [];
 
   return (
     <>
       <MapDashboard
         title={null}
         header={null}
-        mapOverlay={mapOverlay}
+        mapOverlays={mapOverlays}
         showMapClock={false}
         showMapFlights={hasActiveRun}
         showMapRouteLines={hasActiveRun && showRouteLines}

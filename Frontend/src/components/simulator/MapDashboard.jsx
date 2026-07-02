@@ -1,12 +1,26 @@
 import { Building, CheckCircle2, ChevronDown, ChevronLeft, ChevronRight, ChevronUp, Gauge, Luggage, Plane, Warehouse } from "lucide-react";
-import { useState, useEffect, useRef } from "react";
+import { cloneElement, isValidElement, useState, useEffect, useLayoutEffect, useRef } from "react";
 import { useLocation } from "react-router-dom";
 import AirportMap from "../map/AirportMap";
+
+const clampPanelToContainer = (nextPos, rect, containerWidth, containerHeight) => {
+  const margin = 16;
+  const width = rect?.width ?? 0;
+  const height = rect?.height ?? 0;
+  const maxX = Math.max(margin, containerWidth - width - margin);
+  const maxY = Math.max(margin, containerHeight - height - margin);
+
+  return {
+    x: Math.min(Math.max(nextPos.x, margin), maxX),
+    y: Math.min(Math.max(nextPos.y, margin), maxY),
+  };
+};
 
 export default function MapDashboard({
   title,
   header = null,
   mapOverlay = null,
+  mapOverlays = null,
   showMapFlights = true,
   showMapRouteLines = true,
   animateMapFlights = false,
@@ -35,49 +49,12 @@ export default function MapDashboard({
     flightCapacityPct >= 85 ? "danger" : flightCapacityPct >= 65 ? "warning" : "success";
 
   const [showKpis, setShowKpis] = useState(false);
-  const [showBottom, setShowBottom] = useState(true);
-
-  const [panelPos, setPanelPos] = useState(null);
-  const [isDragging, setIsDragging] = useState(false);
-  const dragStartRef = useRef({ mouseX: 0, mouseY: 0, panelX: 0, panelY: 0 });
-  const panelRef = useRef(null);
-
-  const isInteractiveTarget = (el) => el.closest("button, input, select, label, a");
-
-  const handleDragStart = (e) => {
-    if (e.button !== 0) return;
-    if (isInteractiveTarget(e.target)) return;
-    const rect = panelRef.current.getBoundingClientRect();
-    dragStartRef.current = {
-      mouseX: e.clientX,
-      mouseY: e.clientY,
-      panelX: rect.left,
-      panelY: rect.top,
-    };
-    setIsDragging(true);
-  };
-
-  useEffect(() => {
-    if (!isDragging) return;
-    const onMove = (e) => {
-      const dx = e.clientX - dragStartRef.current.mouseX;
-      const dy = e.clientY - dragStartRef.current.mouseY;
-      setPanelPos({
-        x: dragStartRef.current.panelX + dx,
-        y: dragStartRef.current.panelY + dy,
-      });
-    };
-    const onUp = () => setIsDragging(false);
-    window.addEventListener("mousemove", onMove);
-    window.addEventListener("mouseup", onUp);
-    return () => {
-      window.removeEventListener("mousemove", onMove);
-      window.removeEventListener("mouseup", onUp);
-    };
-  }, [isDragging]);
-
-  const handleHide = () => setShowBottom(false);
-  const handleShow = () => setShowBottom(true);
+  const mapStageRef = useRef(null);
+  const overlayItems = Array.isArray(mapOverlays) && mapOverlays.length > 0
+    ? mapOverlays
+    : mapOverlay
+      ? [{ id: "default-overlay", content: mapOverlay }]
+      : [];
 
   return (
     <div className="relative w-full h-full">
@@ -90,7 +67,7 @@ export default function MapDashboard({
         </div>
       )}
 
-      <div className="absolute inset-0">
+      <div ref={mapStageRef} className="absolute inset-0">
         <AirportMap
           key={location.pathname}
           showFlights={showMapFlights}
@@ -103,38 +80,18 @@ export default function MapDashboard({
           animateFlights={animateMapFlights}
         />
 
-        {showBottom && mapOverlay && draggable && (
-          <div
-            ref={panelRef}
-            className="absolute select-none z-[2000]"
-            style={
-              panelPos
-                ? { left: panelPos.x, top: panelPos.y, cursor: isDragging ? "grabbing" : "grab" }
-                : { left: "50%", bottom: "24px", transform: "translateX(-50%)", cursor: "grab" }
-            }
-            onMouseDown={handleDragStart}
-          >
-            <div className="relative">
-              <button
-                type="button"
-                onClick={handleHide}
-                className="absolute -left-7 top-1/2 -translate-y-1/2 z-10 rounded-l-lg rounded-r-none bg-surface-2/95 border border-r-0 border-slate-700 p-1.5 text-slate-400 hover:text-white transition-colors"
-                title="Ocultar panel"
-              >
-                <ChevronLeft className="w-3.5 h-3.5" />
-              </button>
-              {mapOverlay}
-            </div>
-          </div>
-        )}
+        {overlayItems.map((overlayItem, index) => (
+          <DraggableOverlayPanel
+            key={overlayItem.id ?? `overlay-${index}`}
+            content={overlayItem.content ?? overlayItem}
+            draggable={draggable}
+            index={index}
+            total={overlayItems.length}
+            mapStageRef={mapStageRef}
+          />
+        ))}
 
-        {showBottom && mapOverlay && !draggable && (
-          <div className="absolute left-1/2 bottom-6 z-[2000] -translate-x-1/2">
-            {mapOverlay}
-          </div>
-        )}
-
-        {showBottom && header && (
+        {header && (
           <div className="absolute bottom-6 right-4 z-[3000]">
             {header}
           </div>
@@ -179,36 +136,239 @@ export default function MapDashboard({
         )}
       </div>
 
-      {!showBottom && mapOverlay && draggable && (
-        <div
-          className="absolute select-none z-[2000]"
-          style={
-            panelPos
-              ? { left: panelPos.x, top: panelPos.y, cursor: isDragging ? "grabbing" : "grab" }
-              : { left: "50%", bottom: "24px", transform: "translateX(calc(-50% - 192px))", cursor: "grab" }
-          }
-          onMouseDown={(e) => {
-            if (e.button !== 0) return;
-            const rect = e.currentTarget.getBoundingClientRect();
-            dragStartRef.current = {
-              mouseX: e.clientX,
-              mouseY: e.clientY,
-              panelX: rect.left,
-              panelY: rect.top,
+    </div>
+  );
+}
+
+function DraggableOverlayPanel({ content, draggable, index, total, mapStageRef }) {
+  const [panelPos, setPanelPos] = useState(null);
+  const [isDragging, setIsDragging] = useState(false);
+  const [isPanelCollapsed, setIsPanelCollapsed] = useState(false);
+  const dragStartRef = useRef({ offsetX: 0, offsetY: 0 });
+  const panelRef = useRef(null);
+  const hasUserMovedPanelRef = useRef(false);
+  const dragMovedRef = useRef(false);
+  const buttonSide = index === 0 ? "left" : "right";
+  const expandFromButtonRef = useRef(null);
+
+  const contentWithJoinedEdge = isValidElement(content)
+    ? cloneElement(content, {
+        className: `${content.props.className ?? ""} ${
+          buttonSide === "left" ? "rounded-l-none border-l-0" : "rounded-r-none border-r-0"
+        }`.trim(),
+      })
+    : content;
+
+  const isInteractiveTarget = (el) => el.closest("button, input, select, label, a");
+
+  useLayoutEffect(() => {
+    if (!draggable || isPanelCollapsed || !panelRef.current) return;
+
+    const rect = panelRef.current.getBoundingClientRect();
+    const containerRect = mapStageRef.current?.getBoundingClientRect();
+    if (!rect.width || !rect.height) return;
+    if (!containerRect?.width || !containerRect?.height) return;
+
+    setPanelPos((currentPos) => {
+      if (expandFromButtonRef.current) {
+        const triggerRect = expandFromButtonRef.current;
+        expandFromButtonRef.current = null;
+
+        const nextPos = buttonSide === "left"
+          ? {
+              x: triggerRect.left - containerRect.left + triggerRect.width,
+              y: triggerRect.top - containerRect.top,
+            }
+          : {
+              x: triggerRect.left - containerRect.left - rect.width,
+              y: triggerRect.top - containerRect.top,
             };
-            setIsDragging(true);
-          }}
+
+        return clampPanelToContainer(nextPos, rect, containerRect.width, containerRect.height);
+      }
+
+      if (currentPos && hasUserMovedPanelRef.current) {
+        return clampPanelToContainer(currentPos, rect, containerRect.width, containerRect.height);
+      }
+
+      const gap = 24;
+      const centerOffset = (index - (total - 1) / 2) * (rect.width + gap);
+
+      return clampPanelToContainer(
+        {
+          x: (containerRect.width - rect.width) / 2 + centerOffset,
+          y: containerRect.height - rect.height - 24,
+        },
+        rect,
+        containerRect.width,
+        containerRect.height,
+      );
+    });
+  }, [draggable, index, isPanelCollapsed, mapStageRef, total, content]);
+
+  useEffect(() => {
+    if (!draggable || isPanelCollapsed) return;
+
+    const handleResize = () => {
+      if (!panelRef.current || !mapStageRef.current) return;
+      const rect = panelRef.current.getBoundingClientRect();
+      const containerRect = mapStageRef.current.getBoundingClientRect();
+      setPanelPos((currentPos) => {
+        const basePos = currentPos ?? {
+          x: (containerRect.width - rect.width) / 2,
+          y: containerRect.height - rect.height - 24,
+        };
+        return clampPanelToContainer(basePos, rect, containerRect.width, containerRect.height);
+      });
+    };
+
+    window.addEventListener("resize", handleResize);
+    return () => window.removeEventListener("resize", handleResize);
+  }, [draggable, isPanelCollapsed, mapStageRef]);
+
+  const handleDragStart = (e, options = {}) => {
+    const { allowInteractiveTarget = false } = options;
+    if (e.button !== 0) return;
+    if (!allowInteractiveTarget && isInteractiveTarget(e.target)) return;
+    if (!panelRef.current) return;
+
+    const rect = panelRef.current.getBoundingClientRect();
+    dragStartRef.current = {
+      offsetX: e.clientX - rect.left,
+      offsetY: e.clientY - rect.top,
+    };
+    dragMovedRef.current = false;
+    hasUserMovedPanelRef.current = true;
+    setIsDragging(true);
+  };
+
+  useEffect(() => {
+    if (!isDragging) return;
+
+    const onMove = (e) => {
+      const rect = panelRef.current?.getBoundingClientRect();
+      const containerRect = mapStageRef.current?.getBoundingClientRect();
+      if (!rect || !containerRect) return;
+
+      dragMovedRef.current = true;
+      setPanelPos(
+        clampPanelToContainer(
+          {
+            x: e.clientX - containerRect.left - dragStartRef.current.offsetX,
+            y: e.clientY - containerRect.top - dragStartRef.current.offsetY,
+          },
+          rect,
+          containerRect.width,
+          containerRect.height,
+        ),
+      );
+    };
+
+    const onUp = () => setIsDragging(false);
+    window.addEventListener("mousemove", onMove);
+    window.addEventListener("mouseup", onUp);
+    return () => {
+      window.removeEventListener("mousemove", onMove);
+      window.removeEventListener("mouseup", onUp);
+    };
+  }, [isDragging, mapStageRef]);
+
+  const handleHide = (e) => {
+    const buttonRect = e.currentTarget.getBoundingClientRect();
+    const containerRect = mapStageRef.current?.getBoundingClientRect();
+
+    if (containerRect) {
+      setPanelPos({
+        x: buttonRect.left - containerRect.left,
+        y: buttonRect.top - containerRect.top,
+      });
+    }
+
+    setIsPanelCollapsed(true);
+  };
+  const handleShow = () => {
+    if (dragMovedRef.current) {
+      dragMovedRef.current = false;
+      return;
+    }
+
+    if (panelRef.current) {
+      expandFromButtonRef.current = panelRef.current.getBoundingClientRect();
+    }
+
+    setIsPanelCollapsed(false);
+  };
+
+  if (!draggable) {
+    return (
+      <div className="absolute left-1/2 bottom-6 z-[2000] -translate-x-1/2">
+        {content}
+      </div>
+    );
+  }
+
+  if (isPanelCollapsed) {
+    return (
+      <div
+        ref={panelRef}
+        className="absolute select-none z-[2000]"
+        style={
+          panelPos
+            ? { left: panelPos.x, top: panelPos.y, cursor: isDragging ? "grabbing" : "grab" }
+            : { left: 16, bottom: "24px", cursor: "grab" }
+        }
+        onMouseDown={(e) => handleDragStart(e, { allowInteractiveTarget: true })}
+      >
+        <button
+          type="button"
+          onClick={handleShow}
+          className={`min-h-16 bg-surface-2/95 border border-slate-700 px-2.5 text-slate-400 hover:text-white transition-colors ${
+            buttonSide === "left" ? "rounded-l-xl rounded-r-none" : "rounded-l-none rounded-r-xl"
+          }`}
+          title="Mostrar panel"
         >
-          <button
-            type="button"
-            onClick={handleShow}
-            className="rounded-l-lg rounded-r-none bg-surface-2/95 border border-slate-700 p-1.5 text-slate-400 hover:text-white transition-colors"
-            title="Mostrar panel"
-          >
-            <ChevronRight className="w-3.5 h-3.5" />
-          </button>
-        </div>
-      )}
+          {buttonSide === "left"
+            ? <ChevronRight className="w-4 h-4" />
+            : <ChevronLeft className="w-4 h-4" />}
+        </button>
+      </div>
+    );
+  }
+
+  return (
+    <div
+      ref={panelRef}
+      className="absolute z-[2000] w-max max-w-[calc(100vw-2rem)] select-none"
+      style={{
+        left: panelPos?.x ?? 0,
+        top: panelPos?.y ?? 0,
+        cursor: isDragging ? "grabbing" : "grab",
+        visibility: panelPos ? "visible" : "hidden",
+      }}
+      onMouseDown={handleDragStart}
+    >
+      <div className="relative">
+        <button
+          type="button"
+          onClick={handleHide}
+          className={`absolute inset-y-0 z-10 flex items-center bg-surface-2/95 border border-slate-700 px-2.5 text-slate-400 hover:text-white transition-colors ${
+            buttonSide === "left"
+              ? "-left-9 rounded-l-xl rounded-r-none border-r-0"
+              : "-right-9 rounded-l-none rounded-r-xl border-l-0"
+          }`}
+          title="Ocultar panel"
+        >
+          {buttonSide === "left"
+            ? <ChevronLeft className="w-4 h-4" />
+            : <ChevronRight className="w-4 h-4" />}
+        </button>
+        <div
+          className={`pointer-events-none absolute top-px bottom-px z-10 w-[2px] bg-surface-2/95 ${
+            buttonSide === "left" ? "left-0" : "right-0"
+          }`}
+        />
+        {contentWithJoinedEdge}
+      </div>
     </div>
   );
 }

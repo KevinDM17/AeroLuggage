@@ -1,6 +1,6 @@
 import { useState, useEffect, useMemo } from "react";
 import { useParams, useOutletContext, useLocation } from "react-router-dom";
-import { Plus, FileUp, ArrowLeft } from "lucide-react";
+import { Plus, FileUp } from "lucide-react";
 import PedidoModal from "../components/simulator/PedidoModal";
 import BulkPedidoModal from "../components/simulator/BulkPedidoModal";
 import FlightPlanFormModal from "../components/simulator/FlightPlanFormModal";
@@ -268,12 +268,6 @@ export default function AirportDetailPage() {
 
   return (
     <div className="app-scrollbar flex-1 bg-surface-0 flex flex-col min-h-0 overflow-y-auto w-full min-h-full p-4 pb-8 sm:p-8 sm:pb-10 text-slate-200">
-      <div className="mb-6 pl-12 sm:pl-14">
-        <a href="/airports" className="inline-flex items-center gap-2 text-slate-400 hover:text-white text-sm transition-colors">
-          <ArrowLeft className="w-4 h-4" /> Volver a Aeropuertos
-        </a>
-      </div>
-
       <div className="flex flex-col sm:flex-row justify-between sm:items-start gap-4 mb-8 pl-12 sm:pl-14">
         <div>
           <h1 className="text-2xl sm:text-4xl font-extrabold text-white mb-2">
