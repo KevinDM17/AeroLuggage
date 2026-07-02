@@ -121,6 +121,7 @@ public class OperacionesDiaADiaService {
     private final AtomicInteger tickActual = new AtomicInteger(0);
     private final AtomicLong stateVersion = new AtomicLong(1);
     private volatile boolean ticksActivos;
+    private volatile boolean autoIniciado;
 
     enum TipoEventoSim {
         MALETA_APARECE,
@@ -273,6 +274,22 @@ public class OperacionesDiaADiaService {
         }
     }
 
+    public String autoStart() {
+        synchronized (lock) {
+            final String sid = iniciar();
+            if (!ticksActivos || tickTask == null || tickTask.isCancelled()) {
+                idsVuelosRecienConfirmados.clear();
+                ticksActivos = true;
+                autoIniciado = true;
+                final long tickIntervalMs = Math.max(100L, params.getTickIntervalMs());
+                tickTask = scheduler.scheduleWithFixedDelay(
+                        this::ejecutarTick, tickIntervalMs, tickIntervalMs, TimeUnit.MILLISECONDS);
+                log.info("[AeroLuggage/OperacionesDiaADia] - AUTO-INICIADO: sessionId={}", sid);
+            }
+            return sid;
+        }
+    }
+
     public void confirmarConexion() {
         synchronized (lock) {
             if (!activa) {
@@ -418,7 +435,7 @@ public class OperacionesDiaADiaService {
             if (!activa) {
                 return;
             }
-            if (clientesConectados.isEmpty()
+            if (!autoIniciado && clientesConectados.isEmpty()
                     && System.currentTimeMillis() - lastAccessTime > params.getTimeoutMs()) {
                 log.warn("[AeroLuggage/OperacionesDiaADia] - TIMEOUT: sesion expirada por inactividad de {}ms", params.getTimeoutMs());
                 detener();
@@ -1378,6 +1395,69 @@ public class OperacionesDiaADiaService {
                             + ". " + maletasAfectadas.size() + " maletas replanificadas.")
                     .withSimTime(simTime.format(FORMATO_FECHA_HORA))
                     .build();
+        }
+    }
+
+    public void onAeropuertoActualizado(final String iata, final int nuevaCapacidad) {
+        synchronized (lock) {
+            if (!activa) {
+                return;
+            }
+
+            final Aeropuerto aeropuerto = aeropuertos.get(iata);
+            if (aeropuerto == null) {
+                return;
+            }
+
+            aeropuerto.setCapacidadAlmacen(nuevaCapacidad);
+            recalcularOcupacionAeropuertos();
+
+            final Map<String, VueloInstancia> vueloIndex = getVueloIndex();
+            final List<String> maletasAfectadas = new ArrayList<>();
+
+            for (final Maleta maleta : maletasPorId.values()) {
+                if (!iata.equals(maleta.getAeropuertoActual())) {
+                    continue;
+                }
+                if (maleta.getEstado() != EstadoMaleta.EN_ALMACEN) {
+                    continue;
+                }
+
+                final String idMaleta = maleta.getIdMaleta();
+                final Ruta ruta = rutasPorMaleta.remove(idMaleta);
+                if (ruta != null && ruta.getSubrutaIds() != null) {
+                    for (final String subId : ruta.getSubrutaIds()) {
+                        final VueloInstancia v = vueloIndex.get(subId);
+                        if (v == null || v.getEstado() == EstadoVuelo.CANCELADO
+                                || v.getEstado() == EstadoVuelo.FINALIZADO) {
+                            continue;
+                        }
+                        v.setCapacidadDisponible(v.getCapacidadDisponible() + 1);
+                    }
+                    ruta.setEstado(EstadoRuta.REPLANIFICADA);
+                    rutaRepositorio.actualizar(ruta);
+                }
+
+                maletasAfectadas.add(idMaleta);
+            }
+
+            if (!maletasAfectadas.isEmpty()) {
+                log.info("[AeroLuggage/OperacionesDiaADia] - AEROPUERTO ACTUALIZADO: iata={}, nuevaCapacidad={}, "
+                                + "maletasReplanificadas={}",
+                        iata, nuevaCapacidad, maletasAfectadas.size());
+                planificarPendientes();
+
+                for (final String idMaleta : maletasAfectadas) {
+                    final Ruta nuevaRuta = rutasPorMaleta.get(idMaleta);
+                    if (nuevaRuta != null) {
+                        rutaRepositorio.insertar(nuevaRuta);
+                    }
+                }
+            }
+
+            final SimulacionTickLigeroDTO tickDTO = construirTickDTO(
+                    LocalDateTime.now(ZoneOffset.UTC));
+            broker.convertAndSend(TOPIC_SIM + sessionId, tickDTO);
         }
     }
 

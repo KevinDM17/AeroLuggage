@@ -13,8 +13,8 @@ import {
   obtenerEstadoOperacionesDiaADia,
   obtenerEstadoActualOperacionesDiaADia,
   onSessionChange,
-  confirmarConexionOperacionesDiaADia,
   obtenerVuelosNuevosOperacionesDiaADia,
+  obtenerPedidosOperacionesDiaADia,
 } from "../api/simulator";
 import { adaptAirport } from "../api/airports";
 import { adaptFlightInstance } from "../api/flightInstances";
@@ -196,14 +196,11 @@ export function useOperationsSession({ enabled, setSimulationPanelData, resetSim
         setDatosBaseCargados(true);
         datosBaseCargadosRef.current = true;
         ultimoTickRef.current = Date.now();
-        if (!USE_MOCK) {
-          await confirmarConexionOperacionesDiaADia();
-        }
         if (esInicial && toast) {
           toast.push({
             type: "info",
             title: "Operaciones dia a dia",
-            message: "Simulacion iniciada en tiempo real",
+            message: "Conectado a operaciones en tiempo real",
           });
         }
       } catch (err) {
@@ -376,6 +373,32 @@ export function useOperationsSession({ enabled, setSimulationPanelData, resetSim
       })
       .catch(() => {});
   }, [enabled, tick, hasActiveRun]);
+
+  useEffect(() => {
+    if (!estadoMessage) return;
+    const status = estadoMessage?.estado;
+    if (status !== "PEDIDO_PROCESADO" && status !== "VUELO_PROGRAMADO_CANCELADO") return;
+    if (USE_MOCK) return;
+
+    Promise.all([
+      obtenerPedidosOperacionesDiaADia().catch(() => []),
+      obtenerMaletasOperacionesDiaADia().catch(() => []),
+      obtenerRutasOperacionesDiaADia().catch(() => []),
+    ]).then(([pedidosData, maletasData, rutasData]) => {
+      setSimulationPanelData((prev) => {
+        const updatedOrders = new Map(prev.orders);
+        for (const o of (pedidosData ?? [])) updatedOrders.set(o.id ?? o.idPedido, o);
+
+        const updatedBags = new Map(prev.bags);
+        for (const m of (maletasData ?? [])) updatedBags.set(m.idMaleta, m);
+
+        const updatedRoutes = new Map(prev.routes);
+        for (const r of (rutasData ?? [])) updatedRoutes.set(r.idRuta, r);
+
+        return { ...prev, orders: updatedOrders, bags: updatedBags, routes: updatedRoutes };
+      });
+    }).catch(() => {});
+  }, [estadoMessage]);
 
   const liveMetrics = useMemo(() => {
     if (!hasActiveRun) return emptyMetrics;

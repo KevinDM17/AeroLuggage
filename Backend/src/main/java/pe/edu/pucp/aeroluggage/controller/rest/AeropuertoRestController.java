@@ -1,6 +1,8 @@
 package pe.edu.pucp.aeroluggage.controller.rest;
 
 import lombok.RequiredArgsConstructor;
+import org.springframework.beans.factory.annotation.Autowired;
+import org.springframework.context.annotation.Lazy;
 import org.springframework.http.HttpStatus;
 import org.springframework.web.bind.annotation.GetMapping;
 import org.springframework.web.bind.annotation.PathVariable;
@@ -16,6 +18,7 @@ import pe.edu.pucp.aeroluggage.dominio.enums.Continente;
 import pe.edu.pucp.aeroluggage.dto.simulacion.rest.AeropuertoRequest;
 import pe.edu.pucp.aeroluggage.dto.simulacion.rest.AeropuertoResponse;
 import pe.edu.pucp.aeroluggage.servicios.ServicioAeropuerto;
+import pe.edu.pucp.aeroluggage.simulacion.OperacionesDiaADiaService;
 
 import java.util.List;
 import java.util.Optional;
@@ -27,6 +30,10 @@ import java.util.stream.Collectors;
 public class AeropuertoRestController {
 
     private final ServicioAeropuerto servicioAeropuerto;
+
+    @Lazy
+    @Autowired
+    private OperacionesDiaADiaService operacionesService;
 
     @GetMapping
     public List<AeropuertoResponse> listar() {
@@ -55,10 +62,14 @@ public class AeropuertoRestController {
                                           @RequestBody final AeropuertoRequest request) {
         final Aeropuerto aeropuerto = toEntity(request);
         final Optional<Aeropuerto> actualizado = servicioAeropuerto.actualizar(iata, aeropuerto);
-        return actualizado
+        final AeropuertoResponse response = actualizado
                 .map(this::toResponse)
                 .orElseThrow(() -> new ResponseStatusException(HttpStatus.NOT_FOUND,
                         "Aeropuerto no encontrado: " + iata));
+        if (operacionesService != null) {
+            operacionesService.onAeropuertoActualizado(iata, request.getCapacidadAlmacen());
+        }
+        return response;
     }
 
     private Aeropuerto toEntity(final AeropuertoRequest request) {
