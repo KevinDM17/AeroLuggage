@@ -1479,6 +1479,7 @@ export default function PeriodSimulatorPage() {
       metrics={liveMetrics}
       progress={progress}
       simStatus={simStatus}
+      draggable={hasActiveRun}
     />
     </>
   );

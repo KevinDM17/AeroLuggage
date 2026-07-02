@@ -1,5 +1,5 @@
 import { Building, CheckCircle2, ChevronDown, ChevronUp, Gauge, Luggage, Plane, Warehouse } from "lucide-react";
-import { useState } from "react";
+import { useState, useEffect, useRef } from "react";
 import { useLocation } from "react-router-dom";
 import AirportMap from "../map/AirportMap";
 
@@ -18,6 +18,7 @@ export default function MapDashboard({
   progress,
   simStatus,
   metrics = {},
+  draggable = true,
 }) {
   const location = useLocation();
   const {
@@ -35,6 +36,50 @@ export default function MapDashboard({
 
   const [showKpis, setShowKpis] = useState(false);
   const [showBottom, setShowBottom] = useState(true);
+
+  const [panelPos, setPanelPos] = useState(null);
+  const [isDragging, setIsDragging] = useState(false);
+  const dragStartRef = useRef({ mouseX: 0, mouseY: 0, panelX: 0, panelY: 0 });
+  const panelRef = useRef(null);
+
+  const isInteractiveTarget = (el) => el.closest("button, input, select, label, a");
+
+  const handleDragStart = (e) => {
+    if (e.button !== 0) return;
+    if (isInteractiveTarget(e.target)) return;
+    const rect = panelRef.current.getBoundingClientRect();
+    dragStartRef.current = {
+      mouseX: e.clientX,
+      mouseY: e.clientY,
+      panelX: rect.left,
+      panelY: rect.top,
+    };
+    setIsDragging(true);
+  };
+
+  useEffect(() => {
+    if (!isDragging) return;
+    const onMove = (e) => {
+      const dx = e.clientX - dragStartRef.current.mouseX;
+      const dy = e.clientY - dragStartRef.current.mouseY;
+      setPanelPos({
+        x: dragStartRef.current.panelX + dx,
+        y: dragStartRef.current.panelY + dy,
+      });
+    };
+    const onUp = () => setIsDragging(false);
+    window.addEventListener("mousemove", onMove);
+    window.addEventListener("mouseup", onUp);
+    return () => {
+      window.removeEventListener("mousemove", onMove);
+      window.removeEventListener("mouseup", onUp);
+    };
+  }, [isDragging]);
+
+  const handleShow = () => {
+    setShowBottom(true);
+    setPanelPos(null);
+  };
 
   return (
     <div className="relative w-full h-full">
@@ -60,7 +105,32 @@ export default function MapDashboard({
           animateFlights={animateMapFlights}
         />
 
-        {showBottom && mapOverlay && (
+        {showBottom && mapOverlay && draggable && (
+          <div
+            ref={panelRef}
+            className="absolute select-none z-[2000]"
+            style={
+              panelPos
+                ? { left: panelPos.x, top: panelPos.y, cursor: isDragging ? "grabbing" : "grab" }
+                : { left: "50%", bottom: "24px", transform: "translateX(-50%)", cursor: "grab" }
+            }
+            onMouseDown={handleDragStart}
+          >
+            <div className="relative">
+              <button
+                type="button"
+                onClick={() => setShowBottom(false)}
+                className="absolute top-1.5 right-1.5 z-10 rounded-full p-1 text-slate-400 hover:text-white hover:bg-white/10 transition-colors"
+                title="Ocultar panel"
+              >
+                <ChevronDown className="w-3.5 h-3.5" />
+              </button>
+              {mapOverlay}
+            </div>
+          </div>
+        )}
+
+        {showBottom && mapOverlay && !draggable && (
           <div className="absolute left-1/2 bottom-6 z-[2000] -translate-x-1/2">
             {mapOverlay}
           </div>
@@ -111,14 +181,16 @@ export default function MapDashboard({
         )}
       </div>
 
-      <button
-        type="button"
-        onClick={() => setShowBottom((v) => !v)}
-        className="absolute bottom-1 left-1/2 -translate-x-1/2 z-[4000] bg-surface-1/60 hover:bg-surface-1/80 backdrop-blur border border-slate-700/50 rounded-full p-1 text-slate-400 hover:text-white transition-colors"
-        title={showBottom ? "Ocultar panel inferior" : "Mostrar panel inferior"}
-      >
-        {showBottom ? <ChevronDown className="w-3.5 h-3.5" /> : <ChevronUp className="w-3.5 h-3.5" />}
-      </button>
+      {!showBottom && mapOverlay && draggable && (
+        <button
+          type="button"
+          onClick={handleShow}
+          className="absolute bottom-4 left-1/2 -translate-x-1/2 z-[4000] bg-surface-1/80 hover:bg-surface-1 backdrop-blur border border-slate-700/50 rounded-full p-2 text-slate-300 hover:text-white transition-colors shadow-lg"
+          title="Mostrar panel inferior"
+        >
+          <ChevronUp className="w-4 h-4" />
+        </button>
+      )}
     </div>
   );
 }
