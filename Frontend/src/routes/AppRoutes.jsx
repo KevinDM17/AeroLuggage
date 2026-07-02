@@ -6,6 +6,7 @@ import PeriodSimulatorPage from "../pages/PeriodSimulatorPage";
 import CollapseSimulatorPage from "../pages/CollapseSimulatorPage";
 import AirportsPage from "../pages/AirportsPage";
 import AirportDetailPage from "../pages/AirportDetailPage";
+import AirportManagementRedirect from "../pages/AirportManagementRedirect";
 import FlightPlansPage from "../pages/FlightPlansPage";
 import OrdersPage from "../pages/OrdersPage";
 
@@ -21,7 +22,9 @@ export default function AppRoutes() {
         <Route path="simulator/collapse" element={<CollapseSimulatorPage />} />
 
         <Route path="airports" element={<AirportsPage />} />
-        <Route path="airports/:iata" element={<AirportDetailPage />} />
+        <Route path="airports/:iata" element={<Navigate to="/gestion-aeropuerto/:iata" replace />} />
+        <Route path="gestion-aeropuerto" element={<AirportManagementRedirect />} />
+        <Route path="gestion-aeropuerto/:iata" element={<AirportDetailPage />} />
         <Route path="flights/plans" element={<FlightPlansPage />} />
         <Route path="orders" element={<OrdersPage />} />
 

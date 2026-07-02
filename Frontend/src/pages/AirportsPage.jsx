@@ -1,6 +1,5 @@
 import { useState, useEffect, useCallback } from "react";
-import { useNavigate } from "react-router-dom";
-import { Plus, Eye, Plane, Pencil } from "lucide-react";
+import { Plus, Plane, Pencil } from "lucide-react";
 import AirportFormModal from "../components/simulator/AirportFormModal";
 import Modal from "../components/ui/Modal";
 import { LoadingState, EmptyState, ErrorState } from "../components/ui/States";
@@ -12,7 +11,6 @@ const formatGMT = (h) => (h >= 0 ? `GMT+${h}` : `GMT${h}`);
 
 export default function AirportsPage() {
   const toast = useToast();
-  const navigate = useNavigate();
 
   const [airports, setAirports] = useState([]);
   const [loading, setLoading] = useState(true);
@@ -141,7 +139,6 @@ export default function AirportsPage() {
                 <th className="py-4 px-6 font-medium">Capacidad</th>
                 <th className="py-4 px-6 font-medium">GMT</th>
                 <th className="py-4 px-6 font-medium text-right">Acciones</th>
-                <th className="py-4 px-6 font-medium text-center w-24">Detalles</th>
               </tr>
             </thead>
             <tbody>
@@ -178,16 +175,6 @@ export default function AirportsPage() {
                         <Pencil className="w-4 h-4" />
                       </button>
                     </div>
-                  </td>
-                  <td className="py-4 px-6 text-center">
-                    <button
-                      type="button"
-                      onClick={() => navigate(`/airports/${apt.iata}`)}
-                      title="Mostrar detalles"
-                      className="p-2 rounded-lg hover:bg-blue-600/20 hover:text-blue-400 transition-colors text-slate-400"
-                    >
-                      <Eye className="w-4 h-4" />
-                    </button>
                   </td>
                 </tr>
               ))}

@@ -135,6 +135,15 @@ export default function Sidebar({ onClose, closeOnNavigate = false }) {
 
           <button
             type="button"
+            onClick={() => handleNavigate("/gestion-aeropuerto")}
+            className={navItemClass(location.pathname.startsWith("/gestion-aeropuerto"))}
+          >
+            <Building className="w-4 h-4" />
+            <span className="font-medium">Gestión de Aeropuerto</span>
+          </button>
+
+          <button
+            type="button"
             onClick={() => handleNavigate("/flights/plans")}
             className={cn(
               "flex w-full items-center gap-3 rounded-xl border px-3 py-2.5 text-left transition-all duration-200",

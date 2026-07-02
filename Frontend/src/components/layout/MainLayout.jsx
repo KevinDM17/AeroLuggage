@@ -40,7 +40,9 @@ export default function MainLayout() {
   const previousIsSimulatorRef = useRef(null);
   const toast = useToast();
 
-  const isOperations = location.pathname === "/operaciones";
+  const isOperations =
+    location.pathname === "/operaciones" ||
+    location.pathname.startsWith("/gestion-aeropuerto");
 
   const showRightPanel = location.pathname === "/operaciones" || location.pathname.startsWith("/simulator");
 
