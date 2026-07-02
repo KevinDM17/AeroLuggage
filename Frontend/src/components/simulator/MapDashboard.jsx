@@ -1,4 +1,4 @@
-import { Building, CheckCircle2, ChevronDown, ChevronUp, Gauge, Luggage, Plane, Warehouse } from "lucide-react";
+import { Building, CheckCircle2, ChevronDown, ChevronLeft, ChevronRight, ChevronUp, Gauge, Luggage, Plane, Warehouse } from "lucide-react";
 import { useState, useEffect, useRef } from "react";
 import { useLocation } from "react-router-dom";
 import AirportMap from "../map/AirportMap";
@@ -76,10 +76,8 @@ export default function MapDashboard({
     };
   }, [isDragging]);
 
-  const handleShow = () => {
-    setShowBottom(true);
-    setPanelPos(null);
-  };
+  const handleHide = () => setShowBottom(false);
+  const handleShow = () => setShowBottom(true);
 
   return (
     <div className="relative w-full h-full">
@@ -119,11 +117,11 @@ export default function MapDashboard({
             <div className="relative">
               <button
                 type="button"
-                onClick={() => setShowBottom(false)}
-                className="absolute top-1.5 right-1.5 z-10 rounded-full p-1 text-slate-400 hover:text-white hover:bg-white/10 transition-colors"
+                onClick={handleHide}
+                className="absolute -left-7 top-1/2 -translate-y-1/2 z-10 rounded-l-lg rounded-r-none bg-surface-2/95 border border-r-0 border-slate-700 p-1.5 text-slate-400 hover:text-white transition-colors"
                 title="Ocultar panel"
               >
-                <ChevronDown className="w-3.5 h-3.5" />
+                <ChevronLeft className="w-3.5 h-3.5" />
               </button>
               {mapOverlay}
             </div>
@@ -182,14 +180,34 @@ export default function MapDashboard({
       </div>
 
       {!showBottom && mapOverlay && draggable && (
-        <button
-          type="button"
-          onClick={handleShow}
-          className="absolute bottom-4 left-1/2 -translate-x-1/2 z-[4000] bg-surface-1/80 hover:bg-surface-1 backdrop-blur border border-slate-700/50 rounded-full p-2 text-slate-300 hover:text-white transition-colors shadow-lg"
-          title="Mostrar panel inferior"
+        <div
+          className="absolute select-none z-[2000]"
+          style={
+            panelPos
+              ? { left: panelPos.x, top: panelPos.y, cursor: isDragging ? "grabbing" : "grab" }
+              : { left: "50%", bottom: "24px", transform: "translateX(calc(-50% - 192px))", cursor: "grab" }
+          }
+          onMouseDown={(e) => {
+            if (e.button !== 0) return;
+            const rect = e.currentTarget.getBoundingClientRect();
+            dragStartRef.current = {
+              mouseX: e.clientX,
+              mouseY: e.clientY,
+              panelX: rect.left,
+              panelY: rect.top,
+            };
+            setIsDragging(true);
+          }}
         >
-          <ChevronUp className="w-4 h-4" />
-        </button>
+          <button
+            type="button"
+            onClick={handleShow}
+            className="rounded-l-lg rounded-r-none bg-surface-2/95 border border-slate-700 p-1.5 text-slate-400 hover:text-white transition-colors"
+            title="Mostrar panel"
+          >
+            <ChevronRight className="w-3.5 h-3.5" />
+          </button>
+        </div>
       )}
     </div>
   );
