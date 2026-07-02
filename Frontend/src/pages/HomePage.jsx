@@ -6,7 +6,6 @@ import {
   Clock,
   Building,
   Plane,
-  Package,
   ArrowRight,
   Map as MapIcon,
   Activity,
@@ -48,13 +47,6 @@ const QUICK_ACCESS = [
     title: "Vuelos",
     desc: "Consulta planes de vuelo y la ocurrencia de cada instancia.",
     accent: "text-fuchsia-400",
-  },
-  {
-    to: "/orders",
-    icon: Package,
-    title: "Pedidos",
-    desc: "Registra y sigue los envíos de maletas entre aeropuertos.",
-    accent: "text-info",
   },
 ];
 

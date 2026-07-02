@@ -8,7 +8,6 @@ import AirportsPage from "../pages/AirportsPage";
 import AirportDetailPage from "../pages/AirportDetailPage";
 import AirportManagementRedirect from "../pages/AirportManagementRedirect";
 import FlightPlansPage from "../pages/FlightPlansPage";
-import OrdersPage from "../pages/OrdersPage";
 
 export default function AppRoutes() {
   return (
@@ -26,7 +25,6 @@ export default function AppRoutes() {
         <Route path="gestion-aeropuerto" element={<AirportManagementRedirect />} />
         <Route path="gestion-aeropuerto/:iata" element={<AirportDetailPage />} />
         <Route path="flights/plans" element={<FlightPlansPage />} />
-        <Route path="orders" element={<OrdersPage />} />
 
         <Route path="*" element={<Navigate to="/" replace />} />
       </Route>

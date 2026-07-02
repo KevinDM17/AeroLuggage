@@ -10,7 +10,6 @@ import {
   Clock,
   Plane,
   Building,
-  Package,
 } from "lucide-react";
 
 export default function Sidebar({ onClose, closeOnNavigate = false }) {
@@ -154,15 +153,6 @@ export default function Sidebar({ onClose, closeOnNavigate = false }) {
           >
             <Plane className="w-4 h-4" />
             <span className="font-medium text-sm">Planes de vuelo</span>
-          </button>
-
-          <button
-            type="button"
-            onClick={() => handleNavigate("/orders")}
-            className={navItemClass(location.pathname === "/orders")}
-          >
-            <Package className="w-4 h-4" />
-            <span className="font-medium">Pedidos</span>
           </button>
         </div>
       </nav>
