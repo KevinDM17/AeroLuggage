@@ -1,6 +1,6 @@
 import { useEffect, useMemo, useRef, useState } from "react";
 import { useOutletContext } from "react-router-dom";
-import { Play, Square, AlertTriangle } from "lucide-react";
+import { Clock, Play, SlidersHorizontal, Square, AlertTriangle, X } from "lucide-react";
 import MapDashboard from "../components/simulator/MapDashboard";
 import { usePolling } from "../hooks/usePolling";
 import { useElapsedTimer } from "../hooks/useElapsedTimer";
@@ -25,6 +25,21 @@ const ENUM_VUELO = ["PROGRAMADO", "CONFIRMADO", "EN_PROGRESO", "FINALIZADO", "CA
 const ENUM_MALETA = ["EN_ALMACEN", "EN_TRANSITO", "ENTREGADA"];
 const ENUM_RUTA = ["PLANIFICADA", "ACTIVA", "COMPLETADA", "REPLANIFICADA"];
 
+const METRICAS_COLAPSO = [
+  { key: "aeropuertosColapsados", label: "Aeropuertos colapsados" },
+  { key: "vuelosColapsados", label: "Vuelos colapsados" },
+  { key: "maletasEvaluadasSinRuta", label: "Maletas sin ruta" },
+];
+
+const RESUMEN_METRICAS_COLAPSO = [
+  { key: "aeropuertosColapsados", label: "Aeropuertos colapsados" },
+  { key: "vuelosColapsados", label: "Vuelos afectados" },
+  { key: "maletasEvaluadasSinRuta", label: "Maletas sin ruta" },
+  { key: "bagsInTransit", label: "Maletas en transito" },
+  { key: "bagsDelivered", label: "Maletas entregadas" },
+  { key: "activeFlights", label: "Vuelos activos" },
+];
+
 const WARNING_AT_MS = 60_000;
 const CLOCK_REFRESH_MS = 500;
 const MAP_REFRESH_MS = 500;
@@ -44,6 +59,68 @@ const emptyMetrics = {
   activeFlights: 0,
   airportCapacityPct: 0,
   flightCapacityPct: 0,
+};
+
+const formatSummaryValue = (value, suffix = "") => {
+  if (value == null || Number.isNaN(Number(value))) return null;
+  return `${Number(value).toLocaleString("es-PE")}${suffix}`;
+};
+
+const getCollapseSummary = (info) => {
+  const rawMessage = String(info?.mensaje ?? "").trim();
+  const compactMessage = rawMessage
+    .replace(/\s*\|\s*/g, " | ")
+    .replace(/\s+/g, " ")
+    .trim();
+
+  if (/sin ruta asignada/i.test(compactMessage)) {
+    return {
+      title: "Saturacion por falta de rutas disponibles",
+      description:
+        "La simulacion llego al colapso porque se acumularon maletas evaluadas dentro de la ventana actual sin una ruta valida para continuar su traslado.",
+    };
+  }
+
+  if (/aeropuerto/i.test(compactMessage) && /colaps/i.test(compactMessage)) {
+    return {
+      title: "Capacidad aeroportuaria superada",
+      description:
+        "La red dejo de absorber la demanda operativa y uno o mas aeropuertos superaron su capacidad de manejo durante la simulacion.",
+    };
+  }
+
+  if (/vuelo/i.test(compactMessage) && /colaps|satur/i.test(compactMessage)) {
+    return {
+      title: "Red de vuelos saturada",
+      description:
+        "La operacion llego a un punto de saturacion en el que los vuelos disponibles ya no pudieron sostener el flujo de maletas planificado.",
+    };
+  }
+
+  return {
+    title: "Operacion colapsada",
+    description:
+      "La simulacion detecto una condicion critica y detuvo la ejecucion para evitar seguir acumulando operaciones inconsistentes.",
+  };
+};
+
+const buildStablePlanningSnapshot = ({
+  windowId,
+  simTime,
+  flights,
+  orders,
+  routes,
+}) => {
+  const clock = formatUtcDateTimeDisplay(simTime ? new Date(`${simTime}Z`) : null);
+
+  return {
+    windowId,
+    dateLabel: clock.date,
+    timeLabel: clock.time,
+    flightsCount: Array.isArray(flights) ? flights.length : 0,
+    ordersCount: Array.isArray(orders) ? orders.length : 0,
+    routesCount: Array.isArray(routes) ? routes.length : 0,
+  };
 };
 
 const updateEstadosOnly = (oldMap, stateMap, enumArr, statusField = "estado", extraFields) => {
@@ -88,6 +165,9 @@ export default function CollapseSimulatorPage() {
   const [currentSimTimeUtc, setCurrentSimTimeUtc] = useState(null);
   const [simulatedDayDurationMs, setSimulatedDayDurationMs] = useState(null);
   const [lastMockState, setLastMockState] = useState(null);
+  const [showColapsoModal, setShowColapsoModal] = useState(false);
+  const [colapsoInfo, setColapsoInfo] = useState(null);
+  const [lastStablePlanning, setLastStablePlanning] = useState(null);
 
   const ventanasCargadasRef = useRef(new Set());
   const lastMapFlightsRef = useRef([]);
@@ -102,6 +182,9 @@ export default function CollapseSimulatorPage() {
     lastMapFlightsRef.current = [];
     startSimMsRef.current = null;
     setMapAirports([]);
+    setShowColapsoModal(false);
+    setColapsoInfo(null);
+    setLastStablePlanning(null);
     setSimulationPanelData({
       airports: [],
       flights: new Map(),
@@ -156,7 +239,9 @@ export default function CollapseSimulatorPage() {
     if (local !== simStatus) setSimStatus(local);
 
     if (estadoMessage.estado === "COLAPSO") {
-      toast.push({ type: "error", title: "Colapso detectado", message: estadoMessage.mensaje });
+      setSimStatus("collapsed");
+      setColapsoInfo(estadoMessage);
+      setShowColapsoModal(true);
     }
 
     if (estadoMessage.estado === "DETENIDA" && simStatus !== "idle") {
@@ -185,6 +270,19 @@ export default function CollapseSimulatorPage() {
           metadata.set(f.idVueloInstancia ?? f.id, { ...f, ticksAusente: 0 });
         }
         flightMetadataRef.current = metadata;
+
+        setLastStablePlanning(
+          buildStablePlanningSnapshot({
+            windowId,
+            simTime:
+              ventanaData.fechaSimulada ??
+              tick.simTime ??
+              currentSimTimeUtc,
+            flights: adaptedFlights,
+            orders: ventanaData.pedidos ?? [],
+            routes: ventanaData.rutas ?? [],
+          }),
+        );
 
         setSimulationPanelData((prev) => {
           const flights = new Map(prev.flights);
@@ -429,6 +527,109 @@ export default function CollapseSimulatorPage() {
     };
   }, [tick, mockState, hasActiveRun, mapAirports, panelFlights]);
 
+  const collapseSummary = useMemo(
+    () => getCollapseSummary(colapsoInfo),
+    [colapsoInfo],
+  );
+
+  const collapseStats = useMemo(() => {
+    if (!showColapsoModal) return [];
+
+    const combined = {
+      aeropuertosColapsados: colapsoInfo?.aeropuertosColapsados,
+      vuelosColapsados: colapsoInfo?.vuelosColapsados,
+      maletasEvaluadasSinRuta: colapsoInfo?.maletasEvaluadasSinRuta,
+      bagsInTransit: liveMetrics?.bagsInTransit,
+      bagsDelivered: liveMetrics?.bagsDelivered,
+      activeFlights: liveMetrics?.activeFlights,
+    };
+
+    return RESUMEN_METRICAS_COLAPSO
+      .map(({ key, label }) => {
+        const value = combined[key];
+        if (value == null) return null;
+        return { key, label, value: formatSummaryValue(value) };
+      })
+      .filter(Boolean);
+  }, [colapsoInfo, liveMetrics, showColapsoModal]);
+
+  const collapseEntityDetails = useMemo(() => {
+    if (!showColapsoModal) return [];
+
+    const details = [];
+    if (colapsoInfo?.aeropuertosColapsados > 0 && colapsoInfo?.aeropuertoColapsadoDetalle) {
+      details.push({
+        key: "aeropuertoColapsadoDetalle",
+        label: "Aeropuerto colapsado",
+        value: colapsoInfo.aeropuertoColapsadoDetalle,
+      });
+    }
+    if (colapsoInfo?.vuelosColapsados > 0 && colapsoInfo?.vueloColapsadoDetalle) {
+      details.push({
+        key: "vueloColapsadoDetalle",
+        label: "Vuelo colapsado",
+        value: colapsoInfo.vueloColapsadoDetalle,
+      });
+    }
+
+    return details;
+  }, [colapsoInfo, showColapsoModal]);
+
+  const collapseStablePlanningSummary = useMemo(() => {
+    if (!lastStablePlanning) return null;
+
+    return [
+      {
+        label: "Ventana estable",
+        value: lastStablePlanning.windowId ?? "-",
+      },
+      {
+        label: "Fecha simulada",
+        value: lastStablePlanning.dateLabel ?? "-",
+      },
+      {
+        label: "Hora simulada",
+        value: lastStablePlanning.timeLabel
+          ? `${lastStablePlanning.timeLabel} UTC`
+          : "-",
+      },
+      {
+        label: "Vuelos planificados",
+        value: formatSummaryValue(lastStablePlanning.flightsCount ?? 0),
+      },
+      {
+        label: "Pedidos considerados",
+        value: formatSummaryValue(lastStablePlanning.ordersCount ?? 0),
+      },
+      {
+        label: "Rutas generadas",
+        value: formatSummaryValue(lastStablePlanning.routesCount ?? 0),
+      },
+    ];
+  }, [lastStablePlanning]);
+
+  const formattedStartDate = useMemo(() => {
+    if (!startDate) return "--";
+    const [y, m, d] = startDate.split("-");
+    return `${d}/${m}/${y}`;
+  }, [startDate]);
+
+  const simulatedElapsedLabel = useMemo(() => {
+    const startMs = startSimMsRef.current;
+    if (simulatedNowMs == null || startMs == null) return "--";
+    const totalMinutes = Math.max(0, Math.round((simulatedNowMs - startMs) / 60000));
+    const hours = Math.floor(totalMinutes / 60);
+    const minutes = totalMinutes % 60;
+    return `${hours}h ${minutes}m`;
+  }, [simulatedNowMs]);
+
+  const simulatedDay = useMemo(() => {
+    const startMs = startSimMsRef.current;
+    if (simulatedNowMs == null || startMs == null) return null;
+    const elapsedMs = Math.max(0, simulatedNowMs - startMs);
+    return Math.floor(elapsedMs / 86400000) + 1;
+  }, [simulatedNowMs]);
+
   const handleStart = async () => {
     setSimStatus("starting");
     setSessionId(null);
@@ -514,6 +715,16 @@ export default function CollapseSimulatorPage() {
         initialOrders.set(o.id ?? o.idPedido, o);
       }
 
+      setLastStablePlanning(
+        buildStablePlanningSnapshot({
+          windowId: primeraVentana,
+          simTime: ventana1.fechaSimulada ?? result.fechaHoraInicio ?? `${startDate}T00:00:00`,
+          flights: adaptedFlights,
+          orders: ventana1.pedidos ?? [],
+          routes: ventana1.rutas ?? [],
+        }),
+      );
+
       setSimulationPanelData({
         airports: adaptedAirports,
         flights: initialFlights,
@@ -567,34 +778,85 @@ export default function CollapseSimulatorPage() {
   const mapOverlays = hasActiveRun
     ? [
         {
-          id: "collapse-time-panel",
+          id: "collapse-start-panel",
+          icon: <Clock className="w-4 h-4" />,
           content: (
-            <div className="bg-surface-2/85 backdrop-blur border border-slate-700 shadow-[0_12px_35px_rgba(0,0,0,0.45)] rounded-xl px-4 py-3 flex items-center gap-5">
-              <div>
-                <div className="text-[10px] text-slate-400 font-medium uppercase tracking-wider">Cronometro</div>
-                <div className="text-lg font-bold text-slate-100 tabular-nums">{formatElapsedHMS(executionElapsedMs)}</div>
+            <div className="bg-surface-2/85 backdrop-blur border border-slate-700 shadow-[0_12px_35px_rgba(0,0,0,0.45)] rounded-xl px-4 py-3 flex items-center gap-4">
+              <div className="shrink-0">
+                <div className="text-[9px] text-slate-400 font-medium uppercase tracking-wider">
+                  Inicio sim.
+                </div>
+                <div className="text-sm font-bold text-slate-100 tabular-nums whitespace-nowrap">
+                  {formattedStartDate}  00:00 UTC
+                </div>
               </div>
-              <div className="h-10 w-px bg-slate-700 shrink-0" />
-              <div>
-                <div className="text-[10px] text-slate-400 font-medium uppercase tracking-wider">Fecha simulada</div>
-                <div className="text-lg font-bold text-info tabular-nums">{simulationClock.date}</div>
+              <div className="h-9 w-px bg-slate-700 shrink-0" />
+              <div className="shrink-0">
+                <div className="text-[9px] text-slate-400 font-medium uppercase tracking-wider">
+                  Cronometro
+                </div>
+                <div className="text-base font-bold text-slate-100 tabular-nums">
+                  {formatElapsedHMS(executionElapsedMs)}
+                </div>
               </div>
-              <div className="h-10 w-px bg-slate-700 shrink-0" />
-              <div>
-                <div className="text-[10px] text-slate-400 font-medium uppercase tracking-wider">Hora simulada</div>
-                <div className="text-lg font-bold text-info tabular-nums">{simulationClock.time} UTC</div>
+            </div>
+          ),
+        },
+        {
+          id: "collapse-simulated-panel",
+          buttonSide: "left",
+          icon: <Clock className="w-4 h-4" />,
+          content: (
+            <div className="bg-surface-2/85 backdrop-blur border border-slate-700 shadow-[0_12px_35px_rgba(0,0,0,0.45)] rounded-xl px-4 py-3 flex items-center gap-4">
+              <div className="shrink-0">
+                <div className="text-[9px] text-slate-400 font-medium uppercase tracking-wider">
+                  Fecha simulada
+                </div>
+                <div className="text-base font-bold text-info tabular-nums">
+                  {simulationClock.date}
+                </div>
+              </div>
+              <div className="h-9 w-px bg-slate-700 shrink-0" />
+              <div className="shrink-0">
+                <div className="text-[9px] text-slate-400 font-medium uppercase tracking-wider">
+                  Hora simulada
+                </div>
+                <div className="text-base font-bold text-info tabular-nums whitespace-nowrap">
+                  {simulationClock.time} UTC
+                </div>
+              </div>
+              <div className="h-9 w-px bg-slate-700 shrink-0" />
+              <div className="shrink-0">
+                <div className="text-[9px] text-slate-400 font-medium uppercase tracking-wider">
+                  Tiempo transcurrido
+                </div>
+                <div className="text-base font-bold text-info tabular-nums">
+                  {simulatedElapsedLabel}
+                </div>
+              </div>
+              <div className="h-9 w-px bg-slate-700 shrink-0" />
+              <div className="shrink-0">
+                <div className="text-[9px] text-slate-400 font-medium uppercase tracking-wider">
+                  Dia de simulacion
+                </div>
+                <div className="text-base font-bold text-info tabular-nums">
+                  {simulatedDay != null && simulatedDay > 0
+                    ? `Dia ${simulatedDay}`
+                    : ""}
+                </div>
               </div>
             </div>
           ),
         },
         {
           id: "collapse-actions-panel",
+          icon: <SlidersHorizontal className="w-4 h-4" />,
           content: (
             <div className="bg-surface-2/85 backdrop-blur border border-slate-700 shadow-[0_12px_35px_rgba(0,0,0,0.45)] rounded-xl px-4 py-3 flex items-center gap-4">
               <button
                 type="button"
                 onClick={() => setShowRouteLines((v) => !v)}
-                className={`rounded-lg px-3 py-1.5 text-sm font-medium whitespace-nowrap transition-colors ${
+                className={`shrink-0 rounded-lg px-2 py-1 text-xs font-medium whitespace-nowrap transition-colors ${
                   showRouteLines
                     ? "bg-blue-600/20 text-blue-400 border border-blue-500/40 hover:bg-blue-600/30"
                     : "bg-surface-2 text-slate-400 border border-slate-700 hover:text-slate-200"
@@ -602,7 +864,7 @@ export default function CollapseSimulatorPage() {
               >
                 Mostrar lineas
               </button>
-              <div className="h-10 w-px bg-slate-700 shrink-0" />
+              <div className="h-9 w-px bg-slate-700 shrink-0" />
               <button
                 type="button"
                 onClick={handleStop}
@@ -617,10 +879,10 @@ export default function CollapseSimulatorPage() {
       ]
     : [];
 
-  const header = hasActiveRun ? null : (
-    <div className="flex items-center gap-3 flex-wrap">
+  const mapOverlay = hasActiveRun ? null : (
+    <div className="bg-surface-2/85 m-4 backdrop-blur border border-slate-700 shadow-[0_12px_35px_rgba(0,0,0,0.45)] rounded-xl px-4 py-3 flex items-center justify-center gap-6">
       <div className="flex flex-col">
-        <label htmlFor="collapse-start" className="text-[10px] text-slate-400 uppercase tracking-wider font-medium">
+        <label htmlFor="collapse-start" className="text-[10px] text-slate-400 font-medium uppercase tracking-wider">
           Fecha de inicio
         </label>
         <input
@@ -628,47 +890,194 @@ export default function CollapseSimulatorPage() {
           type="date"
           value={startDate}
           onChange={(e) => setStartDate(e.target.value)}
-          disabled={simStatus === "running"}
-          className="bg-surface-2 border border-slate-700 rounded-lg px-3 py-1.5 text-sm text-slate-200 outline-none focus:border-blue-500 disabled:opacity-50"
+          className="bg-surface-2 border border-slate-700 rounded-lg px-3 py-1.5 text-sm text-slate-200 outline-none focus:border-blue-500"
         />
       </div>
-
-      <div className="flex flex-col">
-        <span className="text-[10px] text-slate-400 uppercase tracking-wider font-medium">Estado</span>
-        <span className={`px-3 py-1.5 border rounded-lg text-sm font-bold flex items-center gap-2 ${operationalState.bg} ${operationalState.color}`}>
-          {simStatus === "collapsed" && <AlertTriangle className="w-4 h-4" />}
-          {operationalState.label}
-        </span>
-      </div>
-
-      {simStatus !== "running" ? (
-        <button
-          type="button"
-          onClick={handleStart}
-          className="self-end bg-blue-600 hover:bg-blue-500 text-white px-4 py-2 rounded-lg flex items-center gap-2 font-medium text-sm transition-colors"
-        >
-          <Play className="w-4 h-4" /> Ejecutar
-        </button>
-      ) : null}
+      <div className="h-9 w-px bg-slate-700" />
+      <button
+        type="button"
+        onClick={handleStart}
+        className="self-end bg-blue-600 hover:bg-blue-500 text-white px-4 py-2 rounded-lg flex items-center gap-2 font-medium text-sm transition-colors"
+      >
+        <Play className="w-4 h-4" /> Ejecutar
+      </button>
     </div>
   );
 
+  const loadingModal = simStatus === "starting" ? (
+    <div className="fixed inset-0 z-[10001] flex items-center justify-center bg-black/55 backdrop-blur-[2px]">
+      <div className="bg-surface-2 border border-slate-700 shadow-[0_12px_35px_rgba(0,0,0,0.45)] rounded-xl px-8 py-6 flex flex-col items-center gap-4 max-w-sm mx-4">
+        <div className="w-10 h-10 border-4 border-blue-500/30 border-t-blue-500 rounded-full animate-spin" />
+        <div className="text-center">
+          <div className="text-lg font-semibold text-slate-100">
+            Preparando simulación…
+          </div>
+          <div className="text-sm text-slate-400 mt-1">
+            Planificando rutas iniciales, esto puede tomar unos segundos
+          </div>
+        </div>
+      </div>
+    </div>
+  ) : null;
+
+  const resumenColapsoModal = showColapsoModal ? (
+    <div className="fixed inset-0 z-[10001] overflow-y-auto bg-black/60 backdrop-blur-sm">
+      <div className="min-h-full flex items-start justify-center px-4 py-6 sm:py-10">
+        <div className="bg-surface-2 border border-danger/40 shadow-[0_12px_35px_rgba(0,0,0,0.55)] rounded-2xl max-w-2xl w-full max-h-[calc(100vh-3rem)] overflow-y-auto">
+        <div className="px-8 py-6 border-b border-danger/20 bg-danger/10 sticky top-0 z-10">
+          <div className="flex items-start justify-between gap-4">
+            <div className="flex items-start gap-4">
+              <div className="rounded-xl bg-danger/15 border border-danger/30 p-3">
+                <AlertTriangle className="w-7 h-7 text-danger flex-shrink-0" />
+              </div>
+              <div>
+                <p className="text-xs font-semibold uppercase tracking-[0.2em] text-danger/80 mb-2">
+                  Resumen final
+                </p>
+                <h2 className="text-2xl font-bold text-slate-50">
+                  {collapseSummary.title}
+                </h2>
+                <p className="text-sm text-slate-300 mt-2 max-w-xl leading-relaxed">
+                  {collapseSummary.description}
+                </p>
+              </div>
+            </div>
+            <button
+              type="button"
+              onClick={() => setShowColapsoModal(false)}
+              className="text-slate-400 hover:text-slate-200 transition-colors flex-shrink-0 mt-1"
+              title="Cerrar"
+            >
+              <X className="w-5 h-5" />
+            </button>
+          </div>
+        </div>
+
+        <div className="px-8 py-6">
+          <div className="grid grid-cols-1 sm:grid-cols-3 gap-3 mb-6">
+            <div className="rounded-xl border border-slate-700 bg-slate-900/50 px-4 py-3">
+              <div className="text-[11px] uppercase tracking-wider text-slate-400 mb-1">
+                Estado final
+              </div>
+              <div className="text-base font-semibold text-danger">
+                Colapso operativo
+              </div>
+            </div>
+            <div className="rounded-xl border border-slate-700 bg-slate-900/50 px-4 py-3">
+              <div className="text-[11px] uppercase tracking-wider text-slate-400 mb-1">
+                Tiempo ejecutado
+              </div>
+              <div className="text-base font-semibold text-slate-100">
+                {formatElapsedHMS(executionElapsedMs)}
+              </div>
+            </div>
+            <div className="rounded-xl border border-slate-700 bg-slate-900/50 px-4 py-3">
+              <div className="text-[11px] uppercase tracking-wider text-slate-400 mb-1">
+                Momento del colapso
+              </div>
+              <div className="text-base font-semibold text-slate-100">
+                {simulationClock.date}
+              </div>
+              <div className="text-sm text-info tabular-nums">
+                {simulationClock.time} UTC
+              </div>
+            </div>
+          </div>
+
+          {collapseStablePlanningSummary ? (
+            <div className="mb-6">
+              <h3 className="text-sm font-semibold text-slate-200 mb-2">
+                Ultima planificacion estable
+              </h3>
+              <p className="text-sm text-slate-400 mb-3">
+                Corresponde a la ultima planificacion que se completo correctamente antes de la que desencadeno el colapso.
+              </p>
+              <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-3">
+                {collapseStablePlanningSummary.map(({ label, value }) => (
+                  <div
+                    key={label}
+                    className="rounded-xl border border-slate-700 bg-slate-900/40 px-4 py-3"
+                  >
+                    <div className="text-sm text-slate-400 mb-1">{label}</div>
+                    <div className="text-base font-semibold text-slate-100 tabular-nums">
+                      {value}
+                    </div>
+                  </div>
+                ))}
+              </div>
+            </div>
+          ) : null}
+
+          <div className="mb-6">
+            <h3 className="text-sm font-semibold text-slate-200 mb-3">
+              Estadisticas generales al cierre
+            </h3>
+            <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-3">
+              {collapseStats.map(({ key, label, value }) => (
+                <div
+                  key={key}
+                  className="rounded-xl border border-slate-700 bg-slate-900/40 px-4 py-3"
+                >
+                  <div className="text-sm text-slate-400 mb-1">{label}</div>
+                  <div className="text-xl font-bold text-slate-50 tabular-nums">
+                    {value}
+                  </div>
+                </div>
+              ))}
+            </div>
+          </div>
+
+          {collapseEntityDetails.length > 0 ? (
+            <div className="mb-6">
+              <h3 className="text-sm font-semibold text-slate-200 mb-3">
+                Entidades que colapsaron
+              </h3>
+              <div className="grid grid-cols-1 gap-3">
+                {collapseEntityDetails.map(({ key, label, value }) => (
+                  <div
+                    key={key}
+                    className="rounded-xl border border-slate-700 bg-slate-900/40 px-4 py-3"
+                  >
+                    <div className="text-sm text-slate-400 mb-1">{label}</div>
+                    <div className="text-base font-semibold text-slate-100 break-words">
+                      {value}
+                    </div>
+                  </div>
+                ))}
+              </div>
+            </div>
+          ) : null}
+
+          <div className="rounded-xl border border-warning/20 bg-warning/10 px-4 py-3 text-sm text-slate-300 leading-relaxed">
+            La simulacion se detuvo al alcanzar una condicion critica. Puedes cerrar este resumen o usar el boton{" "}
+            <Square className="inline w-3 h-3 text-danger" /> para finalizar la ejecucion y comenzar una nueva corrida.
+          </div>
+        </div>
+      </div>
+      </div>
+    </div>
+  ) : null;
+
   return (
-    <MapDashboard
-      title="Simulación hasta Colapso"
-      header={header}
-      mapOverlays={mapOverlays}
-      showMapFlights={hasActiveRun}
-      showMapRouteLines={hasActiveRun && showRouteLines}
-      animateMapFlights={simStatus === "running"}
-      mapAutoload={false}
-      airports={mapAirports}
-      flights={visibleFlights}
-      simulatedNowMs={simulatedNowMs}
-      simulatedDayDurationMs={simulatedDayDurationMs}
-      metrics={liveMetrics}
-      draggable={hasActiveRun}
-      simStatus={simStatus}
-    />
+    <>
+      {loadingModal}
+      {resumenColapsoModal}
+      <MapDashboard
+        title={null}
+        mapOverlays={mapOverlays}
+        mapOverlay={mapOverlay}
+        showMapFlights={hasActiveRun}
+        showMapRouteLines={hasActiveRun && showRouteLines}
+        animateMapFlights={simStatus === "running"}
+        mapAutoload={false}
+        airports={mapAirports}
+        flights={visibleFlights}
+        simulatedNowMs={simulatedNowMs}
+        simulatedDayDurationMs={simulatedDayDurationMs}
+        metrics={liveMetrics}
+        draggable={hasActiveRun}
+        simStatus={simStatus}
+      />
+    </>
   );
 }

@@ -1,6 +1,6 @@
 import { useMemo, useState } from "react";
 import { useOutletContext } from "react-router-dom";
-import { Plus } from "lucide-react";
+import { Clock, Plus, SlidersHorizontal } from "lucide-react";
 import MapDashboard from "../components/simulator/MapDashboard";
 import PedidoModal from "../components/simulator/PedidoModal";
 import { useToast } from "../components/ui/Toast";
@@ -86,6 +86,7 @@ export default function SimulatorPage() {
     ? [
         {
           id: "clock-panel",
+          icon: <Clock className="w-4 h-4" />,
           content: (
             <div className="bg-surface-2/85 backdrop-blur border border-slate-700 shadow-[0_12px_35px_rgba(0,0,0,0.45)] rounded-xl px-4 py-3 flex items-center gap-5">
               <div>
@@ -102,6 +103,7 @@ export default function SimulatorPage() {
         },
         {
           id: "actions-panel",
+          icon: <SlidersHorizontal className="w-4 h-4" />,
           content: (
             <div className="bg-surface-2/85 backdrop-blur border border-slate-700 shadow-[0_12px_35px_rgba(0,0,0,0.45)] rounded-xl px-4 py-3 flex items-center gap-4">
               <button

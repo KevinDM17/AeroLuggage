@@ -1,6 +1,6 @@
 import { useEffect, useMemo, useRef, useState } from "react";
 import { useOutletContext } from "react-router-dom";
-import { Play, Square, RotateCw, AlertTriangle, X, CheckCircle2 } from "lucide-react";
+import { Clock, Play, SlidersHorizontal, Square, RotateCw, AlertTriangle, X, CheckCircle2 } from "lucide-react";
 import MapDashboard from "../components/simulator/MapDashboard";
 import { usePolling } from "../hooks/usePolling";
 import { useElapsedTimer } from "../hooks/useElapsedTimer";
@@ -1011,6 +1011,7 @@ export default function PeriodSimulatorPage() {
   const mapOverlays = hasActiveRun ? [
     {
       id: "period-start-panel",
+      icon: <Clock className="w-4 h-4" />,
       content: (
         <div className="bg-surface-2/85 backdrop-blur border border-slate-700 shadow-[0_12px_35px_rgba(0,0,0,0.45)] rounded-xl px-4 py-3 flex items-center gap-4">
           <div className="shrink-0">
@@ -1035,6 +1036,8 @@ export default function PeriodSimulatorPage() {
     },
     {
       id: "period-simulated-panel",
+      buttonSide: "left",
+      icon: <Clock className="w-4 h-4" />,
       content: (
         <div className="bg-surface-2/85 backdrop-blur border border-slate-700 shadow-[0_12px_35px_rgba(0,0,0,0.45)] rounded-xl px-4 py-3 flex items-center gap-4">
           <div className="shrink-0">
@@ -1079,6 +1082,7 @@ export default function PeriodSimulatorPage() {
     },
     {
       id: "period-actions-panel",
+      icon: <SlidersHorizontal className="w-4 h-4" />,
       content: (
         <div className="bg-surface-2/85 backdrop-blur border border-slate-700 shadow-[0_12px_35px_rgba(0,0,0,0.45)] rounded-xl px-4 py-3 flex items-center gap-4">
           <button

@@ -1,18 +1,22 @@
 import { Building, CheckCircle2, ChevronDown, ChevronLeft, ChevronRight, ChevronUp, Gauge, Luggage, Plane, Warehouse } from "lucide-react";
-import { cloneElement, isValidElement, useState, useEffect, useLayoutEffect, useRef } from "react";
+import { cloneElement, isValidElement, useState, useEffect, useLayoutEffect, useMemo, useRef } from "react";
 import { useLocation } from "react-router-dom";
 import AirportMap from "../map/AirportMap";
 
-const clampPanelToContainer = (nextPos, rect, containerWidth, containerHeight) => {
-  const margin = 16;
+const BUTTON_OFFSET = 36;
+
+const clampPanelToContainer = (nextPos, rect, containerWidth, containerHeight, buttonSide = null) => {
+  const contentMargin = 16;
   const width = rect?.width ?? 0;
   const height = rect?.height ?? 0;
-  const maxX = Math.max(margin, containerWidth - width - margin);
-  const maxY = Math.max(margin, containerHeight - height - margin);
+  const leftMargin = buttonSide === "left" ? contentMargin + BUTTON_OFFSET : contentMargin;
+  const rightMargin = buttonSide === "right" ? contentMargin + BUTTON_OFFSET : contentMargin;
+  const maxX = Math.max(leftMargin, containerWidth - width - rightMargin);
+  const maxY = Math.max(contentMargin, containerHeight - height - contentMargin);
 
   return {
-    x: Math.min(Math.max(nextPos.x, margin), maxX),
-    y: Math.min(Math.max(nextPos.y, margin), maxY),
+    x: Math.min(Math.max(nextPos.x, leftMargin), maxX),
+    y: Math.min(Math.max(nextPos.y, contentMargin), maxY),
   };
 };
 
@@ -56,6 +60,14 @@ export default function MapDashboard({
       ? [{ id: "default-overlay", content: mapOverlay }]
       : [];
 
+  const enrichedOverlays = useMemo(() => {
+    let leftIdx = 0, rightIdx = 0;
+    return overlayItems.map((item, index) => {
+      const side = item.buttonSide ?? (index === 0 ? "left" : "right");
+      return { ...item, _side: side, _sideGroupIndex: side === "left" ? leftIdx++ : rightIdx++ };
+    });
+  }, [overlayItems]);
+
   return (
     <div className="relative w-full h-full">
       {progress != null && simStatus !== "idle" && (
@@ -80,7 +92,7 @@ export default function MapDashboard({
           animateFlights={animateMapFlights}
         />
 
-        {overlayItems.map((overlayItem, index) => (
+        {enrichedOverlays.map((overlayItem, index) => (
           <DraggableOverlayPanel
             key={overlayItem.id ?? `overlay-${index}`}
             content={overlayItem.content ?? overlayItem}
@@ -88,6 +100,10 @@ export default function MapDashboard({
             index={index}
             total={overlayItems.length}
             mapStageRef={mapStageRef}
+            icon={overlayItem.icon ?? null}
+            manualButtonSide={overlayItem.buttonSide ?? null}
+            sideGroup={overlayItem._side}
+            sideGroupIndex={overlayItem._sideGroupIndex}
           />
         ))}
 
@@ -140,7 +156,7 @@ export default function MapDashboard({
   );
 }
 
-function DraggableOverlayPanel({ content, draggable, index, total, mapStageRef }) {
+function DraggableOverlayPanel({ content, draggable, index, total, mapStageRef, icon = null, manualButtonSide = null, sideGroup = "left", sideGroupIndex = 0 }) {
   const [panelPos, setPanelPos] = useState(null);
   const [isDragging, setIsDragging] = useState(false);
   const [isPanelCollapsed, setIsPanelCollapsed] = useState(false);
@@ -148,7 +164,7 @@ function DraggableOverlayPanel({ content, draggable, index, total, mapStageRef }
   const panelRef = useRef(null);
   const hasUserMovedPanelRef = useRef(false);
   const dragMovedRef = useRef(false);
-  const buttonSide = index === 0 ? "left" : "right";
+  const buttonSide = manualButtonSide ?? (index === 0 ? "left" : "right");
   const expandFromButtonRef = useRef(null);
 
   const contentWithJoinedEdge = isValidElement(content)
@@ -184,27 +200,23 @@ function DraggableOverlayPanel({ content, draggable, index, total, mapStageRef }
               y: triggerRect.top - containerRect.top,
             };
 
-        return clampPanelToContainer(nextPos, rect, containerRect.width, containerRect.height);
+        return clampPanelToContainer(nextPos, rect, containerRect.width, containerRect.height, buttonSide);
       }
 
       if (currentPos && hasUserMovedPanelRef.current) {
-        return clampPanelToContainer(currentPos, rect, containerRect.width, containerRect.height);
+        return clampPanelToContainer(currentPos, rect, containerRect.width, containerRect.height, buttonSide);
       }
 
       const gap = 24;
-      const centerOffset = (index - (total - 1) / 2) * (rect.width + gap);
+      const margin = 16;
+      const x = sideGroup === "left"
+        ? margin + BUTTON_OFFSET
+        : containerRect.width - rect.width - margin - BUTTON_OFFSET;
+      const y = containerRect.height - rect.height - sideGroupIndex * (rect.height + gap) - margin;
 
-      return clampPanelToContainer(
-        {
-          x: (containerRect.width - rect.width) / 2 + centerOffset,
-          y: containerRect.height - rect.height - 24,
-        },
-        rect,
-        containerRect.width,
-        containerRect.height,
-      );
+      return clampPanelToContainer({ x, y }, rect, containerRect.width, containerRect.height, buttonSide);
     });
-  }, [draggable, index, isPanelCollapsed, mapStageRef, total, content]);
+  }, [draggable, isPanelCollapsed, mapStageRef, sideGroup, sideGroupIndex, content]);
 
   useEffect(() => {
     if (!draggable || isPanelCollapsed) return;
@@ -215,10 +227,10 @@ function DraggableOverlayPanel({ content, draggable, index, total, mapStageRef }
       const containerRect = mapStageRef.current.getBoundingClientRect();
       setPanelPos((currentPos) => {
         const basePos = currentPos ?? {
-          x: (containerRect.width - rect.width) / 2,
-          y: containerRect.height - rect.height - 24,
+          x: sideGroup === "left" ? 16 + BUTTON_OFFSET : containerRect.width - rect.width - 16 - BUTTON_OFFSET,
+          y: containerRect.height - rect.height - sideGroupIndex * (rect.height + 24) - 24,
         };
-        return clampPanelToContainer(basePos, rect, containerRect.width, containerRect.height);
+        return clampPanelToContainer(basePos, rect, containerRect.width, containerRect.height, buttonSide);
       });
     };
 
@@ -260,6 +272,7 @@ function DraggableOverlayPanel({ content, draggable, index, total, mapStageRef }
           rect,
           containerRect.width,
           containerRect.height,
+          buttonSide,
         ),
       );
     };
@@ -322,14 +335,16 @@ function DraggableOverlayPanel({ content, draggable, index, total, mapStageRef }
         <button
           type="button"
           onClick={handleShow}
-          className={`min-h-16 bg-surface-2/95 border border-slate-700 px-2.5 text-slate-400 hover:text-white transition-colors ${
-            buttonSide === "left" ? "rounded-l-xl rounded-r-none" : "rounded-l-none rounded-r-xl"
+          className={`flex items-center gap-1.5 min-h-16 bg-surface-2/95 border border-slate-700 px-2.5 text-slate-400 hover:text-white transition-colors ${
+            icon ? "rounded-xl" : buttonSide === "left" ? "rounded-xl" : "rounded-l-none rounded-r-xl"
           }`}
           title="Mostrar panel"
         >
+          {buttonSide === "right" && icon}
           {buttonSide === "left"
-            ? <ChevronRight className="w-4 h-4" />
-            : <ChevronLeft className="w-4 h-4" />}
+            ? <ChevronRight className="w-4 h-4 shrink-0" />
+            : <ChevronLeft className="w-4 h-4 shrink-0" />}
+          {buttonSide === "left" && icon}
         </button>
       </div>
     );
