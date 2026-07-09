@@ -16,6 +16,7 @@ public class SimulacionParams {
     private long retencionVentanas = 2L;
     private long retencionPedidosMinutos = 120L;
     private long retencionVuelosMinutos = 120L;
+    private EscenarioColapso colapso = new EscenarioColapso();
 
     public long getDuracionDiaSimuladoMs() {
         return duracionDiaSimuladoMs;
@@ -73,6 +74,14 @@ public class SimulacionParams {
         this.retencionVuelosMinutos = retencionVuelosMinutos;
     }
 
+    public EscenarioColapso getColapso() {
+        return colapso;
+    }
+
+    public void setColapso(final EscenarioColapso colapso) {
+        this.colapso = colapso;
+    }
+
     public static class Ventana {
         private int tamanioMinutos = 120;
         private int espaciadoMinutos = 120;
@@ -91,6 +100,36 @@ public class SimulacionParams {
 
         public void setEspaciadoMinutos(final int espaciadoMinutos) {
             this.espaciadoMinutos = espaciadoMinutos;
+        }
+    }
+
+    public static class EscenarioColapso {
+        private long duracionDiaSimuladoMs = 576000L;
+        private Ventana ventana = new Ventana();
+        private long tickIntervalMs = 1000L;
+
+        public long getDuracionDiaSimuladoMs() {
+            return duracionDiaSimuladoMs;
+        }
+
+        public void setDuracionDiaSimuladoMs(final long duracionDiaSimuladoMs) {
+            this.duracionDiaSimuladoMs = duracionDiaSimuladoMs;
+        }
+
+        public Ventana getVentana() {
+            return ventana;
+        }
+
+        public void setVentana(final Ventana ventana) {
+            this.ventana = ventana;
+        }
+
+        public long getTickIntervalMs() {
+            return tickIntervalMs;
+        }
+
+        public void setTickIntervalMs(final long tickIntervalMs) {
+            this.tickIntervalMs = tickIntervalMs;
         }
     }
 }

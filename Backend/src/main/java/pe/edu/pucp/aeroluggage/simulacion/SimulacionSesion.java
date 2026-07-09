@@ -52,6 +52,7 @@ public class SimulacionSesion {
     private final LocalDate fechaInicio;
     private final int totalDias;
     private final long duracionDiaSimuladoMs;
+    private final long tickIntervalMs;
     private final int windowSizeMinutes;
     private final int windowSpacingMinutes;
     private final LocalDateTime fechaInicioUtc;
@@ -818,10 +819,11 @@ public class SimulacionSesion {
             final LocalTime horaInicio,
             final int totalDias,
             final long duracionDiaSimuladoMs,
+            final long tickIntervalMs,
             final int windowSizeMinutes,
             final int windowSpacingMinutes) {
         this(sessionId, fechaInicio, horaInicio, totalDias,
-                duracionDiaSimuladoMs, windowSizeMinutes, windowSpacingMinutes, 0);
+                duracionDiaSimuladoMs, tickIntervalMs, windowSizeMinutes, windowSpacingMinutes, 0);
     }
 
     public SimulacionSesion(
@@ -830,6 +832,7 @@ public class SimulacionSesion {
             final LocalTime horaInicio,
             final int totalDias,
             final long duracionDiaSimuladoMs,
+            final long tickIntervalMs,
             final int windowSizeMinutes,
             final int windowSpacingMinutes,
             final Integer husoGMT) {
@@ -837,11 +840,12 @@ public class SimulacionSesion {
         this.fechaInicio = fechaInicio;
         this.totalDias = totalDias;
         this.duracionDiaSimuladoMs = Math.max(1L, duracionDiaSimuladoMs);
+        this.tickIntervalMs = Math.max(100L, tickIntervalMs);
         this.windowSizeMinutes = Math.max(1, windowSizeMinutes);
         this.windowSpacingMinutes = Math.max(1, windowSpacingMinutes);
         final int offset = husoGMT != null ? husoGMT : 0;
         this.fechaInicioUtc = LocalDateTime.of(fechaInicio, horaInicio).minusHours(offset);
-        this.fechaFinUtc = fechaInicioUtc.plusDays(Math.max(0L, totalDias));
+        this.fechaFinUtc = totalDias > 0 ? fechaInicioUtc.plusDays(totalDias) : null;
         this.startedAtRealMs = System.currentTimeMillis();
         this.currentSimTimeUtc = new AtomicReference<>(fechaInicioUtc);
         this.currentWindow = new AtomicReference<>(buildWindowFor(fechaInicioUtc, "ACTIVE"));
@@ -1116,7 +1120,8 @@ public class SimulacionSesion {
         final long elapsedRealMs = Math.max(0L, System.currentTimeMillis() - startedAtRealMs);
         final long simulatedElapsedMs = Math.round((double) elapsedRealMs * SIMULATED_DAY_MS / duracionDiaSimuladoMs);
         final LocalDateTime nextTime = fechaInicioUtc.plus(Duration.ofMillis(simulatedElapsedMs));
-        final LocalDateTime boundedTime = nextTime.isAfter(fechaFinUtc) ? fechaFinUtc : nextTime;
+        final LocalDateTime boundedTime =
+                fechaFinUtc != null && nextTime.isAfter(fechaFinUtc) ? fechaFinUtc : nextTime;
         currentSimTimeUtc.set(boundedTime);
     }
 
@@ -1140,14 +1145,14 @@ public class SimulacionSesion {
             return buildWindowFor(currentSimTimeUtc.get(), "PENDING");
         }
         final LocalDateTime nextStart = active.getStartUtc().plusMinutes(windowSpacingMinutes);
-        if (!nextStart.isBefore(fechaFinUtc)) {
+        if (fechaFinUtc != null && !nextStart.isBefore(fechaFinUtc)) {
             return null;
         }
         return buildWindowFor(nextStart, "PENDING");
     }
 
     public boolean haTerminado() {
-        return !currentSimTimeUtc.get().isBefore(fechaFinUtc);
+        return fechaFinUtc != null && !currentSimTimeUtc.get().isBefore(fechaFinUtc);
     }
 
     public boolean marcarCsvEscrito() {
@@ -1613,7 +1618,7 @@ public class SimulacionSesion {
         final long bucket = safeMinutesFromStart / windowSpacingMinutes;
         final LocalDateTime windowStart = fechaInicioUtc.plusMinutes(bucket * windowSpacingMinutes);
         LocalDateTime windowEnd = windowStart.plusMinutes(windowSizeMinutes);
-        if (windowEnd.isAfter(fechaFinUtc)) {
+        if (fechaFinUtc != null && windowEnd.isAfter(fechaFinUtc)) {
             windowEnd = fechaFinUtc;
         }
         final String windowId = "W" + String.format("%04d", bucket + 1);

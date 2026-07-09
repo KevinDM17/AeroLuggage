@@ -13,6 +13,12 @@ simulacion:
   retencion-ventanas: 2
   retencion-pedidos-minutos: 120
   retencion-vuelos-minutos: 120
+  colapso:
+    duracion-dia-simulado-ms: 57600
+    ventana:
+      tamanio-minutos: 360
+      espaciado-minutos: 360
+    tick-interval-ms: 1000
 
 operaciones-dia-a-dia:
   tick-interval-ms: 5000

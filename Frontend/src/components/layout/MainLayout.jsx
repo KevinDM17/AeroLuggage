@@ -42,10 +42,7 @@ export default function MainLayout() {
 
   const isOperations =
     location.pathname === "/operaciones" ||
-    location.pathname === "/airports" ||
-    location.pathname.startsWith("/airports/") ||
-    location.pathname.startsWith("/flights") ||
-    location.pathname === "/orders";
+    location.pathname.startsWith("/gestion-aeropuerto");
 
   const showRightPanel = location.pathname === "/operaciones" || location.pathname.startsWith("/simulator");
 

@@ -1,36 +1,52 @@
 import { useState, useEffect, useCallback } from "react";
-import { useOutletContext } from "react-router-dom";
 import { Plus, Pencil } from "lucide-react";
 import FlightPlanFormModal from "../components/simulator/FlightPlanFormModal";
 import { LoadingState, EmptyState, ErrorState } from "../components/ui/States";
 import { useToast } from "../components/ui/Toast";
-import { normalizeContinente } from "../api/airports";
+import { normalizeContinente, listAirports } from "../api/airports";
 import {
   listFlightPlans,
   createFlightPlan,
   updateFlightPlan,
-  deleteFlightPlan,
 } from "../api/flights";
 
 const formatGMT = (h) => (h >= 0 ? `GMT+${h}` : `GMT${h}`);
 
 export default function FlightPlansPage() {
-  const { simulationPanelData } = useOutletContext();
-  const airports = simulationPanelData?.airports ?? [];
   const toast = useToast();
+
+  const [airports, setAirports] = useState([]);
+  const [airportsLoading, setAirportsLoading] = useState(true);
 
   const [flights, setFlights] = useState(null);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState(null);
-  const [selectedAirport, setSelectedAirport] = useState(
-    () => airports[0]?.iata ?? airports[0]?.idAeropuerto ?? ""
-  );
+  const [selectedAirport, setSelectedAirport] = useState("");
 
   const [formOpen, setFormOpen] = useState(false);
   const [editingFlight, setEditingFlight] = useState(null);
   const [formLoading, setFormLoading] = useState(false);
 
+  const loadAirports = useCallback(async () => {
+    setAirportsLoading(true);
+    try {
+      const data = await listAirports();
+      const arr = Array.isArray(data) ? data : [];
+      setAirports(arr);
+      if (!selectedAirport && arr.length > 0) {
+        setSelectedAirport(arr[0].iata ?? arr[0].idAeropuerto ?? "");
+      }
+    } catch {
+      setAirports([]);
+    } finally {
+      setAirportsLoading(false);
+    }
+  }, []);
+
+  useEffect(() => { loadAirports(); }, [loadAirports]);
+
   const loadFlights = useCallback(async () => {
+    if (!selectedAirport) return;
     setLoading(true);
     try {
       const data = await listFlightPlans(selectedAirport);
@@ -77,17 +93,6 @@ export default function FlightPlansPage() {
     }
   };
 
-  const handleDelete = async (flight) => {
-    if (!window.confirm(`Eliminar plan de vuelo ${flight.id} - ${flight.origin} → ${flight.dest}?`)) return;
-    try {
-      await deleteFlightPlan(flight.id);
-      await loadFlights();
-      toast.push({ type: "success", title: "Plan de vuelo eliminado", message: flight.id });
-    } catch (err) {
-      toast.push({ type: "error", title: "Error al eliminar", message: err.message });
-    }
-  };
-
   return (
     <div className="flex-1 bg-surface-0 flex flex-col min-h-0 overflow-y-auto w-full h-full p-4 sm:p-8 text-slate-200">
       <div className="flex flex-col sm:flex-row justify-between sm:items-start gap-4 mb-8 pl-12 sm:pl-14">
@@ -106,17 +111,21 @@ export default function FlightPlansPage() {
 
       <div className="mb-6 pl-12 sm:pl-14">
         <span className="text-slate-400 text-base sm:text-lg mr-2">Aeropuerto de origen: </span>
-        <select
-          value={selectedAirport}
-          onChange={(e) => setSelectedAirport(e.target.value)}
-          className="bg-surface-2 border border-slate-700 rounded-lg px-3 py-2 text-sm text-slate-200 outline-none focus:border-blue-500"
-        >
-          {airports.map((a) => (
-            <option key={a.iata ?? a.idAeropuerto} value={a.iata ?? a.idAeropuerto}>
-              {a.iata ?? a.idAeropuerto} — {a.city ?? a?.ciudad?.nombre ?? ""}
-            </option>
-          ))}
-        </select>
+        {airportsLoading ? (
+          <span className="text-slate-500 text-sm">Cargando...</span>
+        ) : (
+          <select
+            value={selectedAirport}
+            onChange={(e) => setSelectedAirport(e.target.value)}
+            className="bg-surface-2 border border-slate-700 rounded-lg px-3 py-2 text-sm text-slate-200 outline-none focus:border-blue-500"
+          >
+            {airports.map((a) => (
+              <option key={a.iata ?? a.idAeropuerto} value={a.iata ?? a.idAeropuerto}>
+                {a.iata ?? a.idAeropuerto} — {a.city ?? a?.ciudad?.nombre ?? ""}
+              </option>
+            ))}
+          </select>
+        )}
       </div>
 
       <div className="bg-surface-1 border border-slate-800 rounded-xl overflow-x-auto">

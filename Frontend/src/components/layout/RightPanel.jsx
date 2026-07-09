@@ -1178,8 +1178,10 @@ export default function RightPanel({
   const location = useLocation();
   const isOperacionesDiaADia = location.pathname === "/operaciones";
   const isPeriodo = location.pathname === "/simulator/period";
+  const isColapso = location.pathname === "/simulator/collapse";
+  const isSimulacionPeriodo = isPeriodo || isColapso;
   const isSimulator = location.pathname === "/operaciones" || location.pathname.startsWith("/simulator");
-  const statusTopic = !USE_MOCK && isPeriodo && sessionId ? `/topic/simulacion/${sessionId}/estado` : null;
+  const statusTopic = !USE_MOCK && isSimulacionPeriodo && sessionId ? `/topic/simulacion/${sessionId}/estado` : null;
   const { data: periodStatusMessage } = useStompSubscribe(statusTopic, { enabled: Boolean(statusTopic) });
   const simulationLoaded = !isSimulator || simulationPanelData?.loaded === true;
   const activeTabLabel = PANEL_TABS.find((tab) => tab.id === activeTab)?.label ?? "";
@@ -1263,7 +1265,7 @@ export default function RightPanel({
   }, []);
 
   const loadFlightPlansForAirport = useCallback((airport) => {
-    if (!airport || (!isPeriodo && !isOperacionesDiaADia)) return () => {};
+    if (!airport || (!isSimulacionPeriodo && !isOperacionesDiaADia)) return () => {};
     let cancelled = false;
 
     setAirportFlightPlansStatus("loading");
@@ -1282,12 +1284,12 @@ export default function RightPanel({
     return () => {
       cancelled = true;
     };
-  }, [isOperacionesDiaADia, isPeriodo]);
+  }, [isOperacionesDiaADia, isSimulacionPeriodo]);
 
   useEffect(() => {
-    if (!flightPlansModalAirport || (!isPeriodo && !isOperacionesDiaADia)) return;
+    if (!flightPlansModalAirport || (!isSimulacionPeriodo && !isOperacionesDiaADia)) return;
     return loadFlightPlansForAirport(flightPlansModalAirport);
-  }, [flightPlansModalAirport, isOperacionesDiaADia, isPeriodo, loadFlightPlansForAirport]);
+  }, [flightPlansModalAirport, isOperacionesDiaADia, isSimulacionPeriodo, loadFlightPlansForAirport]);
 
   useEffect(() => {
     if (!pendingFlightPlanCancellation || !periodStatusMessage?.estado) return;
@@ -1793,11 +1795,11 @@ export default function RightPanel({
         setEnviosData({ planificados: [], enVuelos: [], entregados: [] });
         setEnviosStatus("error");
       });
-  }, [sessionId, isOperacionesDiaADia, isPeriodo]);
+  }, [sessionId, isOperacionesDiaADia, isSimulacionPeriodo]);
 
   useEffect(() => {
-    if ((isPeriodo || isOperacionesDiaADia) && activeTab === "orders") fetchEnvios();
-  }, [isPeriodo, isOperacionesDiaADia, activeTab, fetchEnvios]);
+    if ((isSimulacionPeriodo || isOperacionesDiaADia) && activeTab === "orders") fetchEnvios();
+  }, [isSimulacionPeriodo, isOperacionesDiaADia, activeTab, fetchEnvios]);
 
   const enviosAirportOptions = useMemo(() => {
     const origins = new Set();
@@ -2249,7 +2251,7 @@ export default function RightPanel({
             isSelected={selected?.kind === "airport" && selected.id === (a.iata ?? a.idAeropuerto)}
             forceExpanded={selected?.kind === "airport" && selected.id === (a.iata ?? a.idAeropuerto)}
             onShowFlightPlans={openFlightPlansModal}
-            showFlightPlansAction={isPeriodo || isOperacionesDiaADia}
+            showFlightPlansAction={isSimulacionPeriodo || isOperacionesDiaADia}
           />
         )}
       />

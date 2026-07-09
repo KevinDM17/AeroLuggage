@@ -1,6 +1,6 @@
 import { useState, useEffect, useMemo } from "react";
-import { useParams, useOutletContext } from "react-router-dom";
-import { Plus, FileUp, ArrowLeft, Plane } from "lucide-react";
+import { useParams, useOutletContext, useLocation } from "react-router-dom";
+import { Plus, FileUp } from "lucide-react";
 import PedidoModal from "../components/simulator/PedidoModal";
 import BulkPedidoModal from "../components/simulator/BulkPedidoModal";
 import FlightPlanFormModal from "../components/simulator/FlightPlanFormModal";
@@ -30,8 +30,11 @@ const extractTime = (iso) => {
   return parts[1] ? parts[1].slice(0, 5) : "—";
 };
 
+const STORAGE_KEY = "managedAirport";
+
 export default function AirportDetailPage() {
   const { iata } = useParams();
+  const location = useLocation();
   const toast = useToast();
   const { simulationPanelData, setSimulationPanelData } = useOutletContext();
 
@@ -41,6 +44,14 @@ export default function AirportDetailPage() {
   const orders = simulationPanelData?.orders;
   const routes = simulationPanelData?.routes;
   const loaded = simulationPanelData?.loaded;
+
+  const isManagement = location.pathname.startsWith("/gestion-aeropuerto");
+
+  useEffect(() => {
+    if (isManagement && iata) {
+      localStorage.setItem(STORAGE_KEY, iata);
+    }
+  }, [isManagement, iata]);
 
   const [pedidoOpen, setPedidoOpen] = useState(false);
   const [pedidoLoading, setPedidoLoading] = useState(false);
@@ -221,8 +232,6 @@ export default function AirportDetailPage() {
             ticksAusente: 0,
           });
         }
-        // Re-incluir la lista de vuelos (ya trae CANCELADO) para que el vuelo
-        // cancelado aparezca al instante en la pestaña Vuelos.
         const flights = new Map(prev.flights ?? new Map());
         for (const raw of (vuelosData ?? [])) {
           const f = adaptFlightInstance(raw);
@@ -259,12 +268,6 @@ export default function AirportDetailPage() {
 
   return (
     <div className="app-scrollbar flex-1 bg-surface-0 flex flex-col min-h-0 overflow-y-auto w-full min-h-full p-4 pb-8 sm:p-8 sm:pb-10 text-slate-200">
-      <div className="mb-6 pl-12 sm:pl-14">
-        <a href="/airports" className="inline-flex items-center gap-2 text-slate-400 hover:text-white text-sm transition-colors">
-          <ArrowLeft className="w-4 h-4" /> Volver a Aeropuertos
-        </a>
-      </div>
-
       <div className="flex flex-col sm:flex-row justify-between sm:items-start gap-4 mb-8 pl-12 sm:pl-14">
         <div>
           <h1 className="text-2xl sm:text-4xl font-extrabold text-white mb-2">
@@ -416,13 +419,15 @@ export default function AirportDetailPage() {
                 Como destino
               </button>
             </div>
-            <button
-              type="button"
-              onClick={() => setPlanFormOpen(true)}
-              className="flex items-center gap-2 bg-blue-600 hover:bg-blue-500 text-white px-3 py-1.5 rounded-lg font-medium text-sm transition-colors"
-            >
-              <Plus className="w-4 h-4" /> Agregar Plan de Vuelo
-            </button>
+            {!isManagement && (
+              <button
+                type="button"
+                onClick={() => setPlanFormOpen(true)}
+                className="flex items-center gap-2 bg-blue-600 hover:bg-blue-500 text-white px-3 py-1.5 rounded-lg font-medium text-sm transition-colors"
+              >
+                <Plus className="w-4 h-4" /> Agregar Plan de Vuelo
+              </button>
+            )}
           </div>
         </div>
 
@@ -442,7 +447,7 @@ export default function AirportDetailPage() {
                   <th className="py-4 px-6 font-medium">Salida</th>
                   <th className="py-4 px-6 font-medium">Llegada</th>
                   <th className="py-4 px-6 font-medium">Capacidad</th>
-                  <th className="py-4 px-6 font-medium text-right">Acciones</th>
+                  {!isManagement && <th className="py-4 px-6 font-medium text-right">Acciones</th>}
                 </tr>
               </thead>
               <tbody>
@@ -463,16 +468,18 @@ export default function AirportDetailPage() {
                       {fl.arrTime} <span className="text-slate-500">({formatGMT(fl.gmtDest)})</span>
                     </td>
                     <td className="py-4 px-6 text-sm text-slate-300">{fl.capacity}</td>
-                    <td className="py-4 px-6 text-right">
-                      <button
-                        type="button"
-                        onClick={() => handleCancelPlan(fl)}
-                        title="Cancelar plan de vuelo"
-                        className="p-2 rounded-lg hover:bg-red-600/20 hover:text-red-400 transition-colors text-slate-400 text-xs font-medium"
-                      >
-                        Cancelar
-                      </button>
-                    </td>
+                    {!isManagement && (
+                      <td className="py-4 px-6 text-right">
+                        <button
+                          type="button"
+                          onClick={() => handleCancelPlan(fl)}
+                          title="Cancelar plan de vuelo"
+                          className="p-2 rounded-lg hover:bg-red-600/20 hover:text-red-400 transition-colors text-slate-400 text-xs font-medium"
+                        >
+                          Cancelar
+                        </button>
+                      </td>
+                    )}
                   </tr>
                 ))}
               </tbody>

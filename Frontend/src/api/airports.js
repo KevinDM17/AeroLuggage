@@ -1,4 +1,4 @@
-import { apiGet, apiPost, USE_MOCK } from "./client";
+import { apiGet, apiPost, apiPut, USE_MOCK } from "./client";
 import { mockListAirports, mockCreateAirport } from "./mock";
 
 /**
@@ -51,5 +51,14 @@ export const listAirports = async () => {
   return Array.isArray(data) ? data.map(adaptAirport) : [];
 };
 
+export const getAirport = async (iata) => {
+  if (USE_MOCK) return mockListAirports().find((a) => a.iata === iata) ?? null;
+  const data = await apiGet(`/aeropuertos/${encodeURIComponent(iata)}`);
+  return adaptAirport(data);
+};
+
 export const createAirport = (payload) =>
   USE_MOCK ? mockCreateAirport(payload) : apiPost("/aeropuertos", adaptAirportToBack(payload));
+
+export const updateAirport = (iata, payload) =>
+  USE_MOCK ? mockCreateAirport(payload) : apiPut(`/aeropuertos/${encodeURIComponent(iata)}`, adaptAirportToBack(payload));

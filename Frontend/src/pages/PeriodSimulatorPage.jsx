@@ -1,6 +1,6 @@
 import { useEffect, useMemo, useRef, useState } from "react";
 import { useOutletContext } from "react-router-dom";
-import { Play, Square, RotateCw, AlertTriangle, X, CheckCircle2 } from "lucide-react";
+import { Clock, Play, SlidersHorizontal, Square, RotateCw, AlertTriangle, X, CheckCircle2 } from "lucide-react";
 import MapDashboard from "../components/simulator/MapDashboard";
 import { usePolling } from "../hooks/usePolling";
 import { useElapsedTimer } from "../hooks/useElapsedTimer";
@@ -1008,86 +1008,109 @@ export default function PeriodSimulatorPage() {
 
   const displayedDay = getDisplayedDay(progress, hasActiveRun);
 
-  const mapOverlay = hasActiveRun ? (
-    <div className="bg-surface-2/85 mb-4 backdrop-blur border border-slate-700 shadow-[0_12px_35px_rgba(0,0,0,0.45)] rounded-xl px-4 py-3 flex flex-wrap items-center justify-center gap-x-4 gap-y-1 max-w-[calc(100vw-2rem)]">
-      <div className="shrink-0">
-        <div className="text-[9px] text-slate-400 font-medium uppercase tracking-wider">
-          Inicio sim.
+  const mapOverlays = hasActiveRun ? [
+    {
+      id: "period-start-panel",
+      icon: <Clock className="w-4 h-4" />,
+      content: (
+        <div className="bg-surface-2/85 backdrop-blur border border-slate-700 shadow-[0_12px_35px_rgba(0,0,0,0.45)] rounded-xl px-4 py-3 flex items-center gap-4">
+          <div className="shrink-0">
+            <div className="text-[9px] text-slate-400 font-medium uppercase tracking-wider">
+              Inicio sim.
+            </div>
+            <div className="text-sm font-bold text-slate-100 tabular-nums whitespace-nowrap">
+              {formattedStartDate}  {startTime || "--:--"} UTC
+            </div>
+          </div>
+          <div className="h-9 w-px bg-slate-700 shrink-0" />
+          <div className="shrink-0">
+            <div className="text-[9px] text-slate-400 font-medium uppercase tracking-wider">
+              Cronometro
+            </div>
+            <div className="text-base font-bold text-slate-100 tabular-nums">
+              {formatElapsedHMS(executionElapsedMs)}
+            </div>
+          </div>
         </div>
-        <div className="text-sm font-bold text-slate-100 tabular-nums whitespace-nowrap">
-          {formattedStartDate}  {startTime || "--:--"} UTC
+      ),
+    },
+    {
+      id: "period-simulated-panel",
+      buttonSide: "left",
+      icon: <Clock className="w-4 h-4" />,
+      content: (
+        <div className="bg-surface-2/85 backdrop-blur border border-slate-700 shadow-[0_12px_35px_rgba(0,0,0,0.45)] rounded-xl px-4 py-3 flex items-center gap-4">
+          <div className="shrink-0">
+            <div className="text-[9px] text-slate-400 font-medium uppercase tracking-wider">
+              Fecha simulada
+            </div>
+            <div className="text-base font-bold text-info tabular-nums">
+              {simulationClock.date}
+            </div>
+          </div>
+          <div className="h-9 w-px bg-slate-700 shrink-0" />
+          <div className="shrink-0">
+            <div className="text-[9px] text-slate-400 font-medium uppercase tracking-wider">
+              Hora simulada
+            </div>
+            <div className="text-base font-bold text-info tabular-nums whitespace-nowrap">
+              {simulationClock.time} UTC
+            </div>
+          </div>
+          <div className="h-9 w-px bg-slate-700 shrink-0" />
+          <div className="shrink-0">
+            <div className="text-[9px] text-slate-400 font-medium uppercase tracking-wider">
+              Tiempo transcurrido
+            </div>
+            <div className="text-base font-bold text-info tabular-nums">
+              {simulatedElapsedLabel}
+            </div>
+          </div>
+          <div className="h-9 w-px bg-slate-700 shrink-0" />
+          <div className="shrink-0">
+            <div className="text-[9px] text-slate-400 font-medium uppercase tracking-wider">
+              Dia de simulacion
+            </div>
+            <div className="text-base font-bold text-info tabular-nums">
+              {displayedDay
+                ? `Dia ${displayedDay}/${PERIOD_DAYS}`
+                : ""}
+            </div>
+          </div>
         </div>
-      </div>
-      <div className="h-9 w-px bg-slate-700 shrink-0" />
-      <div className="shrink-0">
-        <div className="text-[9px] text-slate-400 font-medium uppercase tracking-wider">
-          Cronometro
+      ),
+    },
+    {
+      id: "period-actions-panel",
+      icon: <SlidersHorizontal className="w-4 h-4" />,
+      content: (
+        <div className="bg-surface-2/85 backdrop-blur border border-slate-700 shadow-[0_12px_35px_rgba(0,0,0,0.45)] rounded-xl px-4 py-3 flex items-center gap-4">
+          <button
+            type="button"
+            onClick={() => setShowRouteLines((v) => !v)}
+            className={`shrink-0 rounded-lg px-2 py-1 text-xs font-medium whitespace-nowrap transition-colors ${
+              showRouteLines
+                ? "bg-blue-600/20 text-blue-400 border border-blue-500/40 hover:bg-blue-600/30"
+                : "bg-surface-2 text-slate-400 border border-slate-700 hover:text-slate-200"
+            }`}
+          >
+            Mostrar lineas
+          </button>
+          <div className="h-9 w-px bg-slate-700 shrink-0" />
+          <button
+            type="button"
+            onClick={handleStop}
+            className="shrink-0 bg-danger/10 hover:bg-danger/20 text-danger border border-danger/40 rounded-lg px-2 py-1 transition-colors"
+            title="Detener"
+          >
+            <Square className="w-5 h-5" />
+          </button>
         </div>
-        <div className="text-base font-bold text-slate-100 tabular-nums">
-          {formatElapsedHMS(executionElapsedMs)}
-        </div>
-      </div>
-      <div className="h-9 w-px bg-slate-700 shrink-0" />
-      <div className="shrink-0">
-        <div className="text-[9px] text-slate-400 font-medium uppercase tracking-wider">
-          Fecha simulada
-        </div>
-        <div className="text-base font-bold text-info tabular-nums">
-          {simulationClock.date}
-        </div>
-      </div>
-      <div className="h-9 w-px bg-slate-700 shrink-0" />
-      <div className="shrink-0">
-        <div className="text-[9px] text-slate-400 font-medium uppercase tracking-wider">
-          Hora simulada
-        </div>
-        <div className="text-base font-bold text-info tabular-nums whitespace-nowrap">
-          {simulationClock.time} UTC
-        </div>
-      </div>
-      <div className="h-9 w-px bg-slate-700 shrink-0" />
-      <div className="shrink-0">
-        <div className="text-[9px] text-slate-400 font-medium uppercase tracking-wider">
-          Tiempo simulado
-        </div>
-        <div className="text-base font-bold text-info tabular-nums">
-          {simulatedElapsedLabel}
-        </div>
-      </div>
-      <div className="h-9 w-px bg-slate-700 shrink-0" />
-      <div className="shrink-0">
-        <div className="text-[9px] text-slate-400 font-medium uppercase tracking-wider">
-          Dia de simulacion
-        </div>
-        <div className="text-base font-bold text-info tabular-nums">
-          {displayedDay
-            ? `Dia ${displayedDay}/${PERIOD_DAYS}`
-            : ""}
-        </div>
-      </div>
-      <div className="h-9 w-px bg-slate-700 shrink-0" />
-      <button
-        type="button"
-        onClick={() => setShowRouteLines((v) => !v)}
-        className={`shrink-0 rounded-lg px-2 py-1 text-xs font-medium whitespace-nowrap transition-colors ${
-          showRouteLines
-            ? "bg-blue-600/20 text-blue-400 border border-blue-500/40 hover:bg-blue-600/30"
-            : "bg-surface-2 text-slate-400 border border-slate-700 hover:text-slate-200"
-        }`}
-      >
-        Mostrar lineas
-      </button>
-      <div className="h-9 w-px bg-slate-700 shrink-0" />
-      <button
-        type="button"
-        onClick={handleStop}
-        className="shrink-0 bg-danger/10 hover:bg-danger/20 text-danger border border-danger/40 rounded-lg px-2 py-1 transition-colors"
-        title="Detener"
-      >
-        <Square className="w-5 h-5" />
-      </button>
-    </div>
-  ) : (
+      ),
+    },
+  ] : [];
+
+  const mapOverlay = hasActiveRun ? null : (
     <div className="bg-surface-2/85 m-4 backdrop-blur border border-slate-700 shadow-[0_12px_35px_rgba(0,0,0,0.45)] rounded-xl px-4 py-3 flex items-center justify-center gap-6">
       <div className="flex flex-col">
         <label
@@ -1464,6 +1487,7 @@ export default function PeriodSimulatorPage() {
       <MapDashboard
       title=""
       header={header}
+      mapOverlays={mapOverlays}
       mapOverlay={mapOverlay}
       showMapClock={false}
       showMapFlights={hasActiveRun}
@@ -1479,6 +1503,7 @@ export default function PeriodSimulatorPage() {
       metrics={liveMetrics}
       progress={progress}
       simStatus={simStatus}
+      draggable={hasActiveRun}
     />
     </>
   );
