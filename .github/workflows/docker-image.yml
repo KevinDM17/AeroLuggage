@@ -119,7 +119,11 @@ jobs:
             echo '${{ secrets.GITHUB_TOKEN }}' | docker login ghcr.io -u '${{ github.actor }}' --password-stdin && \
             docker compose -f docker-compose.yml -f docker-compose.prod.yml pull && \
             docker compose -f docker-compose.yml -f docker-compose.prod.yml up -d --force-recreate && \
-            echo 'Esperando backend...' && \
+            echo 'Esperando inicio del backend...' && \
+            sleep 15 && \
+            echo 'Ejecutando seed...' && \
+            docker exec aeroluggage-backend-1 wget -qO- http://localhost:8080/api/seed?clean=true && \
+            echo 'Seed completado. Verificando health check...' && \
             for i in \$(seq 1 50); do
               if curl -sf http://localhost:8082/actuator/health > /dev/null 2>&1; then
                 echo 'Backend listo'; break
@@ -127,6 +131,5 @@ jobs:
               echo "Intento \$i de 50..."
               sleep 3
             done && \
-            curl -X POST 'http://localhost:8082/api/seed?clean=true' && \
             docker image prune -f
           "
