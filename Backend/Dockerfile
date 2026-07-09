@@ -16,6 +16,8 @@ COPY --from=build /app/target/*.jar ./app.jar
 
 RUN mkdir -p /app/database
 
+RUN apk add --no-cache wget
+
 EXPOSE 8080
 
 ENTRYPOINT ["sh", "-c", "java $JAVA_OPTS -jar /app/app.jar"]
