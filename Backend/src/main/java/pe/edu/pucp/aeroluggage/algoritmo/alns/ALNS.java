@@ -149,6 +149,11 @@ public class ALNS extends Metaheuristico {
             iteracionesEjecutadas = iteracion;
         }
 
+        ALNSReparador.forzarAsignacionFinal(mejorEstado, parametros);
+        ALNSFitness.Resultado fitnessFinal = ALNSFitness.evaluar(mejorEstado, parametros);
+        ALNSReparador.forzarAsignacionFinal(actual, parametros);
+        fitnessActual = ALNSFitness.evaluar(actual, parametros);
+
         mejorSolucion = mejorEstado.getSolucionActual().clonarProfundo();
         solucionActual = actual.getSolucionActual().clonarProfundo();
         tiempoEjecucionMs = System.currentTimeMillis() - inicio;
