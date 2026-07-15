@@ -1,6 +1,7 @@
 import { useState, useEffect, useCallback } from "react";
-import { Plus, Pencil } from "lucide-react";
+import { Plus, Pencil, Trash2 } from "lucide-react";
 import FlightPlanFormModal from "../components/simulator/FlightPlanFormModal";
+import Modal from "../components/ui/Modal";
 import { LoadingState, EmptyState, ErrorState } from "../components/ui/States";
 import { useToast } from "../components/ui/Toast";
 import { normalizeContinente, listAirports } from "../api/airports";
@@ -8,6 +9,7 @@ import {
   listFlightPlans,
   createFlightPlan,
   updateFlightPlan,
+  deleteFlightPlan,
 } from "../api/flights";
 
 const formatGMT = (h) => (h >= 0 ? `GMT+${h}` : `GMT${h}`);
@@ -26,6 +28,9 @@ export default function FlightPlansPage() {
   const [formOpen, setFormOpen] = useState(false);
   const [editingFlight, setEditingFlight] = useState(null);
   const [formLoading, setFormLoading] = useState(false);
+
+  const [deleteConfirmFlight, setDeleteConfirmFlight] = useState(null);
+  const [deleteLoading, setDeleteLoading] = useState(false);
 
   const loadAirports = useCallback(async () => {
     setAirportsLoading(true);
@@ -71,11 +76,30 @@ export default function FlightPlansPage() {
     setFormOpen(true);
   };
 
+  const handleDeleteConfirm = async () => {
+    if (!deleteConfirmFlight) return;
+    setDeleteLoading(true);
+    try {
+      await deleteFlightPlan(deleteConfirmFlight.idVueloProgramado);
+      setDeleteConfirmFlight(null);
+      await loadFlights();
+      toast.push({
+        type: "success",
+        title: "Plan de vuelo eliminado",
+        message: `${deleteConfirmFlight.id} eliminado correctamente`,
+      });
+    } catch (err) {
+      toast.push({ type: "error", title: "Error al eliminar", message: err.message });
+    } finally {
+      setDeleteLoading(false);
+    }
+  };
+
   const handleFormSubmit = async (payload) => {
     setFormLoading(true);
     try {
       if (editingFlight) {
-        await updateFlightPlan(editingFlight.id, payload);
+        await updateFlightPlan(editingFlight.idVueloProgramado, payload);
       } else {
         await createFlightPlan(payload);
       }
@@ -175,6 +199,14 @@ export default function FlightPlansPage() {
                       >
                         <Pencil className="w-4 h-4" />
                       </button>
+                      <button
+                        type="button"
+                        onClick={() => setDeleteConfirmFlight(fl)}
+                        title="Eliminar plan de vuelo"
+                        className="p-2 rounded-lg hover:bg-red-900/30 hover:text-red-400 transition-colors text-slate-400"
+                      >
+                        <Trash2 className="w-4 h-4" />
+                      </button>
                     </div>
                   </td>
                 </tr>
@@ -192,6 +224,42 @@ export default function FlightPlansPage() {
         onSubmit={handleFormSubmit}
         loading={formLoading}
       />
+
+      <Modal
+        open={Boolean(deleteConfirmFlight)}
+        onClose={() => !deleteLoading && setDeleteConfirmFlight(null)}
+        title="Confirmar eliminacion"
+        maxWidth="max-w-md"
+      >
+        <div className="px-6 py-5">
+          <p className="text-slate-300 text-sm leading-relaxed">
+            Estas seguro de que deseas eliminar el plan de vuelo{" "}
+            <span className="font-bold text-white">{deleteConfirmFlight?.id}</span>
+            {" "}({deleteConfirmFlight?.origin} &rarr; {deleteConfirmFlight?.dest})?
+          </p>
+          <p className="mt-2 text-xs text-slate-500">
+            Se cancelaran todas las instancias activas de este vuelo y se replanificaran las maletas afectadas.
+          </p>
+          <div className="mt-6 flex justify-end gap-3">
+            <button
+              type="button"
+              onClick={() => setDeleteConfirmFlight(null)}
+              disabled={deleteLoading}
+              className="px-4 py-2 rounded-lg text-sm font-medium text-slate-300 hover:bg-surface-2 transition-colors disabled:opacity-50"
+            >
+              Cancelar
+            </button>
+            <button
+              type="button"
+              onClick={handleDeleteConfirm}
+              disabled={deleteLoading}
+              className="px-4 py-2 rounded-lg text-sm font-medium bg-red-600 hover:bg-red-500 text-white transition-colors disabled:opacity-50 flex items-center gap-2"
+            >
+              {deleteLoading ? "Eliminando..." : "Eliminar"}
+            </button>
+          </div>
+        </div>
+      </Modal>
     </div>
   );
 }

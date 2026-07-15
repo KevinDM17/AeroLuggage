@@ -46,11 +46,11 @@ const flightStatusColor = (s) => {
   }
 };
 
-const occupancyColor = (pct) => pct >= 85 ? "bg-danger" : pct >= 60 ? "bg-warning" : "bg-success";
+const occupancyColor = (pct) => pct >= 85 ? "bg-danger" : pct >= 50 ? "bg-warning" : "bg-success";
 const occupancyBadgeColor = (pct) => (
   pct >= 85
     ? "border-danger/40 bg-danger/12 text-danger"
-    : pct >= 60
+    : pct >= 50
       ? "border-warning/40 bg-warning/12 text-warning"
       : "border-success/40 bg-success/12 text-success"
 );
@@ -91,7 +91,7 @@ const PanelScroller = forwardRef(function PanelScroller({ style, className, chil
   );
 });
 
-const FlightItem = memo(function FlightItem({ flight, cityByIata, continentByIata, onCancel, canceling, loadManifest, onFocus, onDeselect, isSelected, forceExpanded = false, onExpand, onCollapse }) {
+const FlightItem = memo(function FlightItem({ flight, cityByIata, continentByIata, onCancel, canceling, loadManifest, onFocus, onFocusAirport, onDeselect, isSelected, forceExpanded = false, onExpand, onCollapse }) {
   const [expanded, setExpanded] = useState(false);
   const pct = flight.capacity > 0 ? Math.round((flight.used / flight.capacity) * 100) : 0;
   const normalizedStatus = normalizeFlightStatus(flight.status);
@@ -197,6 +197,16 @@ const FlightItem = memo(function FlightItem({ flight, cityByIata, continentByIat
               <div className="flex items-center gap-1.5">
                 <MapPin className="w-3.5 h-3.5 text-slate-400 shrink-0" />
                 <span className="text-slate-300">{cityByIata.get(flight.origin)}, {continentByIata.get(flight.origin)} ({flight.origin})</span>
+                {onFocusAirport && (
+                  <button
+                    type="button"
+                    onClick={(ev) => { ev.stopPropagation(); onFocusAirport(flight.origin); }}
+                    title="Enfocar en el mapa"
+                    className="rounded-md border border-info/40 bg-info/10 p-0.5 text-info transition-colors hover:bg-info/20 shrink-0"
+                  >
+                    <Crosshair className="h-3 w-3" />
+                  </button>
+                )}
               </div>
               <div className="flex items-center gap-3">
                 <div className="flex items-center gap-1.5">
@@ -215,6 +225,16 @@ const FlightItem = memo(function FlightItem({ flight, cityByIata, continentByIat
               <div className="flex items-center gap-1.5">
                 <MapPin className="w-3.5 h-3.5 text-slate-400 shrink-0" />
                 <span className="text-slate-300">{cityByIata.get(flight.dest)}, {continentByIata.get(flight.dest)} ({flight.dest})</span>
+                {onFocusAirport && (
+                  <button
+                    type="button"
+                    onClick={(ev) => { ev.stopPropagation(); onFocusAirport(flight.dest); }}
+                    title="Enfocar en el mapa"
+                    className="rounded-md border border-info/40 bg-info/10 p-0.5 text-info transition-colors hover:bg-info/20 shrink-0"
+                  >
+                    <Crosshair className="h-3 w-3" />
+                  </button>
+                )}
               </div>
               <div className="flex items-center gap-3">
                 <div className="flex items-center gap-1.5">
@@ -599,7 +619,7 @@ function Collapsible({ title, defaultOpen = false, children }) {
   );
 }
 
-const EnvioItem = memo(function EnvioItem({ envio, showOrigin = true, onShowRoute, onLoadRutas, category, isSelected, onFocus, onDeselect, cityByIata, continentByIata }) {
+const EnvioItem = memo(function EnvioItem({ envio, showOrigin = true, onShowRoute, onLoadRutas, category, isSelected, onFocus, onDeselect, cityByIata, continentByIata, bags }) {
   const [expanded, setExpanded] = useState(false);
   // Rutas agrupadas (cada una con sus maletas), pedidas al back al expandir.
   // No mostramos UT ni escalas aqui: ese detalle vive en "Ver rutas".
@@ -633,7 +653,7 @@ const EnvioItem = memo(function EnvioItem({ envio, showOrigin = true, onShowRout
         </div>
         <div className="flex shrink-0 flex-row w-full justify-between">
           {envio.horaEntrega && (
-            <div className="text-[10px] text-slate-400">Entregado: {formatHoraPlan(envio.horaEntrega)}</div>
+            <div className="text-[10px] text-sky-400">Entregado: {formatHoraPlan(envio.horaEntrega)}</div>
           )}
           <div className="flex flex-row w-full justify-between">
             {onShowRoute && (
@@ -676,7 +696,8 @@ const EnvioItem = memo(function EnvioItem({ envio, showOrigin = true, onShowRout
           <Collapsible title="Informacion del pedido" defaultOpen>
             <div className="flex flex-col gap-2 text-[11px] text-slate-400">
               {envio.fechaRegistro && (
-                <div className="flex items-center gap-3">
+                <div className="flex flex-col gap-1.5">
+                  <span className="text-sm font-medium">Registro</span>
                   <div className="flex items-center gap-1.5">
                     <Calendar className="w-3.5 h-3.5 shrink-0" />
                     <span className="text-slate-200">{(envio.fechaRegistro ?? "").replace("T", " ").slice(0, 10)}</span>
@@ -688,17 +709,21 @@ const EnvioItem = memo(function EnvioItem({ envio, showOrigin = true, onShowRout
                 </div>
               )}
               {showOrigin && envio.origin && (
-                <div className="flex items-center gap-1.5">
-                  <span className="text-slate-400">Origen:</span>
-                  <MapPin className="w-3.5 h-3.5 shrink-0" />
-                  <span className="text-slate-200">{cityByIata?.get(envio.origin) ?? envio.origin}{continentByIata?.get(envio.origin) ? `, ${continentByIata.get(envio.origin)}` : ""} ({envio.origin})</span>
+                <div className="flex flex-col gap-1.5">
+                  <span className="text-sm font-medium">Origen</span>
+                  <div className="flex gap-1.5">
+                    <MapPin className="w-3.5 h-3.5 shrink-0" />
+                    <span className="text-slate-200">{cityByIata?.get(envio.origin) ?? envio.origin}{continentByIata?.get(envio.origin) ? `, ${continentByIata.get(envio.origin)}` : ""} ({envio.origin})</span>
+                  </div>
                 </div>
               )}
               {envio.dest && (
-                <div className="flex items-center gap-1.5">
-                  <span className="text-slate-400">Destino:</span>
-                  <MapPin className="w-3.5 h-3.5 shrink-0" />
-                  <span className="text-slate-200">{cityByIata?.get(envio.dest) ?? envio.dest}{continentByIata?.get(envio.dest) ? `, ${continentByIata.get(envio.dest)}` : ""} ({envio.dest})</span>
+                <div className="flex flex-col gap-1.5">
+                  <span className="text-sm font-medium">Destino</span>
+                  <div className="flex gap-1.5">
+                    <MapPin className="w-3.5 h-3.5 shrink-0" />
+                    <span className="text-slate-200">{cityByIata?.get(envio.dest) ?? envio.dest}{continentByIata?.get(envio.dest) ? `, ${continentByIata.get(envio.dest)}` : ""} ({envio.dest})</span>
+                  </div>
                 </div>
               )}
             </div>
@@ -710,12 +735,22 @@ const EnvioItem = memo(function EnvioItem({ envio, showOrigin = true, onShowRout
             <Collapsible key={ri} title={`Ruta ${ri + 1} (${r.cantidad} maleta${r.cantidad !== 1 ? "s" : ""})`} defaultOpen>
               <div className="text-slate-200 flex flex-col gap-0.5">
                 {r.maletas.length
-                  ? r.maletas.map((idMaleta, mi) => (
-                      <div key={mi} className="flex items-center gap-1">
-                        <Luggage className="w-3 h-3 shrink-0 text-slate-400" />
-                        <span className="text-[11px]">{idMaleta}</span>
-                      </div>
-                    ))
+                  ? r.maletas.map((idMaleta, mi) => {
+                      const bag = bags?.get(idMaleta);
+                      return (
+                        <div key={mi} className="flex items-center justify-between gap-2">
+                          <div className="flex items-center gap-1 min-w-0">
+                            <Luggage className="w-3 h-3 shrink-0 text-slate-400" />
+                            <span className="text-[11px] truncate">{idMaleta}</span>
+                          </div>
+                          {bag?.estado && (
+                            <span className={`shrink-0 rounded px-1.5 py-0.5 text-[9px] font-bold tracking-wider ${bagStatusColor(bag.estado)}`}>
+                              {bagStatusLabel(bag.estado)}
+                            </span>
+                          )}
+                        </div>
+                      );
+                    })
                   : <span className="text-[11px] text-slate-500">—</span>}
               </div>
             </Collapsible>
@@ -726,7 +761,7 @@ const EnvioItem = memo(function EnvioItem({ envio, showOrigin = true, onShowRout
   );
 });
 
-function EnvioSeccion({ title, envios, showOrigin = true, defaultOpen = false, max = 200, onShowRoute, onLoadRutas, category, selectedEnvioId, onFocus, onDeselect, cityByIata, continentByIata }) {
+function EnvioSeccion({ title, envios, showOrigin = true, defaultOpen = false, max = 200, onShowRoute, onLoadRutas, category, selectedEnvioId, onFocus, onDeselect, cityByIata, continentByIata, bags }) {
   const shown = envios.slice(0, max);
   return (
     <Collapsible title={`${title} (${envios.length})`} defaultOpen={defaultOpen}>
@@ -734,7 +769,7 @@ function EnvioSeccion({ title, envios, showOrigin = true, defaultOpen = false, m
         <div className="pl-1 text-[11px] text-slate-500">Sin envios.</div>
       ) : (
         <>
-          {shown.map((e, i) => <EnvioItem key={`${e.id}-${i}`} envio={e} showOrigin={showOrigin} onShowRoute={onShowRoute} onLoadRutas={onLoadRutas} category={category} isSelected={selectedEnvioId === e.id} onFocus={onFocus} onDeselect={onDeselect} cityByIata={cityByIata} continentByIata={continentByIata} />)}
+          {shown.map((e, i) => <EnvioItem key={`${e.id}-${i}`} envio={e} showOrigin={showOrigin} onShowRoute={onShowRoute} onLoadRutas={onLoadRutas} category={category} isSelected={selectedEnvioId === e.id} onFocus={onFocus} onDeselect={onDeselect} cityByIata={cityByIata} continentByIata={continentByIata} bags={bags} />)}
           {envios.length > shown.length && (
             <div className="pt-1 text-[10px] text-slate-500">… y {envios.length - shown.length} mas (usa los filtros)</div>
           )}
@@ -1085,14 +1120,14 @@ function ColorLegend() {
           <div className="mb-2 font-semibold text-slate-200">Aeropuertos</div>
           <LegendRow color="bg-white shadow-[0_0_10px_rgba(255,255,255,0.7)]" label="Blanco" value="vacio / 0% ocupado" />
           <LegendRow color="bg-success shadow-[0_0_10px_rgba(0,255,136,0.7)]" label="Verde" value="menos de 60% ocupado" />
-          <LegendRow color="bg-warning shadow-[0_0_10px_rgba(255,221,0,0.7)]" label="Amarillo" value="60% a 84% ocupado" />
+          <LegendRow color="bg-warning shadow-[0_0_10px_rgba(255,221,0,0.7)]" label="Amarillo" value="50% a 84% ocupado" />
           <LegendRow color="bg-danger shadow-[0_0_10px_rgba(255,59,48,0.7)]" label="Rojo" value="85% o mas ocupado" />
         </div>
         <div>
           <div className="mb-2 font-semibold text-slate-200">Carga de vuelos</div>
           <FlightLegendRow color="text-white/60" label="Blanco translucido" value="vuelo vacio / 0% ocupado" />
           <FlightLegendRow color="text-success" label="Verde" value="menos de 60% ocupado" />
-          <FlightLegendRow color="text-warning" label="Amarillo" value="60% a 84% ocupado" />
+          <FlightLegendRow color="text-warning" label="Amarillo" value="50% a 84% ocupado" />
           <FlightLegendRow color="text-danger" label="Rojo" value="85% o mas ocupado" />
         </div>
       </div>
@@ -1366,7 +1401,7 @@ function semaforoState(used, capacity) {
   const c = Number(capacity) || 0;
   const pct = c > 0 ? (u / c) * 100 : 0;
   if (pct >= 85) return "ROJO";
-  if (pct >= 60) return "AMBAR";
+  if (pct >= 50) return "AMBAR";
   return "VERDE";
 }
 
@@ -2359,11 +2394,16 @@ export default function RightPanel({
   const focusAirportOnMap = useCallback(
     (iata) => {
       if (!iata) return;
+      if (selected?.kind === "airport" && selected.id === iata) {
+        setSelected(null);
+        setMapFocus(null);
+        return;
+      }
       setSelected({ kind: "airport", id: iata });
       const c = airportCoords.get(iata);
       if (c) setMapFocus({ lng: c.lng, lat: c.lat, zoom: 5, ts: Date.now() });
     },
-    [airportCoords, setSelected, setMapFocus]
+    [airportCoords, selected, setSelected, setMapFocus]
   );
 
   const focusFlightOnMap = useCallback(
@@ -2555,6 +2595,7 @@ export default function RightPanel({
             canceling={cancelingFlightId === f.id}
             loadManifest={loadFlightManifest}
             onFocus={focusFlightOnMap}
+            onFocusAirport={focusAirportOnMap}
             onDeselect={() => setSelected(null)}
             onExpand={(id) => handleItemExpand({ kind: "flight", id })}
             onCollapse={handleItemCollapse}
@@ -2583,6 +2624,7 @@ export default function RightPanel({
             onFocus={focusEnvio}
             onDeselect={deselectEnvio}
             cityByIata={cityByIata}
+            bags={simulationPanelData?.bags}
             defaultOpen
           />
           <EnvioSeccion
@@ -2595,6 +2637,7 @@ export default function RightPanel({
             onFocus={focusEnvio}
             onDeselect={deselectEnvio}
             cityByIata={cityByIata}
+            bags={simulationPanelData?.bags}
             defaultOpen
           />
           <EnvioSeccion
@@ -2607,6 +2650,7 @@ export default function RightPanel({
             onFocus={focusEnvio}
             onDeselect={deselectEnvio}
             cityByIata={cityByIata}
+            bags={simulationPanelData?.bags}
           />
         </div>
       )

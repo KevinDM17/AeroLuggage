@@ -196,11 +196,11 @@ function DraggableOverlayPanel({ content, draggable, index, total, mapStageRef, 
 
         const nextPos = buttonSide === "left"
           ? {
-              x: triggerRect.left - containerRect.left + triggerRect.width,
+              x: triggerRect.left - containerRect.left,
               y: triggerRect.top - containerRect.top,
             }
           : {
-              x: triggerRect.left - containerRect.left - rect.width,
+              x: triggerRect.right - containerRect.left - rect.width,
               y: triggerRect.top - containerRect.top,
             };
 
@@ -331,8 +331,10 @@ function DraggableOverlayPanel({ content, draggable, index, total, mapStageRef, 
         className="absolute select-none z-[2000]"
         style={
           panelPos
-            ? { left: panelPos.x, top: panelPos.y, cursor: isDragging ? "grabbing" : "grab" }
-            : { left: 16, bottom: "24px", cursor: "grab" }
+            ? { left: panelPos.x ?? 0, top: panelPos.y ?? 0, cursor: isDragging ? "grabbing" : "grab" }
+            : buttonSide === "left"
+              ? { left: 16 + BUTTON_OFFSET, bottom: "24px", cursor: "grab" }
+              : { right: 16 + BUTTON_OFFSET, bottom: "24px", cursor: "grab" }
         }
         onMouseDown={(e) => handleDragStart(e, { allowInteractiveTarget: true })}
       >

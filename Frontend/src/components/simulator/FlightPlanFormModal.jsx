@@ -1,5 +1,27 @@
-import { useState, useEffect } from "react";
+import { useState, useEffect, useMemo } from "react";
 import { Plane, X } from "lucide-react";
+
+const formatGMTLabel = (h) => {
+  if (h === null || h === undefined || isNaN(h)) return null;
+  return h >= 0 ? `GMT+${h}` : `GMT${h}`;
+};
+
+const calcDuration = (dep, arr, gmtOrigin, gmtDest) => {
+  if (!dep || !arr || gmtOrigin === null || gmtDest === null) return null;
+  const [dh, dm] = dep.split(":").map(Number);
+  const [ah, am] = arr.split(":").map(Number);
+  if (isNaN(dh) || isNaN(dm) || isNaN(ah) || isNaN(am)) return null;
+  let depLocalMin = dh * 60 + dm;
+  let arrLocalMin = ah * 60 + am;
+  if (arr < dep) arrLocalMin += 24 * 60;
+  const depUtcMin = depLocalMin - gmtOrigin * 60;
+  const arrUtcMin = arrLocalMin - gmtDest * 60;
+  let mins = arrUtcMin - depUtcMin;
+  if (mins <= 0) return null;
+  const h = Math.floor(mins / 60);
+  const m = mins % 60;
+  return `${h}h ${m > 0 ? m + "m" : ""}`;
+};
 
 export default function FlightPlanFormModal({ open, initialData, airports, onClose, onSubmit, loading }) {
   const [code, setCode] = useState("");
@@ -32,6 +54,21 @@ export default function FlightPlanFormModal({ open, initialData, airports, onClo
       setCapacity(initialData.capacity?.toString() ?? "");
     }
   }, [initialData]);
+
+  const gmtOrigin = useMemo(() => {
+    const a = (airports || []).find(x => (x.iata ?? x.idAeropuerto) === origin);
+    return a != null ? a.gmt : null;
+  }, [airports, origin]);
+
+  const gmtDest = useMemo(() => {
+    const a = (airports || []).find(x => (x.iata ?? x.idAeropuerto) === dest);
+    return a != null ? a.gmt : null;
+  }, [airports, dest]);
+
+  const duration = useMemo(
+    () => calcDuration(depTime, arrTime, gmtOrigin, gmtDest),
+    [depTime, arrTime, gmtOrigin, gmtDest]
+  );
 
   if (!open) return null;
 
@@ -106,7 +143,9 @@ export default function FlightPlanFormModal({ open, initialData, airports, onClo
           </div>
           <div className="grid grid-cols-2 gap-4">
             <div>
-              <label className="block text-xs font-semibold text-slate-400 uppercase tracking-wider mb-1.5">Hora Salida</label>
+              <label className="block text-xs font-semibold text-slate-400 uppercase tracking-wider mb-1.5">
+                Hora Salida {gmtOrigin != null && <span className="font-normal normal-case text-slate-500">({formatGMTLabel(gmtOrigin)})</span>}
+              </label>
               <input
                 type="time"
                 value={depTime}
@@ -116,7 +155,9 @@ export default function FlightPlanFormModal({ open, initialData, airports, onClo
               />
             </div>
             <div>
-              <label className="block text-xs font-semibold text-slate-400 uppercase tracking-wider mb-1.5">Hora Llegada</label>
+              <label className="block text-xs font-semibold text-slate-400 uppercase tracking-wider mb-1.5">
+                Hora Llegada {gmtDest != null && <span className="font-normal normal-case text-slate-500">({formatGMTLabel(gmtDest)})</span>}
+              </label>
               <input
                 type="time"
                 value={arrTime}
@@ -126,6 +167,13 @@ export default function FlightPlanFormModal({ open, initialData, airports, onClo
               />
             </div>
           </div>
+          {duration && (
+            <div className="flex items-center gap-2 px-3 py-2 rounded-lg border border-slate-700 bg-slate-800/40">
+              <span className="text-xs font-semibold text-slate-400 uppercase tracking-wider">Duracion:</span>
+              <span className="text-sm font-medium text-slate-200">{duration}</span>
+              {arrTime && depTime && arrTime < depTime && <span className="text-[10px] text-slate-500">(dia siguiente)</span>}
+            </div>
+          )}
           <div>
             <label className="block text-xs font-semibold text-slate-400 uppercase tracking-wider mb-1.5">Capacidad</label>
             <input

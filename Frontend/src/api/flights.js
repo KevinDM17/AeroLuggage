@@ -30,7 +30,6 @@ const adaptFlight = (f) => ({
 });
 
 const adaptFlightToBack = (payload) => ({
-  idVueloProgramado: payload.id,
   codigo:            payload.id,
   horaSalida:        payload.depTime,
   horaLlegada:       payload.arrTime,

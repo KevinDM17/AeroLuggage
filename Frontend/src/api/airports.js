@@ -1,5 +1,5 @@
-import { apiGet, apiPost, apiPut, USE_MOCK } from "./client";
-import { mockListAirports, mockCreateAirport } from "./mock";
+import { apiGet, apiPost, apiPut, apiDelete, USE_MOCK } from "./client";
+import { mockListAirports, mockCreateAirport, mockEliminarAeropuerto } from "./mock";
 
 /**
  * Shape que recibimos del back (segun API_CONTRACT.md y la entidad Aeropuerto):
@@ -39,10 +39,13 @@ export const adaptAirport = (a) => ({
 
 const adaptAirportToBack = (payload) => ({
   idAeropuerto:     payload.iata,
-  ciudad: { nombre: payload.city, continente: (payload.continent ?? "").toUpperCase().replace(/ /g, "_") },
+  nombreCiudad:     payload.city,
+  continente:       (payload.continent ?? "").toUpperCase().replace(/ /g, "_"),
   capacidadAlmacen: payload.capacity,
   maletasActuales:  payload.used ?? 0,
   husoGMT:          payload.gmt,
+  latitud:          payload.lat ?? 0,
+  longitud:         payload.lng ?? 0,
 });
 
 export const listAirports = async () => {
@@ -62,3 +65,6 @@ export const createAirport = (payload) =>
 
 export const updateAirport = (iata, payload) =>
   USE_MOCK ? mockCreateAirport(payload) : apiPut(`/aeropuertos/${encodeURIComponent(iata)}`, adaptAirportToBack(payload));
+
+export const deleteAirport = (iata) =>
+  USE_MOCK ? mockEliminarAeropuerto(iata) : apiDelete(`/aeropuertos/${encodeURIComponent(iata)}`);

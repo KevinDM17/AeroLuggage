@@ -96,14 +96,14 @@ export default function AirportFormModal({ open, initialData, onClose, onSubmit,
     setErrors(errs);
     if (Object.keys(errs).length > 0) return;
     onSubmit({
-      idAeropuerto: iata.trim().toUpperCase(),
-      nombreCiudad: city.trim(),
-      continente: continent.toUpperCase().replace(/ /g, "_"),
-      capacidadAlmacen: parseInt(capacity, 10),
-      maletasActuales: initialData?.used ?? 0,
-      latitud: parseFloat(lat),
-      longitud: parseFloat(lng),
-      husoGMT: parseInt(gmt, 10) || 0,
+      iata: iata.trim().toUpperCase(),
+      city: city.trim(),
+      continent,
+      capacity: parseInt(capacity, 10),
+      used: initialData?.used ?? 0,
+      lat: parseFloat(lat),
+      lng: parseFloat(lng),
+      gmt: parseInt(gmt, 10) || 0,
     });
   };
 

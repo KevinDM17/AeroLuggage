@@ -20,7 +20,7 @@ const occupancyStatus = (used, capacity) => {
   const pct = capacity > 0 ? (used / capacity) * 100 : 0;
   if (pct <= 0) return "white";
   if (pct >= 85) return "red";
-  if (pct >= 60) return "yellow";
+  if (pct >= 50) return "yellow";
   return "green";
 };
 
@@ -133,8 +133,7 @@ const AIRPORT_BUILDING_MAPPING = {
   airport: { x: 0, y: 0, width: AIRPORT_BUILDING_SIZE_PX, height: AIRPORT_BUILDING_SIZE_PX, mask: true },
 };
 
-const MAX_FLIGHTS_ON_MAP = 1000;
-const ROUTE_LINE_WIDTH_PX = 0.65;
+const ROUTE_LINE_WIDTH_PX = 0.6;
 
 const MAP_STYLE = import.meta.env.VITE_MAP_STYLE_URL
   ?? "https://basemaps.cartocdn.com/gl/dark-matter-nolabels-gl-style/style.json";
@@ -557,14 +556,16 @@ function AirportMap({
 
       if (loadedRoutes.length > 0) {
         ls.push(
-          new LineLayer({
+          new PathLayer({
             id: "routes",
             data: loadedRoutes,
-            getSourcePosition: (d) => [d.origin.lng, d.origin.lat],
-            getTargetPosition: (d) => [d.destination.lng, d.destination.lat],
-            getColor: hexToRgba(tokens.success, 255), // opaco; solo las vacias son translucidas
+            getPath: (d) => [[d.origin.lng, d.origin.lat], [d.destination.lng, d.destination.lat]],
+            getColor: hexToRgba(tokens.success, 100),
             getWidth: ROUTE_LINE_WIDTH_PX,
             widthUnits: "pixels",
+            getDashArray: [1, 1],
+            dashJustified: true,
+            extensions: [new PathStyleExtension({ dash: true })],
           })
         );
       }
@@ -578,7 +579,7 @@ function AirportMap({
             getColor: [255, 255, 255, 70], // blanco translucido
             getWidth: ROUTE_LINE_WIDTH_PX,
             widthUnits: "pixels",
-            getDashArray: [4, 3],
+            getDashArray: [1, 1],
             dashJustified: true,
             extensions: [new PathStyleExtension({ dash: true })],
           })
@@ -967,7 +968,7 @@ function FlightInfoCard({ flight, manifest, onClose }) {
 
       <div className="mt-3 grid grid-cols-2 gap-2 text-xs">
         <Stat label="Maletas" value={`${used}/${cap}`} tone="info" />
-        <Stat label="Ocupacion" value={`${pct}%`} tone={pct >= 85 ? "danger" : pct >= 60 ? "warning" : "success"} />
+        <Stat label="Ocupacion" value={`${pct}%`} tone={pct >= 85 ? "danger" : pct >= 50 ? "warning" : "success"} />
         <Stat
           label="Pedidos a bordo"
           value={
@@ -1021,7 +1022,7 @@ function AirportInfoCard({ airport, onClose }) {
 
       <div className="mt-3 grid grid-cols-2 gap-2 text-xs">
         <Stat label="Maletas" value={`${used}/${cap}`} tone="info" />
-        <Stat label="Ocupacion" value={`${pct}%`} tone={pct >= 85 ? "danger" : pct >= 60 ? "warning" : "success"} />
+        <Stat label="Ocupacion" value={`${pct}%`} tone={pct >= 85 ? "danger" : pct >= 50 ? "warning" : "success"} />
         <Stat label="Capacidad libre" value={String(free)} tone={free === 0 ? "danger" : "success"} />
         <Stat label="GMT" value={airport.gmt != null ? (airport.gmt > 0 ? `+${airport.gmt}` : String(airport.gmt)) : "—"} tone="info" />
       </div>

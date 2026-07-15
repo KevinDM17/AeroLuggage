@@ -1,5 +1,6 @@
 package pe.edu.pucp.aeroluggage.config;
 
+import lombok.RequiredArgsConstructor;
 import org.springframework.boot.context.properties.ConfigurationProperties;
 import org.springframework.context.annotation.PropertySource;
 import org.springframework.stereotype.Component;
@@ -9,7 +10,10 @@ import pe.edu.pucp.aeroluggage.algoritmo.alns.ParametrosALNS;
 @Component
 @ConfigurationProperties(prefix = "algoritmos.alns")
 @PropertySource(value = "classpath:system_params.yml", factory = YamlPropertySourceFactory.class)
+@RequiredArgsConstructor
 public class ALNSConfig {
+
+    private final NegocioConfig negocioConfig;
 
     private int maxIteraciones = 150;
     private int maxIteracionesSinMejora = 20;
@@ -18,8 +22,6 @@ public class ALNSConfig {
     private int qMax = 6;
     private int qCritical = 4;
     private int maxReintentosRuteo = 100;
-    private long minutosConexion = 10L;
-    private long tiempoRecojo = 10L;
     private double umbralCriticoAeropuerto = 0.25D;
     private double temperaturaInicial = 5.0D;
     private double factorEnfriamiento = 0.98D;
@@ -37,8 +39,8 @@ public class ALNSConfig {
         p.setQMax(qMax);
         p.setQCritical(qCritical);
         p.setMaxReintentosRuteo(maxReintentosRuteo);
-        p.setMinutosConexion(minutosConexion);
-        p.setTiempoRecojo(tiempoRecojo);
+        p.setMinutosConexion(negocioConfig.getMinutosConexion());
+        p.setTiempoRecojo(negocioConfig.getMinutosRecojo());
         p.setUmbralCriticoAeropuerto(umbralCriticoAeropuerto);
         p.setTemperaturaInicial(temperaturaInicial);
         p.setFactorEnfriamiento(factorEnfriamiento);
@@ -114,22 +116,6 @@ public class ALNSConfig {
 
     public void setMaxReintentosRuteo(final int maxReintentosRuteo) {
         this.maxReintentosRuteo = maxReintentosRuteo;
-    }
-
-    public long getMinutosConexion() {
-        return minutosConexion;
-    }
-
-    public void setMinutosConexion(final long minutosConexion) {
-        this.minutosConexion = minutosConexion;
-    }
-
-    public long getTiempoRecojo() {
-        return tiempoRecojo;
-    }
-
-    public void setTiempoRecojo(final long tiempoRecojo) {
-        this.tiempoRecojo = tiempoRecojo;
     }
 
     public double getUmbralCriticoAeropuerto() {

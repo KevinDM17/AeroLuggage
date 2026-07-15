@@ -1,9 +1,11 @@
 package pe.edu.pucp.aeroluggage.servicios;
 
 import org.springframework.core.io.ClassPathResource;
+import org.springframework.http.HttpStatus;
 import org.springframework.jdbc.core.JdbcTemplate;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
+import org.springframework.web.server.ResponseStatusException;
 
 import io.github.cdimascio.dotenv.Dotenv;
 import pe.edu.pucp.aeroluggage.cargador.CargadorAeropuertos;
@@ -100,6 +102,24 @@ public class ServicioAeropuerto {
         if (existente.isEmpty()) {
             return false;
         }
+
+        if (aeropuertoRepositorio.tieneOcupacion(iata)) {
+            throw new ResponseStatusException(HttpStatus.CONFLICT,
+                    "No se puede eliminar el aeropuerto " + iata + " porque tiene maletas almacenadas");
+        }
+
+        if (aeropuertoRepositorio.tieneVuelosProgramadosActivos(iata)) {
+            throw new ResponseStatusException(HttpStatus.CONFLICT,
+                    "No se puede eliminar el aeropuerto " + iata + " porque tiene vuelos programados activos "
+                            + "con origen o destino en este aeropuerto");
+        }
+
+        if (aeropuertoRepositorio.tieneVuelosInstanciaActivos(iata)) {
+            throw new ResponseStatusException(HttpStatus.CONFLICT,
+                    "No se puede eliminar el aeropuerto " + iata + " porque tiene instancias de vuelo activas "
+                            + "con origen o destino en este aeropuerto");
+        }
+
         aeropuertoRepositorio.eliminar(iata);
         return true;
     }

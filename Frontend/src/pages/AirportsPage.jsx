@@ -1,10 +1,10 @@
 import { useState, useEffect, useCallback } from "react";
-import { Plus, Plane, Pencil } from "lucide-react";
+import { Plus, Plane, Pencil, Trash2 } from "lucide-react";
 import AirportFormModal from "../components/simulator/AirportFormModal";
 import Modal from "../components/ui/Modal";
 import { LoadingState, EmptyState, ErrorState } from "../components/ui/States";
 import { useToast } from "../components/ui/Toast";
-import { listAirports, createAirport, updateAirport, normalizeContinente } from "../api/airports";
+import { listAirports, createAirport, updateAirport, deleteAirport, normalizeContinente } from "../api/airports";
 import { listFlightPlans } from "../api/flights";
 
 const formatGMT = (h) => (h >= 0 ? `GMT+${h}` : `GMT${h}`);
@@ -23,6 +23,9 @@ export default function AirportsPage() {
   const [flightPlansModalAirport, setFlightPlansModalAirport] = useState(null);
   const [airportFlightPlans, setAirportFlightPlans] = useState([]);
   const [airportFlightPlansStatus, setAirportFlightPlansStatus] = useState("idle");
+
+  const [deleteConfirmAirport, setDeleteConfirmAirport] = useState(null);
+  const [deleteLoading, setDeleteLoading] = useState(false);
 
   const loadAirports = useCallback(async () => {
     setLoading(true);
@@ -71,6 +74,25 @@ export default function AirportsPage() {
   const openEdit = (airport) => {
     setEditingAirport(airport);
     setFormOpen(true);
+  };
+
+  const handleDeleteConfirm = async () => {
+    if (!deleteConfirmAirport) return;
+    setDeleteLoading(true);
+    try {
+      await deleteAirport(deleteConfirmAirport.iata);
+      setDeleteConfirmAirport(null);
+      await loadAirports();
+      toast.push({
+        type: "success",
+        title: "Aeropuerto eliminado",
+        message: `${deleteConfirmAirport.iata} eliminado correctamente`,
+      });
+    } catch (err) {
+      toast.push({ type: "error", title: "Error al eliminar", message: err.message });
+    } finally {
+      setDeleteLoading(false);
+    }
   };
 
   const handleFormSubmit = async (payload) => {
@@ -174,6 +196,14 @@ export default function AirportsPage() {
                       >
                         <Pencil className="w-4 h-4" />
                       </button>
+                      <button
+                        type="button"
+                        onClick={() => setDeleteConfirmAirport(apt)}
+                        title="Eliminar aeropuerto"
+                        className="p-2 rounded-lg hover:bg-red-900/30 hover:text-red-400 transition-colors text-slate-400"
+                      >
+                        <Trash2 className="w-4 h-4" />
+                      </button>
                     </div>
                   </td>
                 </tr>
@@ -248,6 +278,42 @@ export default function AirportsPage() {
                 </tbody>
               </table>
             )}
+          </div>
+        </div>
+      </Modal>
+
+      <Modal
+        open={Boolean(deleteConfirmAirport)}
+        onClose={() => !deleteLoading && setDeleteConfirmAirport(null)}
+        title="Confirmar eliminación"
+        maxWidth="max-w-md"
+      >
+        <div className="px-6 py-5">
+          <p className="text-slate-300 text-sm leading-relaxed">
+            ¿Estás seguro de que deseas eliminar el aeropuerto{" "}
+            <span className="font-bold text-white">{deleteConfirmAirport?.iata}</span>
+            {" "}({deleteConfirmAirport?.city})?
+          </p>
+          <p className="mt-2 text-xs text-slate-500">
+            Solo se podrá eliminar si no tiene maletas almacenadas ni vuelos activos con origen o destino en este aeropuerto.
+          </p>
+          <div className="mt-6 flex justify-end gap-3">
+            <button
+              type="button"
+              onClick={() => setDeleteConfirmAirport(null)}
+              disabled={deleteLoading}
+              className="px-4 py-2 rounded-lg text-sm font-medium text-slate-300 hover:bg-surface-2 transition-colors disabled:opacity-50"
+            >
+              Cancelar
+            </button>
+            <button
+              type="button"
+              onClick={handleDeleteConfirm}
+              disabled={deleteLoading}
+              className="px-4 py-2 rounded-lg text-sm font-medium bg-red-600 hover:bg-red-500 text-white transition-colors disabled:opacity-50 flex items-center gap-2"
+            >
+              {deleteLoading ? "Eliminando..." : "Eliminar"}
+            </button>
           </div>
         </div>
       </Modal>

@@ -1,6 +1,6 @@
 negocio:
   minutos-conexion: 10
-  minutos-recojo: 10
+  minutos-recojo: 15
   umbral-confirmacion-minutos: 60
 
 simulacion:
