@@ -22,8 +22,6 @@ public class SimulacionColapsoRestController {
 
     @PostMapping("/iniciar")
     public SimulacionEstadoDTO iniciar(@RequestBody final SimulacionIniciarRequest params) {
-        log.info("[AeroLuggage/SimulacionColapsoRest] - API-CALL/iniciar: fechaInicio={}",
-                params.getFechaInicio());
         return sesionManager.iniciarColapso(params, broker);
     }
 }

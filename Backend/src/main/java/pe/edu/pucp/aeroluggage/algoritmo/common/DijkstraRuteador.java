@@ -78,7 +78,9 @@ public final class DijkstraRuteador {
             if (actual.icao.equals(icaoDestino)) {
                 return reconstruirCamino(icaoDestino, icaoOrigen, predecesorIcao, vueloUsado);
             }
-            final LocalDateTime tDesde = actual.tiempoActual.plusMinutes(minutosConexion);
+            final LocalDateTime tDesde = actual.icao.equals(icaoOrigen)
+                    ? actual.tiempoActual
+                    : actual.tiempoActual.plusMinutes(minutosConexion);
             final List<VueloInstancia> vuelos = grafo.vuelosDesde(actual.icao, tDesde);
             for (final VueloInstancia vuelo : vuelos) {
                 if (!esUtilizable(vuelo, vuelosBloqueados, tLimite, permitirOverflow)) {

@@ -1,6 +1,6 @@
 import { useEffect, useMemo, useRef, useState } from "react";
 import { useOutletContext } from "react-router-dom";
-import { Clock, Play, SlidersHorizontal, Square, RotateCw, AlertTriangle, X, CheckCircle2 } from "lucide-react";
+import { Clock, Play, SlidersHorizontal, Square, RotateCw, AlertTriangle, X, CheckCircle2, ChevronDown, Users } from "lucide-react";
 import MapDashboard from "../components/simulator/MapDashboard";
 import { usePolling } from "../hooks/usePolling";
 import { useElapsedTimer } from "../hooks/useElapsedTimer";
@@ -13,6 +13,7 @@ import {
   obtenerBaseSimulacion,
   obtenerVentanaSimulacion,
   obtenerVuelosSimulacion,
+  listarSesionesActivas,
   stopPeriodSim,
   getPeriodSimState,
 } from "../api/simulator";
@@ -188,6 +189,8 @@ export default function PeriodSimulatorPage() {
     collapseSidebars,
     cancelledFlightIds,
     setCancelledFlightIds,
+    setTopBarActions,
+    setTopBarInfo,
   } = useOutletContext();
 
   const [startDate, setStartDate] = useState(() =>
@@ -199,8 +202,52 @@ export default function PeriodSimulatorPage() {
   const [runId, setRunId] = useState(0);
   const [lastMockState, setLastMockState] = useState(null);
   const [mapAirports, setMapAirports] = useState([]);
+  const [eventosOcupacion, setEventosOcupacion] = useState([]);
+
+  useEffect(() => {
+    if (eventosOcupacion.length === 0) return;
+    const timer = setInterval(() => {
+      const cutoff = Date.now() - 3500;
+      setEventosOcupacion((prev) => prev.filter((e) => e.ts > cutoff));
+    }, 1000);
+    return () => clearInterval(timer);
+  }, [eventosOcupacion.length > 0]);
   // mapFlights se maneja dentro de simulationPanelData.flights
   const [showRouteLines, setShowRouteLines] = useState(true);
+  const hasActiveRun =
+    simStatus === "running" || simStatus === "paused" || simStatus === "done" || simStatus === "collapsed";
+
+  useEffect(() => {
+    if (!hasActiveRun) {
+      setTopBarActions(null);
+      setTopBarInfo(null);
+      return;
+    }
+    setTopBarActions(
+      <>
+        <button
+          type="button"
+          onClick={() => setShowRouteLines((v) => !v)}
+          className={`rounded px-2.5 py-1 text-xs font-medium whitespace-nowrap transition-colors ${
+            showRouteLines
+              ? "bg-blue-600/20 text-blue-400 border border-blue-500/40 hover:bg-blue-600/30"
+              : "bg-white/5 text-slate-400 border border-white/10 hover:text-slate-200"
+          }`}
+        >
+          Mostrar lineas
+        </button>
+        <button
+          type="button"
+          onClick={handleStop}
+          className="shrink-0 bg-danger/10 hover:bg-danger/20 text-danger border border-danger/40 rounded px-2.5 py-1 text-xs font-medium transition-colors"
+          title="Detener"
+        >
+          Detener
+        </button>
+      </>
+    );
+    return () => setTopBarActions(null);
+  }, [hasActiveRun, showRouteLines, setTopBarActions]);
   const [currentSimTimeUtc, setCurrentSimTimeUtc] = useState(null);
   const [simulatedDayDurationMs, setSimulatedDayDurationMs] = useState(null);
   const [windowSizeMinutes, setWindowSizeMinutes] = useState(120);
@@ -211,10 +258,14 @@ export default function PeriodSimulatorPage() {
   const [finalSummaryInfo, setFinalSummaryInfo] = useState(null);
   const [lastStablePlanning, setLastStablePlanning] = useState(null);
   const [currentLocalTimeMs, setCurrentLocalTimeMs] = useState(() => Date.now());
+  const [showSessionsModal, setShowSessionsModal] = useState(false);
+  const [activeSessions, setActiveSessions] = useState([]);
+  const [dropdownOpen, setDropdownOpen] = useState(false);
   const startSimMsRef = useRef(null);
   const ventanasCargadasRef = useRef(new Set());
   const lastMapFlightsRef = useRef([]);
   const flightMetadataRef = useRef(new Map());
+  const primeraVentanaRef = useRef(null);
   const iniciarTickWatchdogRef = useRef(null);
   const iniciarTickRetriesRef = useRef(0);
   const tickReceivedRef = useRef(false);
@@ -252,13 +303,16 @@ export default function PeriodSimulatorPage() {
   const updateEstadosOnly = (oldMap, stateMap, enumArr, statusField = "estado", extraFields) => {
     if (Object.keys(stateMap).length === 0) return oldMap;
     const updated = new Map(oldMap);
+    let changed = false;
     for (const [id, entity] of updated) {
       const st = stateMap[id];
-      if (st) {
-        updated.set(id, { ...entity, [statusField]: enumArr[st.e], ...(extraFields ? extraFields(st, entity) : {}) });
-      }
+      if (!st) continue;
+      const newStatus = enumArr[st.e];
+      if (entity[statusField] === newStatus && !extraFields) continue;
+      changed = true;
+      updated.set(id, { ...entity, [statusField]: newStatus, ...(extraFields ? extraFields(st, entity) : {}) });
     }
-    return updated;
+    return changed ? updated : oldMap;
   };
 
   const normalizeFlightStatus = (status) =>
@@ -295,8 +349,13 @@ export default function PeriodSimulatorPage() {
   const statusTopic =
     !USE_MOCK && sessionId ? `/topic/simulacion/${sessionId}/estado` : null;
 
-  const { data: tick } = useStompSubscribe(tickTopic);
+  const { data: tick, connected } = useStompSubscribe(tickTopic);
   const { data: estadoMessage } = useStompSubscribe(statusTopic);
+
+  useEffect(() => {
+    if (!connected || !sessionId) return;
+    publish("/app/simulacion/periodo/ventana-lista", { sessionId });
+  }, [connected, sessionId, publish]);
 
   const { data: mockState } = usePolling(getPeriodSimState, {
     enabled: USE_MOCK && simStatus === "running",
@@ -308,9 +367,6 @@ export default function PeriodSimulatorPage() {
     runId,
     CLOCK_REFRESH_MS,
   );
-  const hasActiveRun =
-    simStatus === "running" || simStatus === "paused" || simStatus === "done" || simStatus === "collapsed";
-
   useDefensivePerformanceCleanup(simStatus === "running");
 
   useEffect(() => {
@@ -476,6 +532,57 @@ export default function PeriodSimulatorPage() {
     const esTick = tick.type === "TICK";
     if (!esTick && !esReconciliacion) return;
 
+    if (esReconciliacion && tick.ventanaActual && sessionId) {
+      const cargadas = ventanasCargadasRef.current;
+      const currentW = parseInt(tick.ventanaActual.substring(1), 10);
+      const desdeW = Math.max(1, currentW - 23);
+      const desdeWid = "W" + String(desdeW).padStart(4, "0");
+      if (!cargadas.has(tick.ventanaActual)) {
+        cargadas.add(tick.ventanaActual);
+        for (let w = desdeW; w <= currentW; w++) {
+          cargadas.add("W" + String(w).padStart(4, "0"));
+        }
+        (async () => {
+          try {
+            const [vuelosDataLocal, ventanaDataLocal] = await Promise.all([
+              obtenerVuelosSimulacion(sessionId, desdeWid, tick.ventanaActual),
+              obtenerVentanaSimulacion(sessionId, tick.ventanaActual),
+            ]);
+            const adapted = (vuelosDataLocal ?? []).map(adaptFlightInstance);
+            const metadata = new Map(flightMetadataRef.current);
+            for (const f of adapted) {
+              metadata.set(f.idVueloInstancia ?? f.id, { ...f, ticksAusente: 0 });
+            }
+            flightMetadataRef.current = metadata;
+            setSimulationPanelData((prev) => {
+              const flights = new Map(prev.flights);
+              const bags = new Map(prev.bags);
+              const routes = new Map(prev.routes);
+              const orders = new Map(prev.orders);
+              for (const f of adapted) {
+                const fid = f.idVueloInstancia ?? f.id;
+                if (!flights.has(fid)) {
+                  flights.set(fid, { ...f, ticksAusente: 0 });
+                }
+              }
+              for (const b of ventanaDataLocal.maletas ?? []) {
+                bags.set(b.idMaleta, { ...b, ticksAusente: 0 });
+              }
+              for (const r of ventanaDataLocal.rutas ?? []) {
+                routes.set(r.idRuta, { ...r, ticksAusente: 0 });
+              }
+              for (const o of ventanaDataLocal.pedidos ?? []) {
+                orders.set(o.id ?? o.idPedido, o);
+              }
+              return { ...prev, flights, bags, routes, orders };
+            });
+          } catch (e) {
+            cargadas.delete(tick.ventanaActual);
+          }
+        })();
+      }
+    }
+
     if (esTick && startSimMsRef.current == null) {
       const ms = Date.parse(`${tick.simTime}Z`);
       if (Number.isFinite(ms)) startSimMsRef.current = ms;
@@ -493,6 +600,21 @@ export default function PeriodSimulatorPage() {
     setMapAirports((prev) =>
       prev.map((ap) => ({ ...ap, used: occMap[ap.iata] ?? ap.used })),
     );
+
+    const ts = Date.now();
+    if (Array.isArray(tick.eventosOcupacion) && tick.eventosOcupacion.length > 0) {
+      setEventosOcupacion((prev) => [
+        ...prev,
+        ...tick.eventosOcupacion.map((e) => ({
+          id: `${ts}-${Math.random().toString(36).slice(2, 8)}`,
+          tipo: e.tipo,
+          cantidad: e.cantidad || 1,
+          aeropuerto: e.aeropuerto,
+          vuelo: e.vuelo || null,
+          ts,
+        })),
+      ]);
+    }
 
     let vueloStateMap = {};
     let maletaStateMap = {};
@@ -886,6 +1008,7 @@ export default function PeriodSimulatorPage() {
       setWindowSpacingMinutes(base.windowSpacingMinutes);
 
       const primeraVentana = base.primeraVentana ?? "W0001";
+      primeraVentanaRef.current = primeraVentana;
       const [ventana1, vuelosData] = await Promise.all([
         obtenerVentanaSimulacion(newSessionId, primeraVentana),
         obtenerVuelosSimulacion(newSessionId, primeraVentana, primeraVentana),
@@ -983,6 +1106,70 @@ export default function PeriodSimulatorPage() {
     }
   };
 
+  const handleOpenSessions = async () => {
+    setDropdownOpen(false);
+    try {
+      const sessions = await listarSesionesActivas("PERIODO");
+      setActiveSessions(sessions);
+      setShowSessionsModal(true);
+    } catch (err) {
+      toast.push({
+        type: "error",
+        title: "Error al cargar sesiones",
+        message: err.message,
+      });
+    }
+  };
+
+  const handleJoin = async (joinedSessionId) => {
+    setShowSessionsModal(false);
+    try {
+      setSimStatus("starting");
+      setSessionId(joinedSessionId);
+      const base = await obtenerBaseSimulacion(joinedSessionId);
+      const adaptedAirports = Array.isArray(base.aeropuertos)
+        ? base.aeropuertos.map(adaptAirport)
+        : [];
+      setMapAirports(adaptedAirports);
+      setSimulatedDayDurationMs(base.duracionDiaSimuladoMs);
+      setWindowSizeMinutes(base.windowSizeMinutes);
+      setWindowSpacingMinutes(base.windowSpacingMinutes);
+      const primeraVentana = base.primeraVentana ?? "W0001";
+      primeraVentanaRef.current = primeraVentana;
+      ventanasCargadasRef.current.clear();
+      flightMetadataRef.current.clear();
+      setCancelledFlightIds(new Set());
+      setLastMockState(null);
+      setRunId((current) => current + 1);
+      startSimMsRef.current = null;
+      tickReceivedRef.current = true;
+      ventanasCargadasRef.current.add(primeraVentana);
+      setSimStatus("running");
+      setSimulationPanelData((prev) => ({
+        ...prev,
+        airports: adaptedAirports,
+        sessionId: joinedSessionId,
+        loaded: true,
+      }));
+      toast.push({
+        type: "info",
+        title: "Conectado a simulación",
+        message: `Inicio: ${base.fechaInicio} · ${base.totalDias} días`,
+      });
+      collapseSidebars();
+    } catch (err) {
+      setSimStatus("idle");
+      setSessionId(null);
+      setCurrentSimTimeUtc(null);
+      clearSimulationData();
+      toast.push({
+        type: "error",
+        title: "No se pudo unir a la simulación",
+        message: err.message,
+      });
+    }
+  };
+
   const handleResume = async () => {
     if (USE_MOCK) return;
     try {
@@ -1022,125 +1209,37 @@ export default function PeriodSimulatorPage() {
 
   const displayedDay = getDisplayedDay(progress, hasActiveRun);
 
-  const mapOverlays = hasActiveRun ? [
-    {
-      id: "period-start-panel",
-      icon: <Clock className="w-4 h-4" />,
-      content: (
-        <div className="bg-surface-2/85 backdrop-blur border border-slate-700 shadow-[0_12px_35px_rgba(0,0,0,0.45)] rounded-xl px-4 py-3 flex items-center gap-4">
-          <div className="shrink-0">
-            <div className="text-[9px] text-slate-400 font-medium uppercase tracking-wider">
-              Inicio sim.
-            </div>
-            <div className="text-sm font-bold text-slate-100 tabular-nums whitespace-nowrap">
-              {formattedStartDate}  {startTime || "--:--"}
-            </div>
-          </div>
-          <div className="h-9 w-px bg-slate-700 shrink-0" />
-          <div className="shrink-0">
-            <div className="text-[9px] text-slate-400 font-medium uppercase tracking-wider">
-              Fecha actual
-            </div>
-            <div className="text-sm font-bold text-slate-100 tabular-nums whitespace-nowrap">
-              {currentClock.date}
-            </div>
-          </div>
-          <div className="h-9 w-px bg-slate-700 shrink-0" />
-          <div className="shrink-0">
-            <div className="text-[9px] text-slate-400 font-medium uppercase tracking-wider">
-              Hora actual
-            </div>
-            <div className="text-sm font-bold text-slate-100 tabular-nums whitespace-nowrap">
-              {currentClock.time}
-            </div>
-          </div>
-          <div className="h-9 w-px bg-slate-700 shrink-0" />
-          <div className="shrink-0">
-            <div className="text-[9px] text-slate-400 font-medium uppercase tracking-wider">
-              Cronometro
-            </div>
-            <div className="text-base font-bold text-slate-100 tabular-nums">
-              {formatElapsedHMS(executionElapsedMs)}
-            </div>
-          </div>
-        </div>
-      ),
-    },
-    {
-      id: "period-simulated-panel",
-      buttonSide: "left",
-      icon: <Clock className="w-4 h-4" />,
-      content: (
-        <div className="bg-surface-2/85 backdrop-blur border border-slate-700 shadow-[0_12px_35px_rgba(0,0,0,0.45)] rounded-xl px-4 py-3 flex items-center gap-4">
-          <div className="shrink-0">
-            <div className="text-[9px] text-slate-400 font-medium uppercase tracking-wider">
-              Fecha simulada
-            </div>
-            <div className="text-base font-bold text-info tabular-nums">
-              {simulationClock.date}
-            </div>
-          </div>
-          <div className="h-9 w-px bg-slate-700 shrink-0" />
-          <div className="shrink-0">
-            <div className="text-[9px] text-slate-400 font-medium uppercase tracking-wider">
-              Hora simulada
-            </div>
-            <div className="text-base font-bold text-info tabular-nums whitespace-nowrap">
-              {simulationClock.time}
-            </div>
-          </div>
-          <div className="h-9 w-px bg-slate-700 shrink-0" />
-          <div className="shrink-0">
-            <div className="text-[9px] text-slate-400 font-medium uppercase tracking-wider">
-              Tiempo transcurrido
-            </div>
-            <div className="text-base font-bold text-info tabular-nums">
-              {simulatedElapsedLabel}
-            </div>
-          </div>
-          <div className="h-9 w-px bg-slate-700 shrink-0" />
-          <div className="shrink-0">
-            <div className="text-[9px] text-slate-400 font-medium uppercase tracking-wider">
-              Dia de simulacion
-            </div>
-            <div className="text-base font-bold text-info tabular-nums">
-              {displayedDay
-                ? `Dia ${displayedDay}/${PERIOD_DAYS}`
-                : ""}
-            </div>
-          </div>
-        </div>
-      ),
-    },
-    {
-      id: "period-actions-panel",
-      icon: <SlidersHorizontal className="w-4 h-4" />,
-      content: (
-        <div className="bg-surface-2/85 backdrop-blur border border-slate-700 shadow-[0_12px_35px_rgba(0,0,0,0.45)] rounded-xl px-4 py-3 flex items-center gap-4">
-          <button
-            type="button"
-            onClick={() => setShowRouteLines((v) => !v)}
-            className={`shrink-0 rounded-lg px-2 py-1 text-xs font-medium whitespace-nowrap transition-colors ${
-              showRouteLines
-                ? "bg-blue-600/20 text-blue-400 border border-blue-500/40 hover:bg-blue-600/30"
-                : "bg-surface-2 text-slate-400 border border-slate-700 hover:text-slate-200"
-            }`}
-          >
-            Mostrar lineas
-          </button>
-          <div className="h-9 w-px bg-slate-700 shrink-0" />
-          <button
-            type="button"
-            onClick={handleStop}
-            className="shrink-0 bg-danger/10 hover:bg-danger/20 text-danger border border-danger/40 rounded-lg px-2 py-1 transition-colors"
-            title="Detener"
-          >
-            <Square className="w-5 h-5" />
-          </button>
-        </div>
-      ),
-    },
-  ] : [];
+  useEffect(() => {
+    if (!hasActiveRun || !simulationClock) {
+      setTopBarInfo(null);
+      return;
+    }
+    const fmtElapsed = () => formatElapsedHMS(executionElapsedMs);
+    setTopBarInfo(
+      <div className="flex items-center gap-3 text-[11px]">
+        <span className="text-slate-500">Inicio:</span>
+        <span className="text-slate-200 tabular-nums">{formattedStartDate} {startTime}</span>
+        <span className="text-slate-600">|</span>
+        <span className="text-slate-500">Sim:</span>
+        <span className="text-slate-200 tabular-nums">{simulationClock.date}</span>
+        <span className="text-slate-200 tabular-nums">{simulationClock.time}</span>
+        {displayedDay != null && (
+          <>
+            <span className="text-slate-600">|</span>
+            <span className="text-slate-200 tabular-nums">Dia {displayedDay}/{PERIOD_DAYS}</span>
+          </>
+        )}
+        <span className="text-slate-600">|</span>
+        <span className="text-slate-500">Trans:</span>
+        <span className="text-slate-200 tabular-nums">{simulatedElapsedLabel}</span>
+        <span className="text-slate-600">|</span>
+        <span className="text-slate-200 tabular-nums">{fmtElapsed()}</span>
+      </div>
+    );
+    return () => setTopBarInfo(null);
+  }, [hasActiveRun, simulationClock.date, simulationClock.time, executionElapsedMs, formattedStartDate, startTime, displayedDay, simulatedElapsedLabel, setTopBarInfo]);
+
+  const mapOverlays = [];
 
   const mapOverlay = hasActiveRun ? null : (
     <div className="bg-surface-2/85 m-4 backdrop-blur border border-slate-700 shadow-[0_12px_35px_rgba(0,0,0,0.45)] rounded-xl px-4 py-3 flex items-center justify-center gap-6">
@@ -1194,13 +1293,34 @@ export default function PeriodSimulatorPage() {
         </div>
       </div>
       <div className="h-9 w-px bg-slate-700" />
-      <button
-        type="button"
-        onClick={handleStart}
-        className="self-end bg-blue-600 hover:bg-blue-500 text-white px-4 py-2 rounded-lg flex items-center gap-2 font-medium text-sm transition-colors"
-      >
-        <Play className="w-4 h-4" /> Ejecutar
-      </button>
+      <div className="relative self-end">
+        <button
+          type="button"
+          onClick={() => setDropdownOpen((o) => !o)}
+          className="bg-blue-600 hover:bg-blue-500 text-white px-4 py-2 rounded-lg flex items-center gap-2 font-medium text-sm transition-colors"
+        >
+          <Play className="w-4 h-4" /> Ejecutar
+          <ChevronDown className="w-4 h-4" />
+        </button>
+        {dropdownOpen && (
+          <div className="absolute right-0 bottom-full mb-1 w-56 bg-slate-800 border border-slate-700 rounded-lg shadow-[0_12px_35px_rgba(0,0,0,0.45)] z-50 overflow-hidden">
+            <button
+              type="button"
+              onClick={() => { setDropdownOpen(false); handleStart(); }}
+              className="w-full text-left px-4 py-2.5 text-sm text-slate-200 hover:bg-slate-700 transition-colors flex items-center gap-2"
+            >
+              <Play className="w-4 h-4" /> Iniciar nueva simulación
+            </button>
+            <button
+              type="button"
+              onClick={handleOpenSessions}
+              className="w-full text-left px-4 py-2.5 text-sm text-slate-200 hover:bg-slate-700 transition-colors flex items-center gap-2 border-t border-slate-700"
+            >
+              <Users className="w-4 h-4" /> Ver simulación en curso
+            </button>
+          </div>
+        )}
+      </div>
     </div>
   );
 
@@ -1215,6 +1335,76 @@ export default function PeriodSimulatorPage() {
           <div className="text-sm text-slate-400 mt-1">
             Planificando rutas iniciales, esto puede tomar unos segundos
           </div>
+        </div>
+      </div>
+    </div>
+  ) : null;
+
+  const sessionsModal = showSessionsModal ? (
+    <div className="fixed inset-0 z-[10000] flex items-center justify-center bg-black/55 backdrop-blur-[2px]">
+      <div className="bg-surface-2 border border-slate-700 shadow-[0_12px_35px_rgba(0,0,0,0.45)] rounded-xl max-w-2xl w-full mx-4 max-h-[80vh] overflow-y-auto">
+        <div className="px-6 py-4 border-b border-slate-700 flex items-center justify-between sticky top-0 bg-surface-2 z-10">
+          <h2 className="text-lg font-semibold text-slate-100 flex items-center gap-2">
+            <Users className="w-5 h-5" /> Simulaciones en curso
+          </h2>
+          <button
+            type="button"
+            onClick={() => setShowSessionsModal(false)}
+            className="text-slate-400 hover:text-slate-200 transition-colors"
+          >
+            <X className="w-5 h-5" />
+          </button>
+        </div>
+        <div className="p-4">
+          {activeSessions.length === 0 ? (
+            <div className="text-center text-slate-400 py-8">
+              No hay simulaciones activas en este momento
+            </div>
+          ) : (
+            <table className="w-full text-sm text-slate-300">
+              <thead>
+                <tr className="text-left text-slate-400 border-b border-slate-700">
+                  <th className="pb-2 pr-3 font-medium">#</th>
+                  <th className="pb-2 pr-3 font-medium">Inicio</th>
+                  <th className="pb-2 pr-3 font-medium">Tiempo real</th>
+                  <th className="pb-2 pr-3 font-medium">Tiempo sim</th>
+                  <th className="pb-2 pr-3 font-medium">Tick</th>
+                  <th className="pb-2 pr-3 font-medium">Estado</th>
+                  <th className="pb-2" />
+                </tr>
+              </thead>
+              <tbody>
+                {activeSessions.map((s, idx) => (
+                  <tr key={s.sessionId} className="border-b border-slate-800">
+                    <td className="py-2 pr-3 text-slate-400">{idx + 1}</td>
+                    <td className="py-2 pr-3">{s.fechaInicio} {s.horaInicio}</td>
+                    <td className="py-2 pr-3">
+                      {Math.floor(s.elapsedRealSegundos / 60)}m {s.elapsedRealSegundos % 60}s
+                    </td>
+                    <td className="py-2 pr-3">
+                      {Math.floor(s.elapsedSimMinutos / 60)}h {s.elapsedSimMinutos % 60}m
+                    </td>
+                    <td className="py-2 pr-3">{s.tickActual}</td>
+                    <td className="py-2 pr-3">
+                      <span className={`inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-xs font-medium ${s.activa ? "bg-green-900/40 text-green-300" : "bg-slate-700/40 text-slate-400"}`}>
+                        <span className={`w-1.5 h-1.5 rounded-full ${s.activa ? "bg-green-400" : "bg-slate-500"}`} />
+                        {s.activa ? "Activa" : "Pausada"}
+                      </span>
+                    </td>
+                    <td className="py-2 text-right">
+                      <button
+                        type="button"
+                        onClick={() => handleJoin(s.sessionId)}
+                        className="text-blue-400 hover:text-blue-300 text-xs font-medium transition-colors"
+                      >
+                        Unirse
+                      </button>
+                    </td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+          )}
         </div>
       </div>
     </div>
@@ -1532,6 +1722,7 @@ export default function PeriodSimulatorPage() {
   return (
     <>
       {loadingModal}
+      {sessionsModal}
       {finalSummaryModal}
       {resumenColapsoModal || colapsoModal}
       <MapDashboard
@@ -1554,6 +1745,7 @@ export default function PeriodSimulatorPage() {
       progress={progress}
       simStatus={simStatus}
       draggable={hasActiveRun}
+      eventosOcupacion={eventosOcupacion}
     />
     </>
   );

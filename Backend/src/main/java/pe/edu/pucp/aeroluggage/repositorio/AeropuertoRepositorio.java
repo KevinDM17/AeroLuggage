@@ -102,6 +102,29 @@ public class AeropuertoRepositorio {
         return jdbcTemplate.update("UPDATE aeropuerto SET activo = 0 WHERE id_aeropuerto = ?", id);
     }
 
+    public boolean tieneOcupacion(final String iata) {
+        final String sql = "SELECT maletas_actuales FROM aeropuerto WHERE id_aeropuerto = ? AND activo = 1";
+        final Integer maletas = jdbcTemplate.query(sql,
+                (rs, rowNum) -> rs.getInt("maletas_actuales"), iata)
+                .stream().findFirst().orElse(0);
+        return maletas > 0;
+    }
+
+    public boolean tieneVuelosProgramadosActivos(final String iata) {
+        final String sql = "SELECT COUNT(*) FROM vuelo_programado "
+                + "WHERE (id_aeropuerto_origen = ? OR id_aeropuerto_destino = ?) AND activo = 1";
+        final Integer count = jdbcTemplate.queryForObject(sql, Integer.class, iata, iata);
+        return count != null && count > 0;
+    }
+
+    public boolean tieneVuelosInstanciaActivos(final String iata) {
+        final String sql = "SELECT COUNT(*) FROM vuelo_instancia "
+                + "WHERE (id_aeropuerto_origen = ? OR id_aeropuerto_destino = ?) "
+                + "AND estado NOT IN ('FINALIZADO', 'CANCELADO')";
+        final Integer count = jdbcTemplate.queryForObject(sql, Integer.class, iata, iata);
+        return count != null && count > 0;
+    }
+
     private static final class AeropuertoRowMapper implements RowMapper<Aeropuerto> {
         @Override
         public Aeropuerto mapRow(ResultSet rs, int rowNum) throws SQLException {

@@ -3,6 +3,7 @@ import { Outlet, useLocation } from "react-router-dom";
 import { PanelLeftOpen, PanelRightOpen } from "lucide-react";
 import Sidebar from "./Sidebar";
 import RightPanel from "./RightPanel";
+import SimTopBar from "./SimTopBar";
 import { MapFocusContext } from "../../context/MapFocusContext";
 import { useOperationsSession } from "../../hooks/useOperationsSession";
 import { useToast } from "../ui/Toast";
@@ -36,6 +37,8 @@ export default function MainLayout() {
   const [mapDim, setMapDim] = useState({ airports: null, flights: null, fitKey: null });
   const [cancellationNotice, setCancellationNotice] = useState(null);
   const [flightManifestLoader, setFlightManifestLoader] = useState(null);
+  const [topBarActions, setTopBarActions] = useState(null);
+  const [topBarInfo, setTopBarInfo] = useState(null);
   const location = useLocation();
   const previousIsSimulatorRef = useRef(null);
   const toast = useToast();
@@ -105,6 +108,8 @@ export default function MainLayout() {
     setPanelFocus(null);
     setMapDim({ airports: null, flights: null, fitKey: null });
     setCancellationNotice(null);
+    setTopBarActions(null);
+    setTopBarInfo(null);
   }, [location.pathname]);
 
   const showLeftHamburger = !leftOpen;
@@ -131,6 +136,8 @@ export default function MainLayout() {
       cancelledFlightIds,
       setCancelledFlightIds,
       ops,
+      setTopBarActions,
+      setTopBarInfo,
     }),
     [simulationPanelData, resetSimulationPanelData, collapseSidebars, cancelledFlightIds, ops],
   );
@@ -138,12 +145,14 @@ export default function MainLayout() {
   return (
     <MapFocusContext.Provider value={{ mapHighlight, setMapHighlight, selected, setSelected, mapFocus, setMapFocus, panelFocus, setPanelFocus, mapDim, setMapDim, cancellationNotice, setCancellationNotice, flightManifestLoader, setFlightManifestLoader }}>
     <div className="flex h-screen overflow-hidden bg-surface-1 text-slate-200 font-sans relative">
+      <SimTopBar left={topBarInfo}>{topBarActions}</SimTopBar>
+
       {showLeftHamburger && (
         <button
           type="button"
           onClick={() => setLeftOpen(true)}
           aria-label="Abrir menú lateral"
-          className="fixed top-3 left-3 z-[10001] p-2 bg-surface-1/90 backdrop-blur border border-slate-700 rounded-lg text-slate-300 hover:text-white hover:bg-surface-2 transition-colors shadow-lg"
+          className="fixed top-10 left-3 z-[10001] p-2 bg-surface-1/90 backdrop-blur border border-slate-700 rounded-lg text-slate-300 hover:text-white hover:bg-surface-2 transition-colors shadow-lg"
         >
           <PanelLeftOpen className="w-5 h-5" />
         </button>
@@ -164,16 +173,16 @@ export default function MainLayout() {
         <div
           className={
             isDesktop
-              ? "relative z-[9995] shrink-0"
-              : "fixed inset-y-0 left-0 z-[9995] max-w-[85%] shadow-2xl"
+              ? "relative z-[9995] shrink-0 pt-8"
+              : "fixed top-8 bottom-0 left-0 z-[9995] max-w-[85%] shadow-2xl"
           }
         >
           <Sidebar onClose={closeLeft} closeOnNavigate={!isDesktop} />
         </div>
       )}
 
-      <div className="flex-1 flex flex-col h-full overflow-hidden relative border-r border-slate-800 min-w-0">
-        <main key={location.pathname} className="app-scrollbar flex-1 min-h-0 overflow-y-auto overflow-x-hidden bg-canvas">
+      <div className="flex-1 flex flex-col h-full overflow-hidden relative border-r border-slate-800 min-w-0 pt-8">
+        <main key={location.pathname} className="flex-1 min-h-0 overflow-y-hidden overflow-x-hidden bg-canvas">
           <Outlet context={layoutContext} />
         </main>
       </div>
@@ -183,7 +192,7 @@ export default function MainLayout() {
           type="button"
           onClick={() => setRightOpen(true)}
           aria-label="Abrir panel de detalle"
-          className="fixed top-3 right-3 z-[10001] p-2 bg-surface-1/90 backdrop-blur border border-slate-700 rounded-lg text-slate-300 hover:text-white hover:bg-surface-2 transition-colors shadow-lg"
+          className="fixed top-10 right-3 z-[10001] p-2 bg-surface-1/90 backdrop-blur border border-slate-700 rounded-lg text-slate-300 hover:text-white hover:bg-surface-2 transition-colors shadow-lg"
         >
           <PanelRightOpen className="w-5 h-5" />
         </button>
@@ -193,8 +202,8 @@ export default function MainLayout() {
         <div
           className={
             isDesktop
-              ? "relative z-[9995] shrink-0"
-              : "fixed inset-y-0 right-0 z-[9995] max-w-[90%] shadow-2xl"
+              ? "relative z-[9995] shrink-0 pt-8"
+              : "fixed top-8 bottom-0 right-0 z-[9995] max-w-[90%] shadow-2xl"
           }
         >
           <RightPanel

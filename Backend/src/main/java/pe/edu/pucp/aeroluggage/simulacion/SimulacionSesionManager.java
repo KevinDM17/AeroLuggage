@@ -27,6 +27,7 @@ import pe.edu.pucp.aeroluggage.dto.simulacion.rest.RutaSimulacionResponse;
 import pe.edu.pucp.aeroluggage.dto.simulacion.rest.RutaVueloResponse;
 import pe.edu.pucp.aeroluggage.dto.simulacion.rest.VueloInstanciaResponse;
 import pe.edu.pucp.aeroluggage.dto.simulacion.rest.SimulacionIniciarRequest;
+import pe.edu.pucp.aeroluggage.dto.simulacion.rest.SimulacionSesionResumenDTO;
 import pe.edu.pucp.aeroluggage.dto.simulacion.ws.SimulacionTickLigeroDTO;
 import pe.edu.pucp.aeroluggage.dto.simulacion.ws.SimulacionEstadoDTO;
 
@@ -34,6 +35,7 @@ import java.io.IOException;
 import java.nio.charset.StandardCharsets;
 import java.nio.file.Files;
 import java.nio.file.Path;
+import java.time.Duration;
 import java.time.LocalDate;
 import java.time.LocalDateTime;
 import java.time.LocalTime;
@@ -84,6 +86,7 @@ public class SimulacionSesionManager {
     private final SimulacionPeriodoService periodoService;
     private final SimulacionBootstrapService bootstrapService;
     private final SimulacionSnapshotService snapshotService;
+    private final SimulacionSnap72hExportService snap72hExportService;
     private final SimulacionParams simulacionParams;
     private final pe.edu.pucp.aeroluggage.config.SistemaConfiguracion sistemaConfiguracion;
     private final ALNSConfig alnsConfig;
@@ -207,8 +210,6 @@ public class SimulacionSesionManager {
 
         planificarInicial(sesion, primeraVentana, broker, bucketInicial);
 
-        log.info("[AeroLuggage/Simulacion] - INICIAR: sessionId: {}, ventanaInicial: {}", sessionId, primeraVentana);
-
         return SimulacionEstadoDTO.builder()
                 .withSessionId(sessionId)
                 .withEstado(ESTADO_INICIADA)
@@ -256,14 +257,12 @@ public class SimulacionSesionManager {
         final SimulacionSesion sesion = sesionesActivas.remove(sessionId);
         sesionesFinalizadas.remove(sessionId);
         if (sesion == null) {
-            log.warn("[AeroLuggage/Simulacion] - DETENER: sesi\u00f3n no encontrada: {}", sessionId);
             return;
         }
 
         sesion.getActiva().set(false);
         limpiarSesion(sesion);
         wsSessionIdASimSessionId.values().remove(sessionId);
-        log.info("[AeroLuggage/Simulacion] - DETENER: sessionId: {}", sessionId);
 
         broker.convertAndSend(
                 String.format(TOPIC_ESTADO, sessionId),
@@ -288,6 +287,47 @@ public class SimulacionSesionManager {
         return sesionesFinalizadas.get(sessionId);
     }
 
+    public List<SimulacionSesionResumenDTO> listarSesionesActivas(final String tipo) {
+        final boolean esColapso = "COLAPSO".equalsIgnoreCase(tipo);
+        final List<SimulacionSesionResumenDTO> resultado = new ArrayList<>();
+        final long ahoraRealMs = System.currentTimeMillis();
+
+        for (final SimulacionSesion sesion : sesionesActivas.values()) {
+            if (sesion == null) {
+                continue;
+            }
+            final boolean sesionColapso = sesion.getTotalDias() == 0;
+            if (esColapso != sesionColapso) {
+                continue;
+            }
+            final long elapsedRealSegundos = sesion.getStartedAtRealMs() > 0
+                    ? (ahoraRealMs - sesion.getStartedAtRealMs()) / 1000L : 0L;
+            final LocalDateTime simTime = sesion.getCurrentSimTimeUtc() != null
+                    ? sesion.getCurrentSimTimeUtc().get() : null;
+            final long elapsedSimMinutos = simTime != null
+                    ? Duration.between(sesion.getFechaInicioUtc(), simTime).toMinutes() : 0L;
+
+            resultado.add(SimulacionSesionResumenDTO.builder()
+                    .withSessionId(sesion.getSessionId())
+                    .withTipo(sesionColapso ? "COLAPSO" : "PERIODO")
+                    .withFechaInicio(sesion.getFechaInicio() != null
+                            ? sesion.getFechaInicio().format(FORMATO_FECHA) : "")
+                    .withHoraInicio(sesion.getFechaInicioUtc() != null
+                            ? sesion.getFechaInicioUtc().toLocalTime().format(
+                                    DateTimeFormatter.ofPattern("HH:mm")) : "")
+                    .withSimTimeUtc(simTime != null
+                            ? simTime.format(FORMATO_FECHA_HORA) : "")
+                    .withTickActual(sesion.getTickActual() != null
+                            ? sesion.getTickActual().get() : 0)
+                    .withElapsedRealSegundos(elapsedRealSegundos)
+                    .withElapsedSimMinutos(elapsedSimMinutos)
+                    .withActiva(sesion.getActiva() != null && sesion.getActiva().get())
+                    .withTotalDias(sesion.getTotalDias())
+                    .build());
+        }
+        return resultado;
+    }
+
     public void limpiarPorWsSession(final String wsSessionId, final SimpMessagingTemplate broker) {
         final String simSessionId = wsSessionIdASimSessionId.remove(wsSessionId);
         if (simSessionId == null) {
@@ -303,8 +343,6 @@ public class SimulacionSesionManager {
         if (anterior != null && !anterior.isDone()) {
             anterior.cancel(false);
         }
-        log.info("[AeroLuggage/Simulacion] - DESCONEXION: wsSessionId={} sessionId={} graceMs={}",
-                wsSessionId, simSessionId, WS_DISCONNECT_GRACE_MS);
     }
 
     private void programarTarea(final SimulacionSesion sesion, final SimpMessagingTemplate broker) {
@@ -324,6 +362,13 @@ public class SimulacionSesionManager {
         }
         try {
             final SimulacionTickLigeroDTO tick = periodoService.ejecutarTick(sesion);
+
+            final LocalDateTime simTime = sesion.getCurrentSimTimeUtc().get();
+            final LocalDateTime snapTime = sesion.getFechaInicioUtc().plusHours(48);
+            if (!simTime.isBefore(snapTime) && sesion.marcarSnapshot72hTomado()) {
+                snap72hExportService.generarSnapshot72h(sesion);
+            }
+
             broker.convertAndSend(TOPIC_TICKS + sesion.getSessionId(), tick);
             if (emitirAlertasColapsoSiCorresponde(sesion, broker, Set.of())) {
                 detenerPorColapso(sesion);
@@ -338,7 +383,6 @@ public class SimulacionSesionManager {
                 sesionesActivas.remove(sesion.getSessionId());
                 sesionesFinalizadas.remove(sesion.getSessionId());
                 cancelarLimpiezaPendiente(sesion.getSessionId());
-                log.info("[AeroLuggage/Simulacion] - FINALIZADA: sessionId: {}", sesion.getSessionId());
 
                 broker.convertAndSend(
                         String.format(TOPIC_ESTADO, sesion.getSessionId()),
@@ -356,8 +400,6 @@ public class SimulacionSesionManager {
             sesionesFinalizadas.remove(sesion.getSessionId());
             cancelarLimpiezaPendiente(sesion.getSessionId());
             wsSessionIdASimSessionId.values().removeIf(sesion.getSessionId()::equals);
-            log.error("[AeroLuggage/Simulacion] - ERROR EN TICK: sessionId={} tickActual={}",
-                    sesion.getSessionId(), sesion.getTickActual().get(), exception);
             broker.convertAndSend(
                     String.format(TOPIC_ESTADO, sesion.getSessionId()),
                     SimulacionEstadoDTO.builder()
@@ -442,6 +484,7 @@ public class SimulacionSesionManager {
             final int ocupMaxVuelo = maxOcupacionVueloPct(instancia.getVueloInstancias());
 
             if (instancia.getMaletas().isEmpty()) {
+                /*
                 log.info("[AeroLuggage/Planificador] - SKIP: sessionId={}\n"
                                 + "\tventana={} (doble: {}-{})\n"
                                 + "\tinicioVentana={}\n"
@@ -451,6 +494,7 @@ public class SimulacionSesionManager {
                         sesion.getSessionId(),
                         segundaVentana, primeraVentana, segundaVentana,
                         inicioVentana, finVentana);
+                */
                 sesion.registrarResumenVentana(new SimulacionSesion.ResumenVentanaPlanificacion(
                         segundaVentana, inicioVentana, finVentana, 0, 0, 0, 0L));
                 return;
@@ -465,6 +509,7 @@ public class SimulacionSesionManager {
             registrarFallosMaletas(sesion, copia, segundaVentana, alns);
 
             if (solucion == null || solucion.getSolucion().isEmpty()) {
+                /*
                 log.warn("[AeroLuggage/Planificador] - SIN SOLUCION: sessionId={}\n"
                                 + "\tventana={} (doble: {}-{})\n"
                                 + "\tmaletasEvaluadas={}\n"
@@ -474,6 +519,7 @@ public class SimulacionSesionManager {
                         segundaVentana, primeraVentana, segundaVentana,
                         instancia.getMaletas().size(),
                         instancia.getMaletas().size());
+                */
                 sesion.registrarResumenVentana(new SimulacionSesion.ResumenVentanaPlanificacion(
                         segundaVentana, inicioVentana, finVentana,
                         instancia.getMaletas().size(), 0, instancia.getMaletas().size(), tiempoPlanMs));
@@ -507,6 +553,7 @@ public class SimulacionSesionManager {
                 sesion.registrarResumenVentana(result.resumen());
             });
 
+            /*
             log.info("[AeroLuggage/Planificador] - PLANIFICACION: sessionId={}\n"
                             + "\tventana={} (doble: {}-{})\n"
                             + "\tmaletasEvaluadas={}\n"
@@ -526,15 +573,18 @@ public class SimulacionSesionManager {
                     result.iteraciones(),
                     ocupMaxAero, ocupMaxVuelo,
                     snapshot.eventosFuturosDesdeInicioVentana().size());
+            */
 
             if (sinRuta > 0) {
                 final Map<String, Long> razones = alns.getUltimasRazonesFallo().entrySet().stream()
                         .collect(Collectors.groupingBy(Map.Entry::getValue, Collectors.counting()));
                 if (!razones.isEmpty()) {
+                    /*
                     log.info("[AeroLuggage/Planificador] - RAZONES SIN RUTA: ventana={}", segundaVentana);
                     for (final Map.Entry<String, Long> entry : razones.entrySet()) {
                         log.info("\t{}: {}", entry.getKey(), entry.getValue());
                     }
+                    */
                 }
             }
 
@@ -621,6 +671,7 @@ public class SimulacionSesionManager {
                     .withType("RECONCILIAR")
                     .withTick(sesion.getTickActual().get())
                     .withSimTime(simTimeUtc.format(FORMATO_FECHA_HORA))
+                    .withVentanaActual(snap.ventana())
                     .withStateVersion(sesion.getStateVersion().get())
                     .withMaletasEnTransito(snap.enTransito())
                     .withMaletasEntregadas(snap.entregadas())
@@ -658,6 +709,7 @@ public class SimulacionSesionManager {
                 final int ocupMaxVuelo = maxOcupacionVueloPct(instancia.getVueloInstancias());
 
                 if (instancia.getMaletas().isEmpty()) {
+                    /*
                     log.info("[AeroLuggage/Planificador] - SKIP: sessionId={}\n"
                                     + "\tventana={}\n"
                                     + "\tinicioVentana={}\n"
@@ -668,6 +720,7 @@ public class SimulacionSesionManager {
                             sesion.getSessionId(),
                             windowId, inicioVentana, finVentana,
                             sesion.getCurrentSimTimeUtc().get());
+                    */
                     sesion.registrarResumenVentana(new SimulacionSesion.ResumenVentanaPlanificacion(
                             windowId,
                             inicioVentana,
@@ -690,6 +743,7 @@ public class SimulacionSesionManager {
 
                 if (solucion == null || solucion.getSolucion().isEmpty()) {
                     final int iteraciones = alns.getIteracionesEjecutadas();
+                    /*
                     log.warn("[AeroLuggage/Planificador] - SIN SOLUCION: sessionId={}\n"
                                     + "\tventana={}\n"
                                     + "\tmaletasEvaluadas={}\n"
@@ -708,6 +762,7 @@ public class SimulacionSesionManager {
                             tiempoPlanMs,
                             iteraciones,
                             ocupMaxAero, ocupMaxVuelo);
+                    */
                     sesion.registrarResumenVentana(new SimulacionSesion.ResumenVentanaPlanificacion(
                             windowId,
                             inicioVentana,
@@ -760,6 +815,7 @@ public class SimulacionSesionManager {
                     sesion.registrarResumenVentana(result.resumen());
                 });
 
+                /*
                 log.info("[AeroLuggage/Planificador] - PLANIFICACION: sessionId={}\n"
                                 + "\tventana={}\n"
                                 + "\tmaletasEvaluadas={}\n"
@@ -779,6 +835,7 @@ public class SimulacionSesionManager {
                         result.iteraciones(),
                         ocupMaxAero, ocupMaxVuelo,
                         snapshot.eventosFuturosDesdeInicioVentana().size());
+                */
 
                 if (sinRuta > 0) {
                     final Map<String, Long> razones = alns.getUltimasRazonesFallo().entrySet().stream()
@@ -787,10 +844,12 @@ public class SimulacionSesionManager {
                                     Collectors.counting()
                             ));
                     if (!razones.isEmpty()) {
+                        /*
                         log.info("[AeroLuggage/Planificador] - RAZONES SIN RUTA: ventana={}", windowId);
                         for (final Map.Entry<String, Long> entry : razones.entrySet()) {
                             log.info("\t{}: {}", entry.getKey(), entry.getValue());
                         }
+                        */
                     }
                 }
 
@@ -844,6 +903,7 @@ public class SimulacionSesionManager {
             final int ocupMaxVuelo = maxOcupacionVueloPct(instancia.getVueloInstancias());
 
             if (instancia.getMaletas().isEmpty()) {
+                /*
                 log.info("[AeroLuggage/Planificador] - SKIP: sessionId={}\n"
                                 + "\tventana={}\n"
                                 + "\tinicioVentana={}\n"
@@ -854,6 +914,7 @@ public class SimulacionSesionManager {
                         sesion.getSessionId(),
                         windowId, inicioVentana, finVentana,
                         sesion.getCurrentSimTimeUtc().get());
+                */
                 if (ventana != null) {
                     sesion.registrarResumenVentana(new SimulacionSesion.ResumenVentanaPlanificacion(
                             windowId,
@@ -878,6 +939,7 @@ public class SimulacionSesionManager {
 
             if (solucion == null || solucion.getSolucion().isEmpty()) {
                 final int iteraciones = alns != null ? alns.getIteracionesEjecutadas() : 0;
+                /*
                 log.warn("[AeroLuggage/Planificador] - SIN SOLUCION: sessionId={}\n"
                                 + "\tventana={}\n"
                                 + "\tmaletasEvaluadas={}\n"
@@ -896,6 +958,7 @@ public class SimulacionSesionManager {
                         tiempoPlanMs,
                         iteraciones,
                         ocupMaxAero, ocupMaxVuelo);
+                */
                 if (ventana != null) {
                     sesion.registrarResumenVentana(new SimulacionSesion.ResumenVentanaPlanificacion(
                             windowId,
@@ -927,6 +990,7 @@ public class SimulacionSesionManager {
                 final int totalEnrutadasSim = enrutadasPrevias + enrutadas;
 
                 final int iteraciones = alns != null ? alns.getIteracionesEjecutadas() : 0;
+                /*
                 log.info("[AeroLuggage/Planificador] - PLANIFICACIÓN: sessionId={}\n"
                                 + "\tventana={}\n"
                                 + "\tmaletasEvaluadas={}\n"
@@ -944,6 +1008,7 @@ public class SimulacionSesionManager {
                         tiempoPlanMs,
                         iteraciones,
                         ocupMaxAero, ocupMaxVuelo);
+                */
                 sesion.registrarResumenVentana(new SimulacionSesion.ResumenVentanaPlanificacion(
                         windowId,
                         ventana.getStartUtc(),
@@ -961,10 +1026,12 @@ public class SimulacionSesionManager {
                                     Collectors.counting()
                             ));
                     if (!razones.isEmpty()) {
+                        /*
                         log.info("[AeroLuggage/Planificador] - RAZONES SIN RUTA: ventana={}", windowId);
                         for (final Map.Entry<String, Long> entry : razones.entrySet()) {
                             log.info("\t{}: {}", entry.getKey(), entry.getValue());
                         }
+                        */
                     }
                 }
             }
@@ -1057,20 +1124,14 @@ public class SimulacionSesionManager {
 
     private static void escribirCsvFallos(final SimulacionSesion sesion) {
         final List<String> lineas = sesion.getNoEnrutadasParaCsv();
-        log.info("[AeroLuggage/Simulacion] - ESCRIBIENDO CSV: lineas={}", lineas.size());
         if (lineas.size() <= 1) {
-            log.info("[AeroLuggage/Simulacion] - CSV no generado: sin maletas sin ruta");
             return;
         }
         final Path ruta = Path.of("documentos", "Resultados", "maletas_no_enrutadas_detalle.csv");
-        log.info("[AeroLuggage/Simulacion] - RUTA CSV: {}", ruta.toAbsolutePath());
         try {
             Files.createDirectories(ruta.getParent());
             Files.write(ruta, lineas, StandardCharsets.UTF_8);
-            log.info("[AeroLuggage/Simulacion] - CSV generado: {} ({} lineas)",
-                    ruta.toAbsolutePath(), lineas.size());
         } catch (final IOException exception) {
-            log.error("[AeroLuggage/Simulacion] - Error al escribir CSV: {}", exception.getMessage());
         }
     }
 
@@ -1090,7 +1151,6 @@ public class SimulacionSesionManager {
                     || vuelo.getEstado() == EstadoVuelo.FINALIZADO
                     || vuelo.getEstado() == EstadoVuelo.CONFIRMADO
                     || vuelo.getEstado() == EstadoVuelo.CANCELADO) {
-                log.warn("[Cancelacion] Vuelo {} no cancelable: estado={}", idVuelo, vuelo.getEstado());
                 return;
             }
             vuelo.cancelar();
@@ -1171,8 +1231,6 @@ public class SimulacionSesionManager {
         }
 
         if (maletasYaProcesadas.isEmpty()) {
-            log.info("[Cancelacion] - SIN MALETAS AFECTADAS: sessionId={}, vuelo={}, maletasFrontend={}",
-                    sessionId, idVuelo, idsMaletasFrontend);
             return;
         }
 
@@ -1182,9 +1240,6 @@ public class SimulacionSesionManager {
         if (!replanYaSolicitado) {
             sesion.solicitarReplan();
         }
-        log.info("[Cancelacion] - RESULTADO: sessionId={}, vuelo={}, rutasAfectadas={}, "
-                + "maletasReplanificadas={}, planEnCurso={}, replanSolicitado={}",
-                sessionId, idVuelo, totalRutas, totalManietas, planEnCurso, !replanYaSolicitado);
         if (!planEnCurso) {
             dispararReplan(sesion, broker);
         }
@@ -1980,7 +2035,6 @@ public class SimulacionSesionManager {
         sesionesFinalizadas.remove(sesion.getSessionId());
         cancelarLimpiezaPendiente(sesion.getSessionId());
         wsSessionIdASimSessionId.values().removeIf(sesion.getSessionId()::equals);
-        log.warn("[AeroLuggage/Simulacion] - COLAPSO: sessionId={}", sesion.getSessionId());
     }
 
     private void limpiarSesion(final SimulacionSesion sesion) {
@@ -2020,7 +2074,6 @@ public class SimulacionSesionManager {
     private void limpiarSesionSiSigueDesconectada(final String simSessionId) {
         limpiezasPendientesPorSesion.remove(simSessionId);
         if (tieneWsActiva(simSessionId)) {
-            log.info("[AeroLuggage/Simulacion] - RECONEXION DENTRO DE GRACIA: sessionId={}", simSessionId);
             return;
         }
 
@@ -2032,7 +2085,6 @@ public class SimulacionSesionManager {
 
         sesion.getActiva().set(false);
         limpiarSesion(sesion);
-        log.info("[AeroLuggage/Simulacion] - DESCONEXION: sesi\u00f3n limpiada tras gracia: {}", simSessionId);
     }
 
     private boolean tieneWsActiva(final String simSessionId) {

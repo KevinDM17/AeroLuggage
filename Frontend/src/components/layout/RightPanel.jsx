@@ -1,7 +1,7 @@
 import { forwardRef, memo, useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { Virtuoso } from "react-virtuoso";
 import { useLocation } from "react-router-dom";
-import { Ban, Filter, PanelRightClose, Globe, Info, ChevronDown, Plane, RefreshCw, Package, Luggage, ArrowDownUp, ArrowUp, ArrowDown, Route, X, Crosshair } from "lucide-react";
+import { Ban, Filter, PanelRightClose, Globe, Info, ChevronDown, Plane, RefreshCw, Package, Luggage, ArrowDownUp, ArrowUp, ArrowDown, Route, X, Crosshair, MapPin, Calendar, Clock } from "lucide-react";
 import { useFetch } from "../../hooks/useFetch";
 import { useStompPublish, useStompSubscribe } from "../../hooks/useStomp";
 import { cancelFlight, listFlightPlans, listFlights } from "../../api/flights";
@@ -46,11 +46,11 @@ const flightStatusColor = (s) => {
   }
 };
 
-const occupancyColor = (pct) => pct >= 85 ? "bg-danger" : pct >= 60 ? "bg-warning" : "bg-success";
+const occupancyColor = (pct) => pct >= 85 ? "bg-danger" : pct >= 50 ? "bg-warning" : "bg-success";
 const occupancyBadgeColor = (pct) => (
   pct >= 85
     ? "border-danger/40 bg-danger/12 text-danger"
-    : pct >= 60
+    : pct >= 50
       ? "border-warning/40 bg-warning/12 text-warning"
       : "border-success/40 bg-success/12 text-success"
 );
@@ -58,7 +58,7 @@ const occupancyBadgeColor = (pct) => (
 const bagStatusColor = (s) => {
   switch (s) {
     case "EN_ALMACEN": return "bg-slate-300 text-slate-800";
-    case "EN_TRANSITO": return "bg-warning text-yellow-900";
+    case "EN_TRANSITO": return "bg-sky-500 text-slate-950";
     case "EN_VUELO": return "bg-info text-slate-900";
     case "ENTREGADA": return "bg-success text-emerald-900";
     case "EXTRAVIADA": return "bg-danger text-white";
@@ -73,11 +73,13 @@ const routeStatusColor = (s) => {
     case "PLANIFICADA": return "border-info/40 text-info";
     case "EN_CURSO":
     case "ACTIVA":
-    case "REPLANIFICADA": return "border-warning/40 text-warning";
+    case "REPLANIFICADA": return "border-sky-500/40 text-sky-400";
     case "COMPLETADA": return "border-success/40 text-success";
     default: return "border-slate-700 text-slate-400";
   }
 };
+
+const ROUTE_STATUSES = ["PLANIFICADA", "ACTIVA", "COMPLETADA", "REPLANIFICADA"];
 
 const EMPTY_MANIFEST = { bags: [], orders: [] };
 
@@ -89,7 +91,7 @@ const PanelScroller = forwardRef(function PanelScroller({ style, className, chil
   );
 });
 
-const FlightItem = memo(function FlightItem({ flight, onCancel, canceling, loadManifest, onFocus, onDeselect, isSelected, forceExpanded = false, onExpand, onCollapse }) {
+const FlightItem = memo(function FlightItem({ flight, cityByIata, continentByIata, onCancel, canceling, loadManifest, onFocus, onFocusAirport, onDeselect, isSelected, forceExpanded = false, onExpand, onCollapse }) {
   const [expanded, setExpanded] = useState(false);
   const pct = flight.capacity > 0 ? Math.round((flight.used / flight.capacity) * 100) : 0;
   const normalizedStatus = normalizeFlightStatus(flight.status);
@@ -127,7 +129,7 @@ const FlightItem = memo(function FlightItem({ flight, onCancel, canceling, loadM
   }, [expanded, flightKey, loadManifest]);
 
   return (
-    <div className={`mb-2 flex h-full cursor-pointer flex-col rounded-xl border px-3 py-3 transition-all duration-200 ${isSelected ? "border-info/60 bg-info/5 ring-1 ring-info/70 shadow-[0_8px_24px_rgba(14,165,233,0.08)]" : "border-slate-800/70 bg-surface-1/65 hover:border-slate-700 hover:bg-surface-2/55"}`} onClick={() => {
+    <div className={`mb-2 mr-3 flex h-full cursor-pointer flex-col rounded-xl border px-3 py-3 transition-all duration-200 ${isSelected ? "border-info/60 bg-info/5 ring-1 ring-info/70 shadow-[0_8px_24px_rgba(14,165,233,0.08)]" : "border-slate-800/70 bg-surface-1/65 hover:border-slate-700 hover:bg-surface-2/55"}`} onClick={() => {
       const next = !expanded;
       setExpanded(next);
       if (next) onExpand?.(flight.idVueloInstancia ?? flight.id);
@@ -135,35 +137,39 @@ const FlightItem = memo(function FlightItem({ flight, onCancel, canceling, loadM
     }}>
       <div className="flex justify-between items-start mb-2">
         <div>
-          <h4 className="font-bold text-lg text-slate-200">{flight.id}</h4>
-          <div className={`mt-1 text-xs font-semibold px-2 py-0.5 rounded ${occupancyColor(pct)} inline-block text-slate-900`}>
+          <h4 className="font-bold text-lg text-slate-200 flex items-center gap-1.5"><Plane className="w-4 h-4 shrink-0" />{flight.id}</h4>
+          <div className="flex justify-between gap-5 w-full">
+            <div className={`mt-3 text-xs font-semibold px-2 py-0.5 rounded ${occupancyColor(pct)} inline-block text-slate-900`}>
             Capacidad: {flight.used}/{flight.capacity}
+            </div>
           </div>
         </div>
         <div className="flex flex-col items-end gap-2">
-          <div className="flex items-center gap-1.5">
-            {isSelected && onDeselect && (
-              <button
-                type="button"
-                onClick={(ev) => { ev.stopPropagation(); onDeselect(); }}
-                aria-label={`Quitar seleccion de ${flight.id}`}
-                title="Quitar seleccion"
-                className="rounded-md border border-slate-600/60 bg-slate-700/40 p-1 text-slate-200 transition-colors hover:bg-slate-700/70"
-              >
-                <X className="h-3.5 w-3.5" />
-              </button>
-            )}
-            {onFocus && (
-              <button
-                type="button"
-                onClick={(ev) => { ev.stopPropagation(); onFocus(flight); }}
-                aria-label={`Enfocar ${flight.id} en el mapa`}
-                title="Enfocar en el mapa"
-                className="rounded-md border border-info/40 bg-info/10 p-1 text-info transition-colors hover:bg-info/20"
-              >
-                <Crosshair className="h-3.5 w-3.5" />
-              </button>
-            )}
+          <div className="flex flex-col items-end gap-4">
+            <div className="flex items-end gap-3">
+              {isSelected && onDeselect && (
+                <button
+                  type="button"
+                  onClick={(ev) => { ev.stopPropagation(); onDeselect(); }}
+                  aria-label={`Quitar seleccion de ${flight.id}`}
+                  title="Quitar seleccion"
+                  className="rounded-md border border-slate-600/60 bg-slate-700/40 p-1 text-slate-200 transition-colors hover:bg-slate-700/70"
+                >
+                  <X className="h-3.5 w-3.5" />
+                </button>
+              )}
+              {onFocus && (
+                <button
+                  type="button"
+                  onClick={(ev) => { ev.stopPropagation(); onFocus(flight); }}
+                  aria-label={`Enfocar ${flight.id} en el mapa`}
+                  title="Enfocar en el mapa"
+                  className="rounded-md border border-info/40 bg-info/10 p-1 text-info transition-colors hover:bg-info/20"
+                >
+                  <Crosshair className="h-3.5 w-3.5" />
+                </button>
+              )}
+            </div>
             <span className={`text-[10px] font-bold px-2 py-1 rounded tracking-wider ${flightStatusColor(normalizedStatus)}`}>
               {normalizedStatus.replace(/_/g, " ")}
             </span>
@@ -185,60 +191,105 @@ const FlightItem = memo(function FlightItem({ flight, onCancel, canceling, loadM
         </div>
       </div>
       {expanded && (
-        <div onClick={(e) => e.stopPropagation()} className="cursor-default text-xs text-slate-400">
-          <div className="flex justify-between mt-2">
-            <div className="flex flex-col">
-              <span className="font-medium text-slate-200">{flight.origin}</span>
-              <span className="mt-0.5">Salida: {formatUtcDateTime(flight.depTime)}</span>
+        <div onClick={(e) => e.stopPropagation()} className="cursor-default text-xs text-slate-400 mt-3 space-y-2 border-t border-slate-800 pt-3">
+          <Collapsible title="Origen" defaultOpen>
+            <div className="flex flex-col gap-1.5">
+              <div className="flex items-center gap-1.5">
+                <MapPin className="w-3.5 h-3.5 text-slate-400 shrink-0" />
+                <span className="text-slate-300">{cityByIata.get(flight.origin)}, {continentByIata.get(flight.origin)} ({flight.origin})</span>
+                {onFocusAirport && (
+                  <button
+                    type="button"
+                    onClick={(ev) => { ev.stopPropagation(); onFocusAirport(flight.origin); }}
+                    title="Enfocar en el mapa"
+                    className="rounded-md border border-info/40 bg-info/10 p-0.5 text-info transition-colors hover:bg-info/20 shrink-0"
+                  >
+                    <Crosshair className="h-3 w-3" />
+                  </button>
+                )}
+              </div>
+              <div className="flex items-center gap-3">
+                <div className="flex items-center gap-1.5">
+                  <Calendar className="w-3.5 h-3.5 text-slate-400 shrink-0" />
+                  <span>{(formatUtcDateTime(flight.depTime) || "--").split(" ")[0]}</span>
+                </div>
+                <div className="flex items-center gap-1.5">
+                  <Clock className="w-3.5 h-3.5 text-slate-400 shrink-0" />
+                  <span>{(formatUtcDateTime(flight.depTime) || "--").split(" ")[1]}</span>
+                </div>
+              </div>
             </div>
-            <div className="flex flex-col text-right">
-              <span className="font-medium text-slate-200">{flight.dest}</span>
-              <span className="mt-0.5">Llegada: {formatUtcDateTime(flight.arrTime)}</span>
+          </Collapsible>
+          <Collapsible title="Destino" defaultOpen>
+            <div className="flex flex-col gap-1.5">
+              <div className="flex items-center gap-1.5">
+                <MapPin className="w-3.5 h-3.5 text-slate-400 shrink-0" />
+                <span className="text-slate-300">{cityByIata.get(flight.dest)}, {continentByIata.get(flight.dest)} ({flight.dest})</span>
+                {onFocusAirport && (
+                  <button
+                    type="button"
+                    onClick={(ev) => { ev.stopPropagation(); onFocusAirport(flight.dest); }}
+                    title="Enfocar en el mapa"
+                    className="rounded-md border border-info/40 bg-info/10 p-0.5 text-info transition-colors hover:bg-info/20 shrink-0"
+                  >
+                    <Crosshair className="h-3 w-3" />
+                  </button>
+                )}
+              </div>
+              <div className="flex items-center gap-3">
+                <div className="flex items-center gap-1.5">
+                  <Calendar className="w-3.5 h-3.5 text-slate-400 shrink-0" />
+                  <span>{(formatUtcDateTime(flight.arrTime) || "--").split(" ")[0]}</span>
+                </div>
+                <div className="flex items-center gap-1.5">
+                  <Clock className="w-3.5 h-3.5 text-slate-400 shrink-0" />
+                  <span>{(formatUtcDateTime(flight.arrTime) || "--").split(" ")[1]}</span>
+                </div>
+              </div>
             </div>
-          </div>
+          </Collapsible>
 
-          <div className="mt-3 space-y-3 border-t border-slate-800 pt-3">
-            {manifestStatus === "loading" ? (
-              <div className="text-[11px] text-slate-500">Cargando manifiesto...</div>
-            ) : manifestStatus === "error" ? (
-              <div className="text-[11px] text-danger">No se pudo cargar el manifiesto de esta UT.</div>
-            ) : (
-              <>
-                <ManifestSection
-                  icon={Package}
-                  title="Envios a bordo"
-                  count={manifest.orders.length}
-                  emptyLabel="Sin envios asignados a esta UT."
-                >
-                  {manifest.orders.map((o) => (
-                    <li key={o.id} className="flex items-center justify-between gap-2">
-                      <span className="truncate font-medium text-slate-200">{o.id}</span>
-                      <span className="shrink-0 text-[10px] text-slate-400">
-                        {o.origin} {"->"} {o.dest} · {o.bags} mal.
-                      </span>
-                    </li>
-                  ))}
-                </ManifestSection>
+          {manifestStatus === "loading" ? (
+            <div className="text-[11px] text-slate-500 px-3">Cargando manifiesto...</div>
+          ) : manifestStatus === "error" ? (
+            <div className="text-[11px] text-danger px-3">No se pudo cargar el manifiesto de esta UT.</div>
+          ) : (
+            <>
+              <Collapsible title={`Envios a bordo (${manifest.orders.length})`} defaultOpen>
+                {manifest.orders.length === 0 ? (
+                  <div className="text-[11px] text-slate-500 pl-1">Sin envios asignados a esta UT.</div>
+                ) : (
+                  <ul className="space-y-1">
+                    {manifest.orders.map((o) => (
+                      <li key={o.id} className="flex items-center justify-between gap-2">
+                        <span className="truncate font-medium text-slate-200">{o.id}</span>
+                        <span className="shrink-0 text-[10px] text-slate-400">
+                          {o.origin} {"->"} {o.dest} · {o.bags} mal.
+                        </span>
+                      </li>
+                    ))}
+                  </ul>
+                )}
+              </Collapsible>
 
-                <ManifestSection
-                  icon={Luggage}
-                  title="Maletas a bordo"
-                  count={manifest.bags.length}
-                  emptyLabel="Sin maletas asignadas a esta UT."
-                  scroll
-                >
-                  {manifest.bags.map((b) => (
-                    <li key={b.idMaleta} className="flex items-center justify-between gap-2">
-                      <span className="truncate text-slate-200">{b.idMaleta}</span>
-                      <span className={`shrink-0 rounded px-1.5 py-0.5 text-[9px] font-bold tracking-wider ${bagStatusColor(b.estado)}`}>
-                        {bagStatusLabel(b.estado)}
-                      </span>
-                    </li>
-                  ))}
-                </ManifestSection>
-              </>
-            )}
-          </div>
+              <Collapsible title={`Maletas a bordo (${manifest.bags.length})`} defaultOpen>
+                {manifest.bags.length === 0 ? (
+                  <div className="text-[11px] text-slate-500 pl-1">Sin maletas asignadas a esta UT.</div>
+                ) : (
+                  <ul className="space-y-1 max-h-44 overflow-y-auto no-scrollbar pr-1">
+                    {manifest.bags.map((b) => (
+                      <li key={b.idMaleta} className="flex items-center justify-between gap-2">
+                        <span className="truncate text-slate-200">{b.idMaleta}</span>
+                        <span className={`shrink-0 rounded px-1.5 py-0.5 text-[9px] font-bold tracking-wider ${bagStatusColor(b.estado)}`}>
+                          {bagStatusLabel(b.estado)}
+                        </span>
+                      </li>
+                    ))}
+                  </ul>
+                )}
+              </Collapsible>
+            </>
+          )}
         </div>
       )}
     </div>
@@ -285,7 +336,7 @@ const OrderItem = memo(function OrderItem({ order }) {
   const time = order.time ?? fallbackTime.slice(0, 5);
 
   return (
-    <div className="flex flex-col border-b border-slate-800/50 h-full cursor-pointer hover:bg-slate-800 transition-colors duration-200" onClick={() => setExpanded(!expanded)}>
+    <div className="flex flex-col mr-3 border-b border-slate-800/50 h-full cursor-pointer hover:bg-slate-800 transition-colors duration-200" onClick={() => setExpanded(!expanded)}>
       <div className="flex justify-between items-center mb-2">
         <h4 className="font-bold text-lg text-slate-200">{id}</h4>
         <span className="text-xs text-slate-400">{bags} maleta{bags !== 1 ? "s" : ""}</span>
@@ -302,7 +353,7 @@ const OrderItem = memo(function OrderItem({ order }) {
   );
 });
 
-const RouteItem = memo(function RouteItem({ route, onShowRoute }) {
+const RouteItem = memo(function RouteItem({ route, onShowRoute, cityByIata, continentByIata }) {
   const [expanded, setExpanded] = useState(false);
   const vuelos = route.vuelos ?? [];
   const stops = useMemo(() => {
@@ -312,7 +363,10 @@ const RouteItem = memo(function RouteItem({ route, onShowRoute }) {
     vuelos.forEach((v) => {
       out.push({
         type: "edge",
-        label: `${v.codigo} · ${(v.fechaSalida ?? "").slice(11, 16)} -> ${(v.fechaLlegada ?? "").slice(11, 16)}`,
+        codigo: `${v.codigo}`,
+        idVueloInstancia: v.idVueloInstancia,
+        fechaSalida: `${(v.fechaSalida ?? "").slice(11, 16)}`,
+        fechaLlegada: `${(v.fechaLlegada ?? "").slice(11, 16)}`
       });
       out.push({ type: "node", icao: v.aeropuertoDestino });
     });
@@ -320,16 +374,13 @@ const RouteItem = memo(function RouteItem({ route, onShowRoute }) {
   }, [vuelos]);
 
   return (
-    <div className="flex flex-col border-b border-slate-800/50 h-full cursor-pointer hover:bg-slate-800 transition-colors duration-200" onClick={() => setExpanded(!expanded)}>
-      <div className="flex justify-between items-center mb-2">
+    <div className="mb-2 flex h-full cursor-pointer flex-col rounded-xl border border-slate-800/70 bg-surface-1/65 px-3 py-3 mr-3 transition-all duration-200 hover:border-slate-700 hover:bg-surface-2/55" onClick={() => setExpanded(!expanded)}>
+      <div className="flex flex-col justify-between items-start mb-2 gap-4">
         <div>
-          <h4 className="font-bold text-lg text-slate-200">{route.idRuta}</h4>
+          <h4 className="font-bold text-lg text-slate-200 flex items-center gap-1.5"><Route className="w-4 h-4 shrink-0" />{route.idRuta}</h4>
           <span className="text-xs text-slate-400">Maleta: {route.idMaleta}</span>
         </div>
-        <div className="flex shrink-0 flex-col items-end gap-1.5">
-          <span className={`text-[10px] font-bold px-2 py-1 rounded tracking-wider border bg-transparent ${routeStatusColor(route.estado)}`}>
-            {(route.estado ?? "").replace(/_/g, " ")}
-          </span>
+        <div className="flex flex-row shrink-0 gap-1.5 items-center w-full justify-between">
           {onShowRoute && (
             <button
               type="button"
@@ -339,30 +390,45 @@ const RouteItem = memo(function RouteItem({ route, onShowRoute }) {
               <Route className="h-3 w-3" /> Ver en mapa
             </button>
           )}
+          <span className={`text-[10px] font-bold px-2 py-1 rounded tracking-wider border bg-transparent ${routeStatusColor(route.estado)}`}>
+            {(route.estado ?? "").replace(/_/g, " ")}
+          </span>
         </div>
       </div>
       {expanded && (
-        <div className="flex flex-col pl-2 mt-2 cursor-default" onClick={(e) => e.stopPropagation()}>
-          {stops.map((stop, j) => {
-            if (stop.type === "node") {
-              return (
-                <div key={j} className="flex items-center gap-3 relative z-10">
-                  <div className="w-3 h-3 rounded-full bg-success" />
-                  <span className="text-xs font-bold text-slate-200">{stop.icao}</span>
-                </div>
-              );
-            }
-            return (
-              <div key={j} className="flex items-center gap-3 my-1 relative">
-                <div className="w-[1px] h-6 bg-slate-700 absolute left-[5px] top-[-4px] z-0" />
-                <div className="ml-6 text-[10px] text-slate-400 whitespace-nowrap overflow-hidden text-ellipsis">
-                  {stop.label}
-                </div>
-              </div>
-            );
-          })}
-          <div className="text-[10px] text-slate-400 mt-3 pt-2 border-t border-slate-800">
-            Plazo maximo: <span className="text-slate-200">{route.plazoMaximoDias}d</span> · Duracion: <span className="text-slate-200">{route.duracion}d</span>
+        <div className="flex flex-col mt-2 cursor-default gap-2 border-t border-t-slate-800/70 pt-3" onClick={(e) => e.stopPropagation()}>
+          <div className="rounded-lg border border-slate-800 bg-surface-2/40 px-3 pb-3 space-y-2">
+            <div className="flex flex-col mt-4 mb-2">
+              {stops.map((stop, j) => {
+                if (stop.type === "node") {
+                  return (
+                    <div key={j} className="flex items-center gap-3 relative z-10">
+                      <div className="w-3 h-3 rounded-full bg-success" />
+                      <span className="text-xs font-bold text-slate-200">{cityByIata?.get(stop.icao) ?? stop.icao}{continentByIata?.get(stop.icao) ? `, ${continentByIata.get(stop.icao)}` : ""} ({stop.icao})</span>
+                    </div>
+                  );
+                }
+                return (
+                  <div key={j} className="flex items-center gap-6 my-2 py-2 relative">
+                    <div className="w-[1px] h-15 bg-slate-700 absolute left-[5px] top-[-15px] z-0" />
+                    <div className="flex gap-2 ml-6 text-[10px] text-slate-400 whitespace-nowrap overflow-hidden text-ellipsis">
+                      <Plane className="w-3.5 h-3.5 shrink-0" />
+                      {stop.idVueloInstancia ?? stop.codigo}
+                      <div className="flex border-l border-l-slate-600 gap-1.5 pl-2">
+                        <Clock className="w-3.5 h-3.5 shrink-0" />
+                        {stop.fechaSalida}
+                        <span>-</span>
+                        <Clock className="w-3.5 h-3.5 shrink-0" />
+                        {stop.fechaLlegada}
+                      </div>
+                    </div>
+                  </div>
+                );
+              })}
+            </div>
+          </div>
+          <div className="text-[10px] text-slate-400 pt-2">
+            Plazo maximo: <span className="text-slate-200">{route.plazoMaximoDias}d</span> · Duracion: <span className="text-slate-200">{(() => { const totalMin = Math.round((route.duracion ?? 0) * 24 * 60); return `${Math.floor(totalMin / 60)}h ${totalMin % 60}m`; })()}</span>
           </div>
         </div>
       )}
@@ -370,17 +436,14 @@ const RouteItem = memo(function RouteItem({ route, onShowRoute }) {
   );
 });
 
-const BagItem = memo(function BagItem({ bag, onShowRoute }) {
+const BagItem = memo(function BagItem({ bag, onShowRoute, cityByIata, continentByIata }) {
   const [expanded, setExpanded] = useState(false);
   const label = bagStatusLabel(bag.estado);
   return (
-    <div className="flex flex-col border-b border-slate-800/50 h-full cursor-pointer hover:bg-slate-800 transition-colors duration-200" onClick={() => setExpanded(!expanded)}>
-      <div className="flex justify-between items-start mb-2 gap-2">
-        <h4 className="font-bold text-sm text-slate-200 break-all pr-2">{bag.idMaleta}</h4>
-        <div className="flex shrink-0 flex-col items-end gap-1.5">
-          <span className={`text-[10px] font-bold px-2 py-1 rounded tracking-wider whitespace-nowrap ${bagStatusColor(bag.estado)}`}>
-            {label}
-          </span>
+    <div className="mb-2 mr-3 flex h-full cursor-pointer flex-col rounded-xl border border-slate-800/70 bg-surface-1/65 px-3 py-3 transition-all duration-200 hover:border-slate-700 hover:bg-surface-2/55" onClick={() => setExpanded(!expanded)}>
+      <div className="flex flex-col justify-between items-start mb-2 gap-4">
+        <h4 className="font-bold text-sm text-slate-200 break-all pr-2 flex items-center gap-1.5"><Luggage className="w-3.5 h-3.5 shrink-0" />{bag.idMaleta}</h4>
+        <div className="flex w-full justify-between gap-1.5">
           {onShowRoute && (
             <button
               type="button"
@@ -390,17 +453,95 @@ const BagItem = memo(function BagItem({ bag, onShowRoute }) {
               <Route className="h-3 w-3" /> Ver ruta
             </button>
           )}
+          <span className={`text-[10px] font-bold px-2 py-1 rounded tracking-wider whitespace-nowrap ${bagStatusColor(bag.estado)}`}>
+            {label}
+          </span>
         </div>
       </div>
       {expanded && (
         <div className="cursor-default mt-2" onClick={(e) => e.stopPropagation()}>
-          <div className="text-xs text-slate-400 flex flex-col gap-0.5">
-            <div>Pedido: <span className="text-slate-200">{bag.idPedido}</span></div>
-            <div>Registro: <span className="text-slate-200">{(bag.fechaRegistro ?? "").replace("T", " ").slice(0, 16)}</span></div>
-            {(bag.ubicacionActual || bag.origen) && <div>Ubicacion: <span className="text-slate-200 font-semibold">{bag.ubicacionActual || bag.origen}</span></div>}
-            {bag.origen && bag.destino && <div>Ruta: <span className="text-slate-200">{bag.origen} → {bag.destino}</span></div>}
-            {bag.horaLlegadaEstimada && <div>Llegada est.: <span className="text-slate-200">{bag.horaLlegadaEstimada.replace("T", " ").slice(0, 16)}</span></div>}
-            {bag.fechaLlegada && <div>Entregada: <span className="text-slate-200">{bag.fechaLlegada.replace("T", " ").slice(0, 16)}</span></div>}
+          <div className="text-xs border-t border-t-slate-800/70 text-slate-400 pt-3 flex flex-col gap-2.5">
+            <div className="flex flex-col gap-1">
+              <div className="font-medium text-sm">Pedido</div>
+              <div className="flex items-center gap-1.5">
+                <Package className="w-3.5 h-3.5 shrink-0" />
+                <span className="text-slate-200">{bag.idPedido}</span>
+              </div>
+            </div>
+            <div className="flex flex-col gap-1 border-b border-b-slate-800/70 pb-3">
+              <div className="font-medium text-sm">Registro</div>
+              <div className="flex flex-col gap-1.5">
+                <div className="flex items-center gap-1.5">
+                  <Calendar className="w-3.5 h-3.5 shrink-0" />
+                  <span className="text-slate-200">{(bag.fechaRegistro ?? "").replace("T", " ").slice(0, 10)}</span>
+                </div>
+                <div className="flex items-center gap-1.5">
+                  <Clock className="w-3.5 h-3.5 shrink-0" />
+                  <span className="text-slate-200">{(bag.fechaRegistro ?? "").replace("T", " ").slice(11, 16)}</span>
+                </div>
+              </div>
+            </div>
+            {bag.origen && (
+              <div className="flex flex-col gap-1.5">
+                <span className="font-medium text-sm">Origen</span>
+                <div className="flex gap-1.5">
+                  <MapPin className="w-3.5 h-3.5 shrink-0" />
+                  <span className="text-slate-200">{cityByIata?.get(bag.origen) ?? bag.origen}{continentByIata?.get(bag.origen) ? `, ${continentByIata.get(bag.origen)}` : ""} ({bag.origen})</span>
+                </div>
+              </div>
+            )}
+            {bag.destino && (
+              <div className="flex flex-col gap-1.5">
+                <span className="font-medium text-sm">Destino</span>
+                <div className="flex gap-1.5">
+                  <MapPin className="w-3.5 h-3.5 shrink-0" />
+                  <span className="text-slate-200">{cityByIata?.get(bag.destino) ?? bag.destino}{continentByIata?.get(bag.destino) ? `, ${continentByIata.get(bag.destino)}` : ""} ({bag.destino})</span>
+                </div>
+              </div>
+            )}
+            {(bag.ubicacionActual || bag.origen) && (
+              <div className="flex flex-col gap-1.5 border-b border-b-slate-800/70 pb-3">
+                <span className="font-medium text-sm">Ubicación</span>
+                <div className="flex gap-1.5">
+                  {bag.estado === "EN_ALMACEN" ? (
+                    <MapPin className="w-3.5 h-3.5 shrink-0" />
+                  ) : (
+                    <Plane className="w-3.5 h-3.5 shrink-0" />
+                  )}
+                  <span className="text-slate-200 font-semibold">{cityByIata?.get(bag.ubicacionActual || bag.origen) ?? (bag.ubicacionActual || bag.origen)}{continentByIata?.get(bag.ubicacionActual || bag.origen) ? `, ${continentByIata.get(bag.ubicacionActual || bag.origen)}` : ""} ({bag.ubicacionActual || bag.origen})</span>
+                </div>
+              </div>
+            )}
+            {bag.horaLlegadaEstimada && (
+              <div className="flex flex-col gap-2">
+                <div className="font-medium text-sm">Llegada estimada</div>
+                <div className="flex flex-col gap-1.5">
+                  <div className="flex items-center gap-1.5">
+                    <Calendar className="w-3.5 h-3.5 shrink-0" />
+                    <span className="text-slate-200">{bag.horaLlegadaEstimada.replace("T", " ").slice(0, 10)}</span>
+                  </div>
+                  <div className="flex items-center gap-1.5">
+                    <Clock className="w-3.5 h-3.5 shrink-0" />
+                    <span className="text-slate-200">{bag.horaLlegadaEstimada.replace("T", " ").slice(11, 16)}</span>
+                  </div>
+                </div>
+              </div>
+            )}
+            {bag.fechaLlegada && (
+              <div className="flex flex-col">
+                <div className="font-medium text-sm">Entregada</div>
+                <div className="flex items-center gap-3">
+                  <div className="flex items-center gap-1.5">
+                    <Calendar className="w-3.5 h-3.5 shrink-0" />
+                    <span className="text-slate-200">{bag.fechaLlegada.replace("T", " ").slice(0, 10)}</span>
+                  </div>
+                  <div className="flex items-center gap-1.5">
+                    <Clock className="w-3.5 h-3.5 shrink-0" />
+                    <span className="text-slate-200">{bag.fechaLlegada.replace("T", " ").slice(11, 16)}</span>
+                  </div>
+                </div>
+              </div>
+            )}
           </div>
         </div>
       )}
@@ -429,6 +570,7 @@ const formatHoraPlan = (h) => (h ? String(h).slice(5, 16).replace("T", " ") : "-
 // RutaVueloResponse -> escala normalizada para el mapa/panel.
 const toEscala = (v) => ({
   codigo: v?.codigo,
+  idVueloInstancia: v?.idVueloInstancia,
   origen: v?.aeropuertoOrigen,
   destino: v?.aeropuertoDestino,
   salida: v?.fechaSalida,
@@ -462,7 +604,7 @@ function agruparRutasEnvio(rutas) {
 function Collapsible({ title, defaultOpen = false, children }) {
   const [open, setOpen] = useState(defaultOpen);
   return (
-    <div className="rounded-lg border border-slate-800 bg-surface-2/40">
+    <div className="rounded-lg mr-3 border border-slate-800 bg-surface-2/40">
       <button
         type="button"
         onClick={() => setOpen((o) => !o)}
@@ -477,7 +619,7 @@ function Collapsible({ title, defaultOpen = false, children }) {
   );
 }
 
-const EnvioItem = memo(function EnvioItem({ envio, showOrigin = true, onShowRoute, onLoadRutas, category, isSelected, onFocus, onDeselect }) {
+const EnvioItem = memo(function EnvioItem({ envio, showOrigin = true, onShowRoute, onLoadRutas, category, isSelected, onFocus, onDeselect, cityByIata, continentByIata, bags }) {
   const [expanded, setExpanded] = useState(false);
   // Rutas agrupadas (cada una con sus maletas), pedidas al back al expandir.
   // No mostramos UT ni escalas aqui: ese detalle vive en "Ver rutas".
@@ -503,20 +645,26 @@ const EnvioItem = memo(function EnvioItem({ envio, showOrigin = true, onShowRout
   }, [expanded, envio.id, onLoadRutas]);
 
   return (
-    <div className={`flex flex-col border-b border-slate-800/50 h-full cursor-pointer transition-colors duration-200 ${isSelected ? "rounded-lg bg-info/5 ring-1 ring-info/60" : "hover:bg-slate-800"}`} onClick={() => setExpanded(!expanded)}>
-      <div className="flex items-start justify-between gap-2">
-        <div className="min-w-0">
-          <h4 className="truncate text-sm font-bold text-slate-200">{envio.id}</h4>
-          <div className="text-[11px] text-slate-400">
-            {showOrigin && envio.origin ? `${envio.origin} -> ` : ""}{envio.dest ?? "--"}
-          </div>
-        </div>
-        <div className="flex shrink-0 flex-col items-end gap-1 text-right">
+    <div className={`flex flex-col border-b border-slate-800/50 h-full cursor-pointer transition-colors duration-200 py-4`} onClick={() => setExpanded(!expanded)}>
+      <div className="flex flex-col items-start justify-between gap-4">
+        <div className="flex flex-row min-w-0 w-full justify-between">
+          <h4 className="truncate text-sm font-bold text-slate-200 flex items-center gap-1.5"><Package className="w-3.5 h-3.5 shrink-0" />{envio.id}</h4>
           <div className="text-xs font-medium text-slate-300">{envio.bags} mal.</div>
+        </div>
+        <div className="flex shrink-0 flex-row w-full justify-between">
           {envio.horaEntrega && (
-            <div className="text-[10px] text-slate-400">Entregado: {formatHoraPlan(envio.horaEntrega)}</div>
+            <div className="text-[10px] text-sky-400">Entregado: {formatHoraPlan(envio.horaEntrega)}</div>
           )}
-          <div className="flex items-center gap-1">
+          <div className="flex flex-row w-full justify-between">
+            {onShowRoute && (
+              <button
+                type="button"
+                onClick={(ev) => { ev.stopPropagation(); onShowRoute(envio.id); }}
+                className="inline-flex items-center gap-1 rounded-md border border-info/40 bg-info/10 px-2 py-0.5 text-[10px] font-bold uppercase tracking-wide text-info transition-colors hover:bg-info/20"
+              >
+                <Route className="h-3 w-3" /> Ver rutas
+              </button>
+            )}
             {isSelected && onDeselect && (
               <button
                 type="button"
@@ -539,33 +687,73 @@ const EnvioItem = memo(function EnvioItem({ envio, showOrigin = true, onShowRout
                 <Crosshair className="h-3 w-3" />
               </button>
             )}
-            {onShowRoute && (
-              <button
-                type="button"
-                onClick={(ev) => { ev.stopPropagation(); onShowRoute(envio.id); }}
-                className="inline-flex items-center gap-1 rounded-md border border-info/40 bg-info/10 px-2 py-0.5 text-[10px] font-bold uppercase tracking-wide text-info transition-colors hover:bg-info/20"
-              >
-                <Route className="h-3 w-3" /> Ver rutas
-              </button>
-            )}
+            
           </div>
         </div>
       </div>
       {expanded && (
-        <div className="mt-2 space-y-2 text-[11px] text-slate-400" onClick={(e) => e.stopPropagation()}>
-          {rutasStatus === "loading" && <div className="text-slate-500">Cargando rutas…</div>}
-          {rutasStatus === "error" && <div className="text-danger">No se pudieron cargar las rutas.</div>}
-          {rutasStatus === "ready" && rutas.length === 0 && <div className="text-slate-500">Sin rutas asignadas.</div>}
-          {rutasStatus === "ready" && rutas.map((r, ri) => (
-            <div key={ri} className="rounded-md border border-slate-800 bg-surface-2/40 px-2 py-1.5">
-              <div className="mb-1 flex items-center justify-between gap-2">
-                <span className="text-[10px] font-semibold uppercase tracking-wide text-slate-300">Ruta {ri + 1}</span>
-                <span className="shrink-0 text-[10px] text-slate-400">{r.cantidad} maleta{r.cantidad !== 1 ? "s" : ""}</span>
-              </div>
-              <div className="leading-relaxed text-slate-200">
-                {r.maletas.length ? r.maletas.join(", ") : "—"}
-              </div>
+        <div className="mt-2 space-y-2 border-t border-t-slate-800/70 pt-2" onClick={(e) => e.stopPropagation()}>
+          <Collapsible title="Informacion del pedido" defaultOpen>
+            <div className="flex flex-col gap-2 text-[11px] text-slate-400">
+              {envio.fechaRegistro && (
+                <div className="flex flex-col gap-1.5">
+                  <span className="text-sm font-medium">Registro</span>
+                  <div className="flex items-center gap-1.5">
+                    <Calendar className="w-3.5 h-3.5 shrink-0" />
+                    <span className="text-slate-200">{(envio.fechaRegistro ?? "").replace("T", " ").slice(0, 10)}</span>
+                  </div>
+                  <div className="flex items-center gap-1.5">
+                    <Clock className="w-3.5 h-3.5 shrink-0" />
+                    <span className="text-slate-200">{(envio.fechaRegistro ?? "").replace("T", " ").slice(11, 16)}</span>
+                  </div>
+                </div>
+              )}
+              {showOrigin && envio.origin && (
+                <div className="flex flex-col gap-1.5">
+                  <span className="text-sm font-medium">Origen</span>
+                  <div className="flex gap-1.5">
+                    <MapPin className="w-3.5 h-3.5 shrink-0" />
+                    <span className="text-slate-200">{cityByIata?.get(envio.origin) ?? envio.origin}{continentByIata?.get(envio.origin) ? `, ${continentByIata.get(envio.origin)}` : ""} ({envio.origin})</span>
+                  </div>
+                </div>
+              )}
+              {envio.dest && (
+                <div className="flex flex-col gap-1.5">
+                  <span className="text-sm font-medium">Destino</span>
+                  <div className="flex gap-1.5">
+                    <MapPin className="w-3.5 h-3.5 shrink-0" />
+                    <span className="text-slate-200">{cityByIata?.get(envio.dest) ?? envio.dest}{continentByIata?.get(envio.dest) ? `, ${continentByIata.get(envio.dest)}` : ""} ({envio.dest})</span>
+                  </div>
+                </div>
+              )}
             </div>
+          </Collapsible>
+          {rutasStatus === "loading" && <div className="text-[11px] text-slate-500 px-3">Cargando rutas…</div>}
+          {rutasStatus === "error" && <div className="text-[11px] text-danger px-3">No se pudieron cargar las rutas.</div>}
+          {rutasStatus === "ready" && rutas.length === 0 && <div className="text-[11px] text-slate-500 px-3">Sin rutas asignadas.</div>}
+          {rutasStatus === "ready" && rutas.map((r, ri) => (
+            <Collapsible key={ri} title={`Ruta ${ri + 1} (${r.cantidad} maleta${r.cantidad !== 1 ? "s" : ""})`} defaultOpen>
+              <div className="text-slate-200 flex flex-col gap-0.5">
+                {r.maletas.length
+                  ? r.maletas.map((idMaleta, mi) => {
+                      const bag = bags?.get(idMaleta);
+                      return (
+                        <div key={mi} className="flex items-center justify-between gap-2">
+                          <div className="flex items-center gap-1 min-w-0">
+                            <Luggage className="w-3 h-3 shrink-0 text-slate-400" />
+                            <span className="text-[11px] truncate">{idMaleta}</span>
+                          </div>
+                          {bag?.estado && (
+                            <span className={`shrink-0 rounded px-1.5 py-0.5 text-[9px] font-bold tracking-wider ${bagStatusColor(bag.estado)}`}>
+                              {bagStatusLabel(bag.estado)}
+                            </span>
+                          )}
+                        </div>
+                      );
+                    })
+                  : <span className="text-[11px] text-slate-500">—</span>}
+              </div>
+            </Collapsible>
           ))}
         </div>
       )}
@@ -573,7 +761,7 @@ const EnvioItem = memo(function EnvioItem({ envio, showOrigin = true, onShowRout
   );
 });
 
-function EnvioSeccion({ title, envios, showOrigin = true, defaultOpen = false, max = 200, onShowRoute, onLoadRutas, category, selectedEnvioId, onFocus, onDeselect }) {
+function EnvioSeccion({ title, envios, showOrigin = true, defaultOpen = false, max = 200, onShowRoute, onLoadRutas, category, selectedEnvioId, onFocus, onDeselect, cityByIata, continentByIata, bags }) {
   const shown = envios.slice(0, max);
   return (
     <Collapsible title={`${title} (${envios.length})`} defaultOpen={defaultOpen}>
@@ -581,7 +769,7 @@ function EnvioSeccion({ title, envios, showOrigin = true, defaultOpen = false, m
         <div className="pl-1 text-[11px] text-slate-500">Sin envios.</div>
       ) : (
         <>
-          {shown.map((e, i) => <EnvioItem key={`${e.id}-${i}`} envio={e} showOrigin={showOrigin} onShowRoute={onShowRoute} onLoadRutas={onLoadRutas} category={category} isSelected={selectedEnvioId === e.id} onFocus={onFocus} onDeselect={onDeselect} />)}
+          {shown.map((e, i) => <EnvioItem key={`${e.id}-${i}`} envio={e} showOrigin={showOrigin} onShowRoute={onShowRoute} onLoadRutas={onLoadRutas} category={category} isSelected={selectedEnvioId === e.id} onFocus={onFocus} onDeselect={onDeselect} cityByIata={cityByIata} continentByIata={continentByIata} bags={bags} />)}
           {envios.length > shown.length && (
             <div className="pt-1 text-[10px] text-slate-500">… y {envios.length - shown.length} mas (usa los filtros)</div>
           )}
@@ -659,7 +847,7 @@ const AirportItem = memo(function AirportItem({
     }}>
       <div className="flex justify-between items-center gap-2">
         <div className="min-w-0">
-          <h4 className="truncate font-bold text-lg text-slate-200">{displayName}</h4>
+          <h4 className="truncate font-bold text-lg text-slate-200 flex items-center gap-2.5"><MapPin className="w-3.5 h-3.5 shrink-0" />{displayName}</h4>
           {displayName !== code && (
             <p className="text-[11px] font-semibold uppercase tracking-wide text-slate-500">{code}</p>
           )}
@@ -871,6 +1059,18 @@ const ScheduledFlightPlanItem = memo(function ScheduledFlightPlanItem({
   onCancel,
   canceling,
 }) {
+  const gmtOrigin = Number(flightPlan?.gmtOrigin ?? 0);
+  const depTimeLocal = String(flightPlan?.depTime ?? "").trim();
+  const depTimeUtc = (() => {
+    if (!depTimeLocal) return "--:--";
+    const parts = depTimeLocal.split(":");
+    if (parts.length < 2) return depTimeLocal;
+    const localMin = parseInt(parts[0]) * 60 + parseInt(parts[1]);
+    if (!Number.isFinite(localMin)) return depTimeLocal;
+    const utcMin = ((localMin - gmtOrigin * 60) + 1440) % 1440;
+    return `${String(Math.floor(utcMin / 60)).padStart(2, "0")}:${String(utcMin % 60).padStart(2, "0")}`;
+  })();
+
   const timing = useMemo(
     () => buildScheduledFlightTiming(flightPlan, simTime),
     [flightPlan, simTime],
@@ -884,7 +1084,7 @@ const ScheduledFlightPlanItem = memo(function ScheduledFlightPlanItem({
             {flightPlan.origin} {"->"} {flightPlan.dest}
           </div>
           <div className="mt-1 text-sm text-slate-400">
-            Sale a las {flightPlan.depTime || "--:--"}
+            Sale a las {depTimeUtc} (UTC)
           </div>
           <div className="mt-2 inline-flex rounded-md border border-slate-700 bg-surface-1 px-2.5 py-1 text-[11px] font-semibold text-slate-300">
             {timing.statusLabel}
@@ -920,14 +1120,14 @@ function ColorLegend() {
           <div className="mb-2 font-semibold text-slate-200">Aeropuertos</div>
           <LegendRow color="bg-white shadow-[0_0_10px_rgba(255,255,255,0.7)]" label="Blanco" value="vacio / 0% ocupado" />
           <LegendRow color="bg-success shadow-[0_0_10px_rgba(0,255,136,0.7)]" label="Verde" value="menos de 60% ocupado" />
-          <LegendRow color="bg-warning shadow-[0_0_10px_rgba(255,221,0,0.7)]" label="Amarillo" value="60% a 84% ocupado" />
+          <LegendRow color="bg-warning shadow-[0_0_10px_rgba(255,221,0,0.7)]" label="Amarillo" value="50% a 84% ocupado" />
           <LegendRow color="bg-danger shadow-[0_0_10px_rgba(255,59,48,0.7)]" label="Rojo" value="85% o mas ocupado" />
         </div>
         <div>
           <div className="mb-2 font-semibold text-slate-200">Carga de vuelos</div>
           <FlightLegendRow color="text-white/60" label="Blanco translucido" value="vuelo vacio / 0% ocupado" />
           <FlightLegendRow color="text-success" label="Verde" value="menos de 60% ocupado" />
-          <FlightLegendRow color="text-warning" label="Amarillo" value="60% a 84% ocupado" />
+          <FlightLegendRow color="text-warning" label="Amarillo" value="50% a 84% ocupado" />
           <FlightLegendRow color="text-danger" label="Rojo" value="85% o mas ocupado" />
         </div>
       </div>
@@ -1024,6 +1224,97 @@ function sortFlights(rows = [], key = "departure", dir = "asc") {
   });
 }
 
+function sortBags(rows = [], key = "code", dir = "asc") {
+  const factor = dir === "desc" ? -1 : 1;
+  return [...rows].sort((left, right) => {
+    let cmp;
+    switch (key) {
+      case "registration":
+        cmp = String(left?.fechaRegistro ?? "").localeCompare(String(right?.fechaRegistro ?? ""));
+        break;
+      case "origin":
+        cmp = String(left?.origen ?? "").localeCompare(String(right?.origen ?? ""));
+        break;
+      case "dest":
+        cmp = String(left?.destino ?? "").localeCompare(String(right?.destino ?? ""));
+        break;
+      case "arrival":
+        cmp = String(left?.horaLlegadaEstimada ?? "").localeCompare(String(right?.horaLlegadaEstimada ?? ""));
+        break;
+      case "code":
+      default:
+        cmp = String(left?.idMaleta ?? "").localeCompare(String(right?.idMaleta ?? ""));
+        break;
+    }
+    return factor * cmp;
+  });
+}
+
+function sortOrders(rows = [], key = "code", dir = "asc") {
+  const factor = dir === "desc" ? -1 : 1;
+  return [...rows].sort((left, right) => {
+    let cmp;
+    switch (key) {
+      case "registration":
+        cmp = String(left?.fechaRegistro ?? "").localeCompare(String(right?.fechaRegistro ?? ""));
+        break;
+      case "origin":
+        cmp = String(left?.origin ?? "").localeCompare(String(right?.origin ?? ""));
+        break;
+      case "dest":
+        cmp = String(left?.dest ?? "").localeCompare(String(right?.dest ?? ""));
+        break;
+      case "routes":
+        cmp = (left?.rutas?.length ?? 0) - (right?.rutas?.length ?? 0);
+        break;
+      case "bags":
+        cmp = (left?.bags ?? 0) - (right?.bags ?? 0);
+        break;
+      case "code":
+      default:
+        cmp = String(left?.id ?? "").localeCompare(String(right?.id ?? ""));
+        break;
+    }
+    return factor * cmp;
+  });
+}
+
+function sortRoutes(rows = [], key = "code", dir = "asc") {
+  const factor = dir === "desc" ? -1 : 1;
+  return [...rows].sort((left, right) => {
+    let cmp;
+    const leftVuelos = left?.vuelos ?? [];
+    const rightVuelos = right?.vuelos ?? [];
+    switch (key) {
+      case "departure":
+        cmp = String(leftVuelos[0]?.fechaSalida ?? "").localeCompare(String(rightVuelos[0]?.fechaSalida ?? ""));
+        break;
+      case "arrival":
+        cmp = String(leftVuelos[leftVuelos.length - 1]?.fechaLlegada ?? "")
+              .localeCompare(String(rightVuelos[rightVuelos.length - 1]?.fechaLlegada ?? ""));
+        break;
+      case "duration":
+        cmp = (left?.duracion ?? 0) - (right?.duracion ?? 0);
+        break;
+      case "flights":
+        cmp = leftVuelos.length - rightVuelos.length;
+        break;
+      case "slack":
+        cmp = (left?.plazoMaximoDias ?? 0) - (left?.duracion ?? 0)
+            - (right?.plazoMaximoDias ?? 0) + (right?.duracion ?? 0);
+        break;
+      case "deadline":
+        cmp = (left?.plazoMaximoDias ?? 0) - (right?.plazoMaximoDias ?? 0);
+        break;
+      case "code":
+      default:
+        cmp = String(left?.idRuta ?? "").localeCompare(String(right?.idRuta ?? ""));
+        break;
+    }
+    return factor * cmp;
+  });
+}
+
 function normalizeFlightStatus(status) {
   return String(status ?? "")
     .trim()
@@ -1058,24 +1349,29 @@ function buildScheduledFlightTiming(flightPlan, simTime) {
     };
   }
 
-  const simAtOriginMs = utcMs + gmtOrigin * 60 * 60 * 1000;
-  const simAtOrigin = new Date(simAtOriginMs);
-  const departureTodayOriginMs = Date.UTC(
-    simAtOrigin.getUTCFullYear(),
-    simAtOrigin.getUTCMonth(),
-    simAtOrigin.getUTCDate(),
-    depHour,
-    depMinute,
+  const depLocalMin = depHour * 60 + depMinute;
+  const depUtcMin = ((depLocalMin - gmtOrigin * 60) + 1440) % 1440;
+  const depUtcHour = Math.floor(depUtcMin / 60);
+  const depUtcMinute = depUtcMin % 60;
+
+  const simDate = new Date(utcMs);
+  const departureTodayUtcMs = Date.UTC(
+    simDate.getUTCFullYear(),
+    simDate.getUTCMonth(),
+    simDate.getUTCDate(),
+    depUtcHour,
+    depUtcMinute,
     0,
     0,
   );
-  const cutoffOriginMs = departureTodayOriginMs - 60 * 60 * 1000;
-  const appliesToday = simAtOriginMs <= cutoffOriginMs;
-  const effectiveOriginMs = departureTodayOriginMs + (appliesToday ? 0 : 24 * 60 * 60 * 1000);
-  const effectiveDate = new Date(effectiveOriginMs);
+  const cutoffUtcMs = departureTodayUtcMs - 60 * 60 * 1000;
+  const appliesToday = utcMs <= cutoffUtcMs;
+  const effectiveUtcMs = departureTodayUtcMs + (appliesToday ? 0 : 24 * 60 * 60 * 1000);
+  const effectiveDate = new Date(effectiveUtcMs);
   const effectiveDateIso = `${effectiveDate.getUTCFullYear()}-${padDatePart(effectiveDate.getUTCMonth() + 1)}-${padDatePart(effectiveDate.getUTCDate())}`;
-  const effectiveDateLabel = formatLocalDateLabel(effectiveOriginMs);
-  const cutoffLabel = `${padDatePart(Math.floor((((depHour * 60) + depMinute - 60 + (24 * 60)) % (24 * 60)) / 60))}:${padDatePart((((depHour * 60) + depMinute - 60 + (24 * 60)) % (24 * 60)) % 60)}`;
+  const effectiveDateLabel = formatLocalDateLabel(effectiveUtcMs);
+  const cutoffUtcMin = ((depUtcMin - 60) + 1440) % 1440;
+  const cutoffLabel = `${padDatePart(Math.floor(cutoffUtcMin / 60))}:${padDatePart(cutoffUtcMin % 60)}`;
   const statusLabel = appliesToday
     ? `Aplica hoy · ${effectiveDateLabel}`
     : `Aplica manana · ${effectiveDateLabel}`;
@@ -1088,7 +1384,7 @@ function buildScheduledFlightTiming(flightPlan, simTime) {
     effectiveDateLabel,
     appliesToday,
     cutoffLabel,
-    confirmMessage: `Se cancelara la salida ${flightPlan.origin} -> ${flightPlan.dest} de las ${depRaw} para el ${effectiveDateLabel}. Regla aplicada: hasta ${cutoffLabel} afecta el mismo dia; despues de esa hora afecta el dia siguiente.`,
+    confirmMessage: `Se cancelara la salida ${flightPlan.origin} -> ${flightPlan.dest} de las ${depRaw} para el ${effectiveDateLabel}. Regla aplicada: hasta ${cutoffLabel} UTC afecta el mismo dia; despues de esa hora afecta el dia siguiente.`,
   };
 }
 
@@ -1105,7 +1401,7 @@ function semaforoState(used, capacity) {
   const c = Number(capacity) || 0;
   const pct = c > 0 ? (u / c) * 100 : 0;
   if (pct >= 85) return "ROJO";
-  if (pct >= 60) return "AMBAR";
+  if (pct >= 50) return "AMBAR";
   return "VERDE";
 }
 
@@ -1153,6 +1449,10 @@ export default function RightPanel({
   // la peticion pendiente hasta que la pestaña correcta y sus filas esten listas.
   const flightsVirtuosoRef = useRef(null);
   const airportsVirtuosoRef = useRef(null);
+  const routesVirtuosoRef = useRef(null);
+  const bagsVirtuosoRef = useRef(null);
+  const savedRouteScrollIndexRef = useRef(0);
+  const savedBagScrollIndexRef = useRef(0);
   const [scrollTarget, setScrollTarget] = useState(null);
   const [query, setQuery] = useState("");
   const [flightStatusFilter, setFlightStatusFilter] = useState("DEFAULT");
@@ -1170,6 +1470,19 @@ export default function RightPanel({
   const [enviosData, setEnviosData] = useState({ planificados: [], enVuelos: [], entregados: [] });
   const [enviosStatus, setEnviosStatus] = useState("idle");
   const [selectedEnvioId, setSelectedEnvioId] = useState(null);
+  const [routeOriginFilter, setRouteOriginFilter] = useState("ALL");
+  const [routeDestFilter, setRouteDestFilter] = useState("ALL");
+  const [routeStatusFilter, setRouteStatusFilter] = useState("ALL");
+  const [routeSortKey, setRouteSortKey] = useState("code");
+  const [routeSortDir, setRouteSortDir] = useState("asc");
+  const [routePlazoFilter, setRoutePlazoFilter] = useState("ALL");
+  const [bagStatusFilter, setBagStatusFilter] = useState("ALL");
+  const [bagOriginFilter, setBagOriginFilter] = useState("ALL");
+  const [bagDestFilter, setBagDestFilter] = useState("ALL");
+  const [orderSortKey, setOrderSortKey] = useState("code");
+  const [orderSortDir, setOrderSortDir] = useState("asc");
+  const [bagSortKey, setBagSortKey] = useState("code");
+  const [bagSortDir, setBagSortDir] = useState("asc");
   const [airportSemaforo, setAirportSemaforo] = useState("ALL");
   const [flightSemaforo, setFlightSemaforo] = useState("ALL");
   const [cancelingFlightId, setCancelingFlightId] = useState(null);
@@ -1219,6 +1532,19 @@ export default function RightPanel({
   const clearEnvioFilters = () => {
     setEnvioOriginFilter("ALL");
     setEnvioDestFilter("ALL");
+  };
+
+  const clearRouteFilters = () => {
+    setRouteOriginFilter("ALL");
+    setRouteDestFilter("ALL");
+    setRouteStatusFilter("ALL");
+    setRoutePlazoFilter("ALL");
+  };
+
+  const clearBagFilters = () => {
+    setBagStatusFilter("ALL");
+    setBagOriginFilter("ALL");
+    setBagDestFilter("ALL");
   };
 
   useEffect(() => {
@@ -1279,7 +1605,17 @@ export default function RightPanel({
     listFlightPlans(airport.iata ?? airport.idAeropuerto)
       .then((data) => {
         if (cancelled) return;
-        setAirportFlightPlans(Array.isArray(data) ? data : []);
+        setAirportFlightPlans((Array.isArray(data) ? data : []).sort((a, b) => {
+          const toUtcMin = (fp) => {
+            const dt = String(fp?.depTime ?? "");
+            const parts = dt.split(":");
+            if (parts.length < 2) return 0;
+            const localMin = parseInt(parts[0]) * 60 + parseInt(parts[1]);
+            const gmt = Number(fp?.gmtOrigin ?? 0);
+            return ((localMin - gmt * 60) + 1440) % 1440;
+          };
+          return toUtcMin(a) - toUtcMin(b);
+        }));
         setAirportFlightPlansStatus("ready");
       })
       .catch(() => {
@@ -1413,7 +1749,15 @@ export default function RightPanel({
     return map;
   }, [airports.data]);
 
-  // IATA -> coordenadas, para enfocar la camara del mapa (req 5/7/9).
+  const continentByIata = useMemo(() => {
+    const map = new Map();
+    for (const a of airports.data ?? []) {
+      const code = a?.iata ?? a?.idAeropuerto;
+      if (code) map.set(code, a.continent ?? a.continente ?? "");
+    }
+    return map;
+  }, [airports.data]);
+
   const airportCoords = useMemo(() => {
     const map = new Map();
     for (const a of airports.data ?? []) {
@@ -1808,6 +2152,27 @@ export default function RightPanel({
     if ((isSimulacionPeriodo || isOperacionesDiaADia) && activeTab === "orders") fetchEnvios();
   }, [isSimulacionPeriodo, isOperacionesDiaADia, activeTab, fetchEnvios]);
 
+  const bagAirportOptions = useMemo(() => {
+    const origins = new Set();
+    const dests = new Set();
+    for (const b of maletas.data ?? []) {
+      if (b.origen) origins.add(b.origen);
+      if (b.destino) dests.add(b.destino);
+    }
+    return { origins: [...origins].sort(), dests: [...dests].sort() };
+  }, [maletas.data]);
+
+  const routeAirportOptions = useMemo(() => {
+    const origins = new Set();
+    const dests = new Set();
+    for (const r of rutas.data ?? []) {
+      const vuelos = r.vuelos ?? [];
+      if (vuelos[0]?.aeropuertoOrigen) origins.add(vuelos[0].aeropuertoOrigen);
+      if (vuelos[vuelos.length - 1]?.aeropuertoDestino) dests.add(vuelos[vuelos.length - 1].aeropuertoDestino);
+    }
+    return { origins: [...origins].sort(), dests: [...dests].sort() };
+  }, [rutas.data]);
+
   const enviosAirportOptions = useMemo(() => {
     const origins = new Set();
     const dests = new Set();
@@ -1833,8 +2198,8 @@ export default function RightPanel({
         return hay.some((v) => String(v ?? "").toLowerCase().includes(q));
       });
     }
-    return rows;
-  }, [envioOriginFilter, envioDestFilter, query, cityByIata]);
+    return sortOrders(rows, orderSortKey, orderSortDir);
+  }, [envioOriginFilter, envioDestFilter, query, cityByIata, orderSortKey, orderSortDir]);
 
   const enviosFilteredForMap = useMemo(() => ([
     ...filterEnvios(enviosData.planificados),
@@ -1843,14 +2208,45 @@ export default function RightPanel({
   ]), [enviosData, filterEnvios]);
 
   const maletasFiltered = useMemo(() => {
-    return filterByText(maletasVisibles, ["idMaleta", "idPedido", "estado", "ubicacionActual"]);
-  }, [maletasVisibles, query]);
+    let source = maletasVisibles;
+    if (bagOriginFilter !== "ALL") {
+      source = source.filter(b => b.origen === bagOriginFilter);
+    }
+    if (bagDestFilter !== "ALL") {
+      source = source.filter(b => b.destino === bagDestFilter);
+    }
+    if (bagStatusFilter !== "ALL") {
+      source = source.filter(b => b.estado === bagStatusFilter);
+    }
+    let result = filterByText(source, ["idMaleta", "idPedido", "estado", "ubicacionActual"]);
+    result = sortBags(result, bagSortKey, bagSortDir);
+    return result;
+  }, [maletasVisibles, query, bagOriginFilter, bagDestFilter, bagStatusFilter, bagSortKey, bagSortDir]);
 
   const rutasFiltered = useMemo(() => {
-    const source = rutas.data ?? [];
-    const filtrados = simTime ? source.filter(r => idMaletasVisibles.has(r.idMaleta)) : source;
-    return filterByText(filtrados, ["idRuta", "idMaleta", "estado"]);
-  }, [rutas.data, idMaletasVisibles, query, simTime]);
+    let source = rutas.data ?? [];
+    if (simTime) {
+      source = source.filter(r => idMaletasVisibles.has(r.idMaleta));
+    }
+    if (routeOriginFilter !== "ALL") {
+      source = source.filter(r => (r.vuelos ?? [])[0]?.aeropuertoOrigen === routeOriginFilter);
+    }
+    if (routeDestFilter !== "ALL") {
+      source = source.filter(r => {
+        const vuelos = r.vuelos ?? [];
+        return vuelos[vuelos.length - 1]?.aeropuertoDestino === routeDestFilter;
+      });
+    }
+    if (routeStatusFilter !== "ALL") {
+      source = source.filter(r => r.estado === routeStatusFilter);
+    }
+    if (routePlazoFilter !== "ALL") {
+      source = source.filter(r => r.plazoMaximoDias === Number(routePlazoFilter));
+    }
+    source = sortRoutes(filterByText(source, ["idRuta", "idMaleta", "estado"]), routeSortKey, routeSortDir);
+    return source;
+  }, [rutas.data, idMaletasVisibles, query, simTime,
+      routeOriginFilter, routeDestFilter, routeStatusFilter, routePlazoFilter, routeSortKey, routeSortDir]);
 
   // Pide el manifiesto de una UT al back (envios/maletas que traslada). Se
   // resuelve alli porque el enlace UT->carga solo existe en las rutas globales
@@ -1998,11 +2394,16 @@ export default function RightPanel({
   const focusAirportOnMap = useCallback(
     (iata) => {
       if (!iata) return;
+      if (selected?.kind === "airport" && selected.id === iata) {
+        setSelected(null);
+        setMapFocus(null);
+        return;
+      }
       setSelected({ kind: "airport", id: iata });
       const c = airportCoords.get(iata);
       if (c) setMapFocus({ lng: c.lng, lat: c.lat, zoom: 5, ts: Date.now() });
     },
-    [airportCoords, setSelected, setMapFocus]
+    [airportCoords, selected, setSelected, setMapFocus]
   );
 
   const focusFlightOnMap = useCallback(
@@ -2148,6 +2549,28 @@ export default function RightPanel({
     return () => { cancelled = true; cancelAnimationFrame(frame); };
   }, [scrollTarget, activeTab, visibleFlights, airportsFiltered]);
 
+  const prevRoutesSizeRef = useRef(0);
+  const prevBagsSizeRef = useRef(0);
+
+  useEffect(() => {
+    const routesSize = rutasFiltered.length;
+    const bagsSize = maletasFiltered.length;
+    if (routesSize < prevRoutesSizeRef.current && routesVirtuosoRef.current?.scrollToIndex) {
+      const savedIndex = savedRouteScrollIndexRef.current;
+      if (savedIndex < routesSize) {
+        routesVirtuosoRef.current.scrollToIndex({ index: savedIndex, align: "start" });
+      }
+    }
+    if (bagsSize < prevBagsSizeRef.current && bagsVirtuosoRef.current?.scrollToIndex) {
+      const savedIndex = savedBagScrollIndexRef.current;
+      if (savedIndex < bagsSize) {
+        bagsVirtuosoRef.current.scrollToIndex({ index: savedIndex, align: "start" });
+      }
+    }
+    prevRoutesSizeRef.current = routesSize;
+    prevBagsSizeRef.current = bagsSize;
+  }, [rutasFiltered, maletasFiltered]);
+
   const handleItemExpand = useCallback((entity) => {
     setSelected(entity);
   }, [setSelected]);
@@ -2172,11 +2595,14 @@ export default function RightPanel({
             canceling={cancelingFlightId === f.id}
             loadManifest={loadFlightManifest}
             onFocus={focusFlightOnMap}
+            onFocusAirport={focusAirportOnMap}
             onDeselect={() => setSelected(null)}
             onExpand={(id) => handleItemExpand({ kind: "flight", id })}
             onCollapse={handleItemCollapse}
             isSelected={selected?.kind === "flight" && selected.id === (f.idVueloInstancia ?? f.id)}
             forceExpanded={selected?.kind === "flight" && selected.id === (f.idVueloInstancia ?? f.id)}
+            cityByIata={cityByIata}
+            continentByIata={continentByIata}
           />
         )}
       />
@@ -2197,6 +2623,8 @@ export default function RightPanel({
             selectedEnvioId={selectedEnvioId}
             onFocus={focusEnvio}
             onDeselect={deselectEnvio}
+            cityByIata={cityByIata}
+            bags={simulationPanelData?.bags}
             defaultOpen
           />
           <EnvioSeccion
@@ -2208,6 +2636,8 @@ export default function RightPanel({
             selectedEnvioId={selectedEnvioId}
             onFocus={focusEnvio}
             onDeselect={deselectEnvio}
+            cityByIata={cityByIata}
+            bags={simulationPanelData?.bags}
             defaultOpen
           />
           <EnvioSeccion
@@ -2219,6 +2649,8 @@ export default function RightPanel({
             selectedEnvioId={selectedEnvioId}
             onFocus={focusEnvio}
             onDeselect={deselectEnvio}
+            cityByIata={cityByIata}
+            bags={simulationPanelData?.bags}
           />
         </div>
       )
@@ -2226,17 +2658,23 @@ export default function RightPanel({
     routes: (
       <TabBody
         {...rutas}
+        virtuosoRef={routesVirtuosoRef}
+        onFirstItemIndexChange={(idx) => { savedRouteScrollIndexRef.current = idx; }}
         empty="Ejecuta la simulacion para cargar las rutas de la ventana activa."
         rows={rutasFiltered}
-        renderItem={(r, index) => <RouteItem key={r.idRuta ?? r.id ?? index} route={r} onShowRoute={showMaletaRoute} />}
+        keyForRow={(r, index) => r.idRuta ?? r.id ?? index}
+        renderItem={(r, index) => <RouteItem key={r.idRuta ?? r.id ?? index} route={r} onShowRoute={showMaletaRoute} cityByIata={cityByIata} continentByIata={continentByIata} />}
       />
     ),
     bags: (
       <TabBody
         {...maletas}
+        virtuosoRef={bagsVirtuosoRef}
+        onFirstItemIndexChange={(idx) => { savedBagScrollIndexRef.current = idx; }}
         empty="Ejecuta la simulacion para cargar las maletas de la ventana activa."
         rows={maletasFiltered}
-        renderItem={(b, index) => <BagItem key={b.idMaleta ?? b.id ?? index} bag={b} onShowRoute={showMaletaRoute} />}
+        keyForRow={(b, index) => b.idMaleta ?? b.id ?? index}
+        renderItem={(b, index) => <BagItem key={b.idMaleta ?? b.id ?? index} bag={b} onShowRoute={showMaletaRoute} cityByIata={cityByIata} continentByIata={continentByIata} />}
       />
     ),
     airports: (
@@ -2279,6 +2717,9 @@ export default function RightPanel({
           </h3>
           <p className="mt-2 text-sm leading-relaxed text-slate-400">
             Selecciona un vuelo programado para registrar su cancelacion. La interfaz te indicara si la cancelacion aplica al vuelo de hoy o al del dia siguiente segun la hora simulada actual.
+          </p>
+          <p className="mt-1 text-sm font-medium text-slate-300">
+            Hora simulada: <span className="text-info">{(simTime ?? "").replace("T", " ").slice(0, 19)} UTC</span>
           </p>
         </div>
 
@@ -2402,7 +2843,7 @@ export default function RightPanel({
   );
 
   return (
-    <div className="w-[min(360px,90vw)] lg:w-[360px] shrink-0 bg-surface-1 border-l border-slate-800 h-screen flex flex-col relative z-[9999]">
+    <div className="w-[min(360px,90vw)] lg:w-100 shrink-0 bg-surface-1 border-slate-800 h-screen flex flex-col relative z-[9999]">
       <div className="flex items-center border-b border-slate-800">
         <button
           type="button"
@@ -2697,7 +3138,36 @@ export default function RightPanel({
         )}
 
         {activeTab === "orders" && (
-          <details className="group rounded-lg border border-slate-800 bg-surface-2">
+          <>
+            <div className="flex items-center gap-2">
+              <div className="relative flex-1 min-w-0">
+                <ArrowDownUp className="pointer-events-none absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-slate-400" />
+                <select
+                  value={orderSortKey}
+                  onChange={(e) => setOrderSortKey(e.target.value)}
+                  aria-label="Ordenar pedidos por"
+                  className="w-full appearance-none rounded-lg border border-slate-800 bg-surface-2 py-1.5 pl-9 pr-8 text-sm text-slate-200 focus:border-slate-600 focus:outline-none"
+                >
+                  <option value="code">Ordenar: código</option>
+                  <option value="registration">Ordenar: hora de registro</option>
+                  <option value="origin">Ordenar: origen</option>
+                  <option value="dest">Ordenar: destino</option>
+                  <option value="bags">Ordenar: cant. de maletas</option>
+                  <option value="routes">Ordenar: cant. de rutas</option>
+                </select>
+              </div>
+              <button
+                type="button"
+                onClick={() => setOrderSortDir((d) => (d === "asc" ? "desc" : "asc"))}
+                aria-label={orderSortDir === "asc" ? "Orden ascendente; cambiar a descendente" : "Orden descendente; cambiar a ascendente"}
+                title={orderSortDir === "asc" ? "Ascendente" : "Descendente"}
+                className="shrink-0 inline-flex items-center gap-1 rounded-lg border border-slate-800 bg-surface-2 px-2.5 py-1.5 text-xs font-semibold text-slate-300 hover:text-white hover:border-slate-600 transition-colors"
+              >
+                {orderSortDir === "asc" ? <ArrowUp className="h-4 w-4" /> : <ArrowDown className="h-4 w-4" />}
+                {orderSortDir === "asc" ? "Asc" : "Desc"}
+              </button>
+            </div>
+            <details className="group rounded-lg border border-slate-800 bg-surface-2">
             <summary className="flex cursor-pointer list-none items-center justify-between px-3 py-1.5 text-xs font-semibold text-slate-300">
               <span className="flex items-center gap-1.5">
                 <Filter className="h-3.5 w-3.5 text-slate-400" /> Filtros (por tramo / ruta)
@@ -2740,10 +3210,195 @@ export default function RightPanel({
               )}
             </div>
           </details>
+          </>
+        )}
+
+        {activeTab === "routes" && (
+          <>
+            <div className="flex items-center gap-2">
+              <div className="relative flex-1 min-w-0">
+                <ArrowDownUp className="pointer-events-none absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-slate-400" />
+                <select
+                  value={routeSortKey}
+                  onChange={(e) => setRouteSortKey(e.target.value)}
+                  aria-label="Ordenar rutas por"
+                  className="w-full appearance-none rounded-lg border border-slate-800 bg-surface-2 py-1.5 pl-9 pr-8 text-sm text-slate-200 focus:border-slate-600 focus:outline-none"
+                >
+                  <option value="code">Ordenar: código</option>
+                  <option value="departure">Ordenar: hora salida (1er vuelo)</option>
+                  <option value="arrival">Ordenar: hora llegada (ultimo vuelo)</option>
+                  <option value="duration">Ordenar: duracion</option>
+                  <option value="flights">Ordenar: cant. de vuelos</option>
+                  <option value="slack">Ordenar: holgura</option>
+                  <option value="deadline">Ordenar: plazo maximo</option>
+                </select>
+              </div>
+              <button
+                type="button"
+                onClick={() => setRouteSortDir((d) => (d === "asc" ? "desc" : "asc"))}
+                aria-label={routeSortDir === "asc" ? "Orden ascendente; cambiar a descendente" : "Orden descendente; cambiar a ascendente"}
+                title={routeSortDir === "asc" ? "Ascendente" : "Descendente"}
+                className="shrink-0 inline-flex items-center gap-1 rounded-lg border border-slate-800 bg-surface-2 px-2.5 py-1.5 text-xs font-semibold text-slate-300 hover:text-white hover:border-slate-600 transition-colors"
+              >
+                {routeSortDir === "asc" ? <ArrowUp className="h-4 w-4" /> : <ArrowDown className="h-4 w-4" />}
+                {routeSortDir === "asc" ? "Asc" : "Desc"}
+              </button>
+            </div>
+            <details className="group rounded-lg border border-slate-800 bg-surface-2">
+            <summary className="flex cursor-pointer list-none items-center justify-between px-3 py-1.5 text-xs font-semibold text-slate-300">
+              <span className="flex items-center gap-1.5">
+                <Filter className="h-3.5 w-3.5 text-slate-400" /> Filtros
+              </span>
+              <ChevronDown className="h-4 w-4 text-slate-500 transition-transform group-open:rotate-180" />
+            </summary>
+            <div className="flex flex-col gap-2 px-3 pb-3 pt-1">
+              <select
+                value={routeOriginFilter}
+                onChange={(e) => setRouteOriginFilter(e.target.value)}
+                aria-label="Filtrar rutas por origen"
+                className="w-full appearance-none rounded-lg border border-slate-800 bg-surface-1 py-1.5 px-3 text-sm text-slate-200 focus:border-slate-600 focus:outline-none"
+              >
+                <option value="ALL">Origen: todos</option>
+                {routeAirportOptions.origins.map((code) => {
+                  const city = cityByIata.get(code);
+                  return <option key={code} value={code}>{city ? `${code} — ${city}` : code}</option>;
+                })}
+              </select>
+              <select
+                value={routeDestFilter}
+                onChange={(e) => setRouteDestFilter(e.target.value)}
+                aria-label="Filtrar rutas por destino"
+                className="w-full appearance-none rounded-lg border border-slate-800 bg-surface-1 py-1.5 px-3 text-sm text-slate-200 focus:border-slate-600 focus:outline-none"
+              >
+                <option value="ALL">Destino: todos</option>
+                {routeAirportOptions.dests.map((code) => {
+                  const city = cityByIata.get(code);
+                  return <option key={code} value={code}>{city ? `${code} — ${city}` : code}</option>;
+                })}
+              </select>
+              <select
+                value={routeStatusFilter}
+                onChange={(e) => setRouteStatusFilter(e.target.value)}
+                aria-label="Filtrar rutas por estado"
+                className="w-full appearance-none rounded-lg border border-slate-800 bg-surface-1 py-1.5 px-3 text-sm text-slate-200 focus:border-slate-600 focus:outline-none"
+              >
+                <option value="ALL">Estado: todos</option>
+                {ROUTE_STATUSES.map((est) => (
+                  <option key={est} value={est}>{est.replace(/_/g, " ")}</option>
+                ))}
+              </select>
+              <select
+                value={routePlazoFilter}
+                onChange={(e) => setRoutePlazoFilter(e.target.value)}
+                aria-label="Filtrar rutas por plazo"
+                className="w-full appearance-none rounded-lg border border-slate-800 bg-surface-1 py-1.5 px-3 text-sm text-slate-200 focus:border-slate-600 focus:outline-none"
+              >
+                <option value="ALL">Plazo: todos</option>
+                <option value="1">Plazo: 1 día</option>
+                <option value="2">Plazo: 2 días</option>
+              </select>
+              {(routeOriginFilter !== "ALL" || routeDestFilter !== "ALL" || routeStatusFilter !== "ALL" || routePlazoFilter !== "ALL") && (
+                <button
+                  type="button"
+                  onClick={clearRouteFilters}
+                  className="self-start text-[11px] font-semibold text-info hover:underline"
+                >
+                  Limpiar filtros
+                </button>
+              )}
+            </div>
+          </details>
+          </>
+        )}
+
+        {activeTab === "bags" && (
+          <>
+            <div className="flex items-center gap-2">
+              <div className="relative flex-1 min-w-0">
+                <ArrowDownUp className="pointer-events-none absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-slate-400" />
+                <select
+                  value={bagSortKey}
+                  onChange={(e) => setBagSortKey(e.target.value)}
+                  aria-label="Ordenar maletas por"
+                  className="w-full appearance-none rounded-lg border border-slate-800 bg-surface-2 py-1.5 pl-9 pr-8 text-sm text-slate-200 focus:border-slate-600 focus:outline-none"
+                >
+                  <option value="code">Ordenar: código</option>
+                  <option value="registration">Ordenar: hora de registro</option>
+                  <option value="origin">Ordenar: origen</option>
+                  <option value="dest">Ordenar: destino</option>
+                  <option value="arrival">Ordenar: llegada estimada</option>
+                </select>
+              </div>
+              <button
+                type="button"
+                onClick={() => setBagSortDir((d) => (d === "asc" ? "desc" : "asc"))}
+                aria-label={bagSortDir === "asc" ? "Orden ascendente; cambiar a descendente" : "Orden descendente; cambiar a ascendente"}
+                title={bagSortDir === "asc" ? "Ascendente" : "Descendente"}
+                className="shrink-0 inline-flex items-center gap-1 rounded-lg border border-slate-800 bg-surface-2 px-2.5 py-1.5 text-xs font-semibold text-slate-300 hover:text-white hover:border-slate-600 transition-colors"
+              >
+                {bagSortDir === "asc" ? <ArrowUp className="h-4 w-4" /> : <ArrowDown className="h-4 w-4" />}
+                {bagSortDir === "asc" ? "Asc" : "Desc"}
+              </button>
+            </div>
+            <details className="group rounded-lg border border-slate-800 bg-surface-2">
+            <summary className="flex cursor-pointer list-none items-center justify-between px-3 py-1.5 text-xs font-semibold text-slate-300">
+              <span className="flex items-center gap-1.5">
+                <Filter className="h-3.5 w-3.5 text-slate-400" /> Filtros
+              </span>
+              <ChevronDown className="h-4 w-4 text-slate-500 transition-transform group-open:rotate-180" />
+            </summary>
+            <div className="flex flex-col gap-2 px-3 pb-3 pt-1">
+              <select
+                value={bagOriginFilter}
+                onChange={(e) => setBagOriginFilter(e.target.value)}
+                aria-label="Filtrar maletas por origen"
+                className="w-full appearance-none rounded-lg border border-slate-800 bg-surface-1 py-1.5 px-3 text-sm text-slate-200 focus:border-slate-600 focus:outline-none"
+              >
+                <option value="ALL">Origen: todos</option>
+                {bagAirportOptions.origins.map((code) => {
+                  const city = cityByIata.get(code);
+                  return <option key={code} value={code}>{city ? `${code} — ${city}` : code}</option>;
+                })}
+              </select>
+              <select
+                value={bagDestFilter}
+                onChange={(e) => setBagDestFilter(e.target.value)}
+                aria-label="Filtrar maletas por destino"
+                className="w-full appearance-none rounded-lg border border-slate-800 bg-surface-1 py-1.5 px-3 text-sm text-slate-200 focus:border-slate-600 focus:outline-none"
+              >
+                <option value="ALL">Destino: todos</option>
+                {bagAirportOptions.dests.map((code) => {
+                  const city = cityByIata.get(code);
+                  return <option key={code} value={code}>{city ? `${code} — ${city}` : code}</option>;
+                })}
+              </select>
+              <select
+                value={bagStatusFilter}
+                onChange={(e) => setBagStatusFilter(e.target.value)}
+                aria-label="Filtrar maletas por estado"
+                className="w-full appearance-none rounded-lg border border-slate-800 bg-surface-1 py-1.5 px-3 text-sm text-slate-200 focus:border-slate-600 focus:outline-none"
+              >
+                <option value="ALL">Estado: todos</option>
+                {["EN_ALMACEN", "EN_TRANSITO", "ENTREGADA", "REPLANIFICANDO"].map((est) => (
+                  <option key={est} value={est}>{est.replace(/_/g, " ")}</option>
+                ))}
+              </select>
+              {(bagOriginFilter !== "ALL" || bagDestFilter !== "ALL" || bagStatusFilter !== "ALL") && (
+                <button
+                  type="button"
+                  onClick={clearBagFilters}
+                  className="self-start text-[11px] font-semibold text-info hover:underline"
+                >
+                  Limpiar filtros
+                </button>
+              )}
+            </div>
+          </details>
+          </>
         )}
       </div>
 
-      <div key={`${activeTab}-${simulationLoaded ? "loaded" : "empty"}`} className="app-scrollbar m-4 flex-1 overflow-y-auto">
+      <div key={`${activeTab}-${simulationLoaded ? "loaded" : "empty"}`} className="app-scrollbar m-4 mr-0 flex-1 overflow-y-auto">
           {tabContent}
       </div>
 
@@ -2754,7 +3409,7 @@ export default function RightPanel({
   );
 }
 
-function TabBody({ loading, error, refetch, rows, empty, renderItem, virtuosoRef, keyForRow }) {
+function TabBody({ loading, error, refetch, rows, empty, renderItem, virtuosoRef, keyForRow, onFirstItemIndexChange }) {
   if (loading) return <LoadingState />;
   if (error) return <ErrorState error={error} onRetry={refetch} />;
   if (!rows || rows.length === 0) return <EmptyState title="Sin resultados" message={empty} />;
@@ -2767,6 +3422,11 @@ function TabBody({ loading, error, refetch, rows, empty, renderItem, virtuosoRef
       totalCount={rows.length}
       computeItemKey={(index) => keyForRow ? keyForRow(rows[index], index) : index}
       itemContent={(index) => renderItem(rows[index], index)}
+      rangeChanged={(range) => {
+        if (onFirstItemIndexChange && range) {
+          onFirstItemIndexChange(range.startIndex);
+        }
+      }}
     />
   );
 }

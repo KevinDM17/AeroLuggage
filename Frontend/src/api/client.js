@@ -44,7 +44,7 @@ async function request(method, path, body) {
   const data = text ? safeJson(text) : null;
 
   if (!res.ok) {
-    const msg = (data && (data.message || data.error)) || `Error ${res.status}`;
+    const msg = (data && (data.message || data.error || data.detail)) || `Error ${res.status}`;
     throw new ApiError(msg, { status: res.status, body: data });
   }
   return data;

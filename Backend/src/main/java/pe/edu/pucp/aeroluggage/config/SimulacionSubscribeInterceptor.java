@@ -6,11 +6,13 @@ import org.springframework.messaging.simp.stomp.StompCommand;
 import org.springframework.messaging.simp.stomp.StompHeaderAccessor;
 import org.springframework.messaging.support.ChannelInterceptor;
 import org.springframework.stereotype.Component;
+import lombok.extern.slf4j.Slf4j;
 import pe.edu.pucp.aeroluggage.simulacion.SimulacionSesionManager;
 
 import java.util.regex.Matcher;
 import java.util.regex.Pattern;
 
+@Slf4j
 @Component
 public class SimulacionSubscribeInterceptor implements ChannelInterceptor {
 
@@ -39,6 +41,7 @@ public class SimulacionSubscribeInterceptor implements ChannelInterceptor {
         }
         final String sessionId = matcher.group(1);
         final String wsSessionId = accessor.getSessionId();
+        log.info("[AeroLuggage/WebSocket] - CONEXION: wsSessionId={}, sessionId={}", wsSessionId, sessionId);
         sesionManager.registrarWsSession(wsSessionId, sessionId);
         return message;
     }

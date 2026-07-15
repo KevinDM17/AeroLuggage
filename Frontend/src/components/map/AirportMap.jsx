@@ -20,7 +20,7 @@ const occupancyStatus = (used, capacity) => {
   const pct = capacity > 0 ? (used / capacity) * 100 : 0;
   if (pct <= 0) return "white";
   if (pct >= 85) return "red";
-  if (pct >= 60) return "yellow";
+  if (pct >= 50) return "yellow";
   return "green";
 };
 
@@ -133,8 +133,7 @@ const AIRPORT_BUILDING_MAPPING = {
   airport: { x: 0, y: 0, width: AIRPORT_BUILDING_SIZE_PX, height: AIRPORT_BUILDING_SIZE_PX, mask: true },
 };
 
-const MAX_FLIGHTS_ON_MAP = 1000;
-const ROUTE_LINE_WIDTH_PX = 0.65;
+const ROUTE_LINE_WIDTH_PX = 0.6;
 
 const MAP_STYLE = import.meta.env.VITE_MAP_STYLE_URL
   ?? "https://basemaps.cartocdn.com/gl/dark-matter-nolabels-gl-style/style.json";
@@ -153,6 +152,7 @@ function AirportMap({
   autoload = true,
   simulatedNowMs,
   simulatedDayDurationMs,
+  eventosOcupacion = [],
 }) {
   const initialViewState = {
     longitude: -40,
@@ -180,6 +180,16 @@ function AirportMap({
     return map;
   }, [airports]);
 
+  const indicadoresResueltos = useMemo(() => {
+    return (eventosOcupacion ?? [])
+      .map((ev) => {
+        const apt = airportsByIata.get(ev.aeropuerto);
+        if (!apt) return null;
+        return { ...ev, lng: apt.lng, lat: apt.lat };
+      })
+      .filter(Boolean);
+  }, [eventosOcupacion, airportsByIata]);
+
   const airportList = useMemo(() => Array.from(airportsByIata.values()), [airportsByIata]);
 
   /* Vinculacion panel <-> mapa. */
@@ -195,8 +205,8 @@ function AirportMap({
     setPanelFocus({ ...entity, ts: Date.now() });
   }, [setSelected, setPanelFocus]);
 
-  /* Tarjetas con datos: se muestran SOLO al pasar el mouse por encima (hover),
-   * tanto del avion (NO vacio) como del aeropuerto. El click solo selecciona
+  /* Tarjetas con datos: se muestran al pasar el mouse por encima (hover),
+   * tanto del avion como del aeropuerto. El click solo selecciona
    * (enlace con el panel).
    * - manifest: pedidos/maletas a bordo, pedidos al back mientras se sobrevuela. */
   const [hoveredPlaneId, setHoveredPlaneId] = useState(null);
@@ -204,12 +214,11 @@ function AirportMap({
   const [pinnedInfo, setPinnedInfo] = useState(null);
   const [manifest, setManifest] = useState({ status: "idle", pedidos: 0, maletas: 0 });
 
-  // Vuelo sobrevolado, solo si NO esta vacio (lleva al menos una maleta).
+  // Vuelo sobrevolado (incluye vuelos vacios).
   const hoveredFlight = useMemo(() => {
     if (!hoveredPlaneId) return null;
     const f = (flights ?? []).find((fl) => (fl.id ?? fl.idVueloInstancia) === hoveredPlaneId);
-    if (!f || Number(f.used ?? 0) <= 0) return null;
-    return f;
+    return f ?? null;
   }, [hoveredPlaneId, flights]);
 
   const hoveredFlightId = hoveredFlight ? (hoveredFlight.id ?? hoveredFlight.idVueloInstancia) : null;
@@ -218,8 +227,7 @@ function AirportMap({
   const activeFlight = useMemo(() => {
     if (!activeFlightId) return null;
     const f = (flights ?? []).find((fl) => (fl.id ?? fl.idVueloInstancia) === activeFlightId);
-    if (!f || Number(f.used ?? 0) <= 0) return null;
-    return f;
+    return f ?? null;
   }, [activeFlightId, flights]);
 
   // Aeropuerto sobrevolado -> su tarjeta de datos.
@@ -548,14 +556,16 @@ function AirportMap({
 
       if (loadedRoutes.length > 0) {
         ls.push(
-          new LineLayer({
+          new PathLayer({
             id: "routes",
             data: loadedRoutes,
-            getSourcePosition: (d) => [d.origin.lng, d.origin.lat],
-            getTargetPosition: (d) => [d.destination.lng, d.destination.lat],
-            getColor: hexToRgba(tokens.success, 255), // opaco; solo las vacias son translucidas
+            getPath: (d) => [[d.origin.lng, d.origin.lat], [d.destination.lng, d.destination.lat]],
+            getColor: hexToRgba(tokens.success, 100),
             getWidth: ROUTE_LINE_WIDTH_PX,
             widthUnits: "pixels",
+            getDashArray: [1, 1],
+            dashJustified: true,
+            extensions: [new PathStyleExtension({ dash: true })],
           })
         );
       }
@@ -569,7 +579,7 @@ function AirportMap({
             getColor: [255, 255, 255, 70], // blanco translucido
             getWidth: ROUTE_LINE_WIDTH_PX,
             widthUnits: "pixels",
-            getDashArray: [4, 3],
+            getDashArray: [1, 1],
             dashJustified: true,
             extensions: [new PathStyleExtension({ dash: true })],
           })
@@ -864,6 +874,29 @@ function AirportMap({
             </div>
           </Popup>
         )}
+        {indicadoresResueltos.map((ev) => (
+          <Popup
+            key={ev.id}
+            longitude={ev.lng}
+            latitude={ev.lat}
+            anchor="bottom"
+            offset={42}
+            closeButton={false}
+            closeOnClick={false}
+            className="ocupacion-indicator-popup"
+          >
+            <div
+              className={`ocupacion-indicator ${
+                ev.tipo === "APARECE" || ev.tipo === "LLEGA" ? "ocupacion-positivo" : "ocupacion-negativo"
+              }`}
+              title={`${ev.tipo}: ${ev.cantidad} maletas en ${ev.aeropuerto}${ev.vuelo ? ` (${ev.vuelo})` : ""}`}
+            >
+              {ev.tipo === "SALE" || ev.tipo === "LLEGA" ? "\u2708 " : ""}
+              {ev.tipo === "APARECE" || ev.tipo === "LLEGA" ? "+" : "-"}
+              {ev.cantidad}
+            </div>
+          </Popup>
+        ))}
         {activeFlight && activePlanePosition && (
           <Popup
             longitude={activePlanePosition.lng}
@@ -918,7 +951,7 @@ function FlightInfoCard({ flight, manifest, onClose }) {
       <div className="flex items-start justify-between gap-2">
         <div>
           <div className="text-[10px] uppercase tracking-wider text-info font-semibold">Vuelo</div>
-          <div className="font-bold text-base text-white">{flight.id ?? flight.idVueloInstancia}</div>
+          <div className="font-bold text-base text-white">{flight.idVueloInstancia ?? flight.id}</div>
           <div className="text-xs text-slate-400 mt-0.5">{flight.origin} → {flight.dest}</div>
         </div>
         {onClose && (
@@ -935,7 +968,7 @@ function FlightInfoCard({ flight, manifest, onClose }) {
 
       <div className="mt-3 grid grid-cols-2 gap-2 text-xs">
         <Stat label="Maletas" value={`${used}/${cap}`} tone="info" />
-        <Stat label="Ocupacion" value={`${pct}%`} tone={pct >= 85 ? "danger" : pct >= 60 ? "warning" : "success"} />
+        <Stat label="Ocupacion" value={`${pct}%`} tone={pct >= 85 ? "danger" : pct >= 50 ? "warning" : "success"} />
         <Stat
           label="Pedidos a bordo"
           value={
@@ -989,7 +1022,7 @@ function AirportInfoCard({ airport, onClose }) {
 
       <div className="mt-3 grid grid-cols-2 gap-2 text-xs">
         <Stat label="Maletas" value={`${used}/${cap}`} tone="info" />
-        <Stat label="Ocupacion" value={`${pct}%`} tone={pct >= 85 ? "danger" : pct >= 60 ? "warning" : "success"} />
+        <Stat label="Ocupacion" value={`${pct}%`} tone={pct >= 85 ? "danger" : pct >= 50 ? "warning" : "success"} />
         <Stat label="Capacidad libre" value={String(free)} tone={free === 0 ? "danger" : "success"} />
         <Stat label="GMT" value={airport.gmt != null ? (airport.gmt > 0 ? `+${airport.gmt}` : String(airport.gmt)) : "—"} tone="info" />
       </div>

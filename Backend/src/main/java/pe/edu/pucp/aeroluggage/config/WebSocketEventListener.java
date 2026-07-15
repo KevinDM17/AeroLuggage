@@ -23,7 +23,7 @@ public class WebSocketEventListener {
     public void manejarDesconexion(final SessionDisconnectEvent event) {
         final StompHeaderAccessor accessor = StompHeaderAccessor.wrap(event.getMessage());
         final String wsSessionId = accessor.getSessionId();
-        log.info("[AeroLuggage/WebSocket] - DESCONEXION: wsSessionId: {}", wsSessionId);
+        log.info("[AeroLuggage/WebSocket] - DESCONEXION: wsSessionId={}", wsSessionId);
         sesionManager.limpiarPorWsSession(wsSessionId, broker);
         diaADiaService.desregistrarCliente(wsSessionId);
     }

@@ -1,6 +1,9 @@
 package pe.edu.pucp.aeroluggage.controller.rest;
 
 import lombok.RequiredArgsConstructor;
+import lombok.extern.slf4j.Slf4j;
+import org.springframework.beans.factory.annotation.Autowired;
+import org.springframework.context.annotation.Lazy;
 import org.springframework.http.HttpStatus;
 import org.springframework.http.ResponseEntity;
 import org.springframework.web.bind.annotation.DeleteMapping;
@@ -20,12 +23,15 @@ import pe.edu.pucp.aeroluggage.dto.simulacion.rest.VueloProgramadoRequest;
 import pe.edu.pucp.aeroluggage.dto.simulacion.rest.VueloProgramadoResponse;
 import pe.edu.pucp.aeroluggage.repositorio.AeropuertoRepositorio;
 import pe.edu.pucp.aeroluggage.servicios.ServicioVueloProgramado;
+import pe.edu.pucp.aeroluggage.simulacion.OperacionesDiaADiaService;
 
 import java.time.LocalTime;
+import java.time.format.DateTimeParseException;
 import java.util.List;
 import java.util.Optional;
 import java.util.stream.Collectors;
 
+@Slf4j
 @RestController
 @RequestMapping("/api/vuelos-programados")
 @RequiredArgsConstructor
@@ -33,6 +39,10 @@ public class VueloProgramadoRestController {
 
     private final ServicioVueloProgramado servicioVueloProgramado;
     private final AeropuertoRepositorio aeropuertoRepositorio;
+
+    @Lazy
+    @Autowired
+    private OperacionesDiaADiaService operacionesService;
 
     @GetMapping
     public List<VueloProgramadoResponse> listar(
@@ -57,6 +67,14 @@ public class VueloProgramadoRestController {
     public VueloProgramadoResponse crear(@RequestBody final VueloProgramadoRequest request) {
         final VueloProgramado vuelo = toEntity(request);
         final VueloProgramado creado = servicioVueloProgramado.crear(vuelo);
+        if (operacionesService != null) {
+            try {
+                operacionesService.onVueloProgramadoCreado(creado);
+            } catch (final Exception e) {
+                log.warn("[AeroLuggage/VueloProgramadoRestController] "
+                        + "sync onVueloProgramadoCreado failed: {}", e.getMessage());
+            }
+        }
         return toResponse(creado);
     }
 
@@ -65,10 +83,19 @@ public class VueloProgramadoRestController {
                                                @RequestBody final VueloProgramadoRequest request) {
         final VueloProgramado vuelo = toEntity(request);
         final Optional<VueloProgramado> actualizado = servicioVueloProgramado.actualizar(id, vuelo);
-        return actualizado
+        final VueloProgramadoResponse response = actualizado
                 .map(this::toResponse)
                 .orElseThrow(() -> new ResponseStatusException(HttpStatus.NOT_FOUND,
                         "Vuelo programado no encontrado: " + id));
+        if (operacionesService != null) {
+            try {
+                operacionesService.onVueloProgramadoActualizado(id, vuelo);
+            } catch (final Exception e) {
+                log.warn("[AeroLuggage/VueloProgramadoRestController] "
+                        + "sync onVueloProgramadoActualizado failed: {}", e.getMessage());
+            }
+        }
+        return response;
     }
 
     @DeleteMapping("/{id}")
@@ -77,6 +104,14 @@ public class VueloProgramadoRestController {
         if (!eliminado) {
             throw new ResponseStatusException(HttpStatus.NOT_FOUND,
                     "Vuelo programado no encontrado: " + id);
+        }
+        if (operacionesService != null) {
+            try {
+                operacionesService.onVueloProgramadoEliminado(id);
+            } catch (final Exception e) {
+                log.warn("[AeroLuggage/VueloProgramadoRestController] "
+                        + "sync onVueloProgramadoEliminado failed: {}", e.getMessage());
+            }
         }
         return ResponseEntity.noContent().build();
     }
@@ -89,10 +124,20 @@ public class VueloProgramadoRestController {
             vuelo.setIdVueloProgramado(request.getCodigo());
         }
         vuelo.setCodigo(request.getCodigo());
-        vuelo.setHoraSalida(request.getHoraSalida() != null && !request.getHoraSalida().isBlank()
-                ? LocalTime.parse(request.getHoraSalida()) : null);
-        vuelo.setHoraLlegada(request.getHoraLlegada() != null && !request.getHoraLlegada().isBlank()
-                ? LocalTime.parse(request.getHoraLlegada()) : null);
+        try {
+            vuelo.setHoraSalida(request.getHoraSalida() != null && !request.getHoraSalida().isBlank()
+                    ? LocalTime.parse(request.getHoraSalida()) : null);
+        } catch (final DateTimeParseException e) {
+            throw new ResponseStatusException(HttpStatus.BAD_REQUEST,
+                    "Formato de hora de salida invalido. Use HH:mm");
+        }
+        try {
+            vuelo.setHoraLlegada(request.getHoraLlegada() != null && !request.getHoraLlegada().isBlank()
+                    ? LocalTime.parse(request.getHoraLlegada()) : null);
+        } catch (final DateTimeParseException e) {
+            throw new ResponseStatusException(HttpStatus.BAD_REQUEST,
+                    "Formato de hora de llegada invalido. Use HH:mm");
+        }
         vuelo.setCapacidadBase(request.getCapacidadBase());
         if (request.getIdAeropuertoOrigen() != null && !request.getIdAeropuertoOrigen().isBlank()) {
             final Aeropuerto origen = new Aeropuerto();

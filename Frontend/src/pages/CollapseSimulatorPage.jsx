@@ -126,13 +126,16 @@ const buildStablePlanningSnapshot = ({
 const updateEstadosOnly = (oldMap, stateMap, enumArr, statusField = "estado", extraFields) => {
   if (Object.keys(stateMap).length === 0) return oldMap;
   const updated = new Map(oldMap);
+  let changed = false;
   for (const [id, entity] of updated) {
     const st = stateMap[id];
-    if (st) {
-      updated.set(id, { ...entity, [statusField]: enumArr[st.e], ...(extraFields ? extraFields(st, entity) : {}) });
-    }
+    if (!st) continue;
+    const newStatus = enumArr[st.e];
+    if (entity[statusField] === newStatus && !extraFields) continue;
+    changed = true;
+    updated.set(id, { ...entity, [statusField]: newStatus, ...(extraFields ? extraFields(st, entity) : {}) });
   }
-  return updated;
+  return changed ? updated : oldMap;
 };
 
 const normalizeFlightStatus = (status) =>
@@ -154,6 +157,8 @@ export default function CollapseSimulatorPage() {
     resetSimulationPanelData,
     collapseSidebars,
     setCancelledFlightIds,
+    setTopBarActions,
+    setTopBarInfo,
   } = useOutletContext();
 
   const [startDate, setStartDate] = useState(() => new Date().toISOString().slice(0, 10));
@@ -162,6 +167,40 @@ export default function CollapseSimulatorPage() {
   const [runId, setRunId] = useState(0);
   const [mapAirports, setMapAirports] = useState([]);
   const [showRouteLines, setShowRouteLines] = useState(true);
+  const hasActiveRun =
+    simStatus === "running" || simStatus === "paused" || simStatus === "done" || simStatus === "collapsed";
+
+  useEffect(() => {
+    if (!hasActiveRun) {
+      setTopBarActions(null);
+      setTopBarInfo(null);
+      return;
+    }
+    setTopBarActions(
+      <>
+        <button
+          type="button"
+          onClick={() => setShowRouteLines((v) => !v)}
+          className={`rounded px-2.5 py-1 text-xs font-medium whitespace-nowrap transition-colors ${
+            showRouteLines
+              ? "bg-blue-600/20 text-blue-400 border border-blue-500/40 hover:bg-blue-600/30"
+              : "bg-white/5 text-slate-400 border border-white/10 hover:text-slate-200"
+          }`}
+        >
+          Mostrar lineas
+        </button>
+        <button
+          type="button"
+          onClick={handleStop}
+          className="shrink-0 bg-danger/10 hover:bg-danger/20 text-danger border border-danger/40 rounded px-2.5 py-1 text-xs font-medium transition-colors"
+          title="Detener"
+        >
+          Detener
+        </button>
+      </>
+    );
+    return () => setTopBarActions(null);
+  }, [hasActiveRun, showRouteLines, setTopBarActions]);
   const [currentSimTimeUtc, setCurrentSimTimeUtc] = useState(null);
   const [simulatedDayDurationMs, setSimulatedDayDurationMs] = useState(null);
   const [lastMockState, setLastMockState] = useState(null);
@@ -220,8 +259,6 @@ export default function CollapseSimulatorPage() {
   });
 
   const executionElapsedMs = useElapsedTimer(simStatus, runId, CLOCK_REFRESH_MS);
-  const hasActiveRun =
-    simStatus === "running" || simStatus === "paused" || simStatus === "collapsed" || simStatus === "done";
 
   useEffect(() => {
     if (USE_MOCK) {
@@ -630,6 +667,36 @@ export default function CollapseSimulatorPage() {
     return Math.floor(elapsedMs / 86400000) + 1;
   }, [simulatedNowMs]);
 
+  useEffect(() => {
+    if (!hasActiveRun || !simulationClock) {
+      setTopBarInfo(null);
+      return;
+    }
+    const fmtElapsed = () => formatElapsedHMS(executionElapsedMs);
+    setTopBarInfo(
+      <div className="flex items-center gap-3 text-[11px]">
+        <span className="text-slate-500">Inicio:</span>
+        <span className="text-slate-200 tabular-nums">{formattedStartDate} 00:00</span>
+        <span className="text-slate-600">|</span>
+        <span className="text-slate-500">Sim:</span>
+        <span className="text-slate-200 tabular-nums">{simulationClock.date}</span>
+        <span className="text-slate-200 tabular-nums">{simulationClock.time}</span>
+        {simulatedDay != null && (
+          <>
+            <span className="text-slate-600">|</span>
+            <span className="text-slate-200 tabular-nums">Dia {simulatedDay}</span>
+          </>
+        )}
+        <span className="text-slate-600">|</span>
+        <span className="text-slate-500">Trans:</span>
+        <span className="text-slate-200 tabular-nums">{simulatedElapsedLabel}</span>
+        <span className="text-slate-600">|</span>
+        <span className="text-slate-200 tabular-nums">{fmtElapsed()}</span>
+      </div>
+    );
+    return () => setTopBarInfo(null);
+  }, [hasActiveRun, simulationClock.date, simulationClock.time, executionElapsedMs, formattedStartDate, simulatedDay, simulatedElapsedLabel, setTopBarInfo]);
+
   const handleStart = async () => {
     setSimStatus("starting");
     setSessionId(null);
@@ -775,109 +842,7 @@ export default function CollapseSimulatorPage() {
       ? { label: "Operativo", color: "text-success", bg: "bg-success/15 border-success/40" }
       : { label: "En espera", color: "text-slate-300", bg: "bg-surface-2 border-slate-700" };
 
-  const mapOverlays = hasActiveRun
-    ? [
-        {
-          id: "collapse-start-panel",
-          icon: <Clock className="w-4 h-4" />,
-          content: (
-            <div className="bg-surface-2/85 backdrop-blur border border-slate-700 shadow-[0_12px_35px_rgba(0,0,0,0.45)] rounded-xl px-4 py-3 flex items-center gap-4">
-              <div className="shrink-0">
-                <div className="text-[9px] text-slate-400 font-medium uppercase tracking-wider">
-                  Inicio sim.
-                </div>
-                <div className="text-sm font-bold text-slate-100 tabular-nums whitespace-nowrap">
-                  {formattedStartDate}  00:00 UTC
-                </div>
-              </div>
-              <div className="h-9 w-px bg-slate-700 shrink-0" />
-              <div className="shrink-0">
-                <div className="text-[9px] text-slate-400 font-medium uppercase tracking-wider">
-                  Cronometro
-                </div>
-                <div className="text-base font-bold text-slate-100 tabular-nums">
-                  {formatElapsedHMS(executionElapsedMs)}
-                </div>
-              </div>
-            </div>
-          ),
-        },
-        {
-          id: "collapse-simulated-panel",
-          buttonSide: "left",
-          icon: <Clock className="w-4 h-4" />,
-          content: (
-            <div className="bg-surface-2/85 backdrop-blur border border-slate-700 shadow-[0_12px_35px_rgba(0,0,0,0.45)] rounded-xl px-4 py-3 flex items-center gap-4">
-              <div className="shrink-0">
-                <div className="text-[9px] text-slate-400 font-medium uppercase tracking-wider">
-                  Fecha simulada
-                </div>
-                <div className="text-base font-bold text-info tabular-nums">
-                  {simulationClock.date}
-                </div>
-              </div>
-              <div className="h-9 w-px bg-slate-700 shrink-0" />
-              <div className="shrink-0">
-                <div className="text-[9px] text-slate-400 font-medium uppercase tracking-wider">
-                  Hora simulada
-                </div>
-                <div className="text-base font-bold text-info tabular-nums whitespace-nowrap">
-                  {simulationClock.time} UTC
-                </div>
-              </div>
-              <div className="h-9 w-px bg-slate-700 shrink-0" />
-              <div className="shrink-0">
-                <div className="text-[9px] text-slate-400 font-medium uppercase tracking-wider">
-                  Tiempo transcurrido
-                </div>
-                <div className="text-base font-bold text-info tabular-nums">
-                  {simulatedElapsedLabel}
-                </div>
-              </div>
-              <div className="h-9 w-px bg-slate-700 shrink-0" />
-              <div className="shrink-0">
-                <div className="text-[9px] text-slate-400 font-medium uppercase tracking-wider">
-                  Dia de simulacion
-                </div>
-                <div className="text-base font-bold text-info tabular-nums">
-                  {simulatedDay != null && simulatedDay > 0
-                    ? `Dia ${simulatedDay}`
-                    : ""}
-                </div>
-              </div>
-            </div>
-          ),
-        },
-        {
-          id: "collapse-actions-panel",
-          icon: <SlidersHorizontal className="w-4 h-4" />,
-          content: (
-            <div className="bg-surface-2/85 backdrop-blur border border-slate-700 shadow-[0_12px_35px_rgba(0,0,0,0.45)] rounded-xl px-4 py-3 flex items-center gap-4">
-              <button
-                type="button"
-                onClick={() => setShowRouteLines((v) => !v)}
-                className={`shrink-0 rounded-lg px-2 py-1 text-xs font-medium whitespace-nowrap transition-colors ${
-                  showRouteLines
-                    ? "bg-blue-600/20 text-blue-400 border border-blue-500/40 hover:bg-blue-600/30"
-                    : "bg-surface-2 text-slate-400 border border-slate-700 hover:text-slate-200"
-                }`}
-              >
-                Mostrar lineas
-              </button>
-              <div className="h-9 w-px bg-slate-700 shrink-0" />
-              <button
-                type="button"
-                onClick={handleStop}
-                className="shrink-0 bg-danger/10 hover:bg-danger/20 text-danger border border-danger/40 rounded-lg px-2 py-1 transition-colors"
-                title="Detener"
-              >
-                <Square className="w-5 h-5" />
-              </button>
-            </div>
-          ),
-        },
-      ]
-    : [];
+  const mapOverlays = [];
 
   const mapOverlay = hasActiveRun ? null : (
     <div className="bg-surface-2/85 m-4 backdrop-blur border border-slate-700 shadow-[0_12px_35px_rgba(0,0,0,0.45)] rounded-xl px-4 py-3 flex items-center justify-center gap-6">

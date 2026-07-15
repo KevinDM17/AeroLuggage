@@ -165,7 +165,6 @@ public class OperacionesDiaADiaService {
         synchronized (lock) {
             if (activa && sessionId != null) {
                 lastAccessTime = System.currentTimeMillis();
-                log.info("[AeroLuggage/OperacionesDiaADia] - SESION EXISTENTE: sessionId={}", sessionId);
                 return sessionId;
             }
 
@@ -267,8 +266,7 @@ public class OperacionesDiaADiaService {
             rutasPorMaleta.clear();
             maletasEntregadasRecientes.clear();
 
-            log.info("[AeroLuggage/OperacionesDiaADia] - INICIADA: sessionId={}, fecha={}, aeropuertos={}, vuelosProgramados={}, vuelosInstancia={}",
-                    sessionId, hoy, aeropuertos.size(), vuelosProgramados.size(), vuelosInstancia.size());
+
 
             return sessionId;
         }
@@ -284,7 +282,7 @@ public class OperacionesDiaADiaService {
                 final long tickIntervalMs = Math.max(100L, params.getTickIntervalMs());
                 tickTask = scheduler.scheduleWithFixedDelay(
                         this::ejecutarTick, tickIntervalMs, tickIntervalMs, TimeUnit.MILLISECONDS);
-                log.info("[AeroLuggage/OperacionesDiaADia] - AUTO-INICIADO: sessionId={}", sid);
+
             }
             return sid;
         }
@@ -298,7 +296,7 @@ public class OperacionesDiaADiaService {
 
             if (ticksActivos && tickTask != null && !tickTask.isCancelled()) {
                 lastAccessTime = System.currentTimeMillis();
-                log.info("[AeroLuggage/OperacionesDiaADia] - CONEXION RENOVADA: sessionId={}", sessionId);
+
                 return;
             }
 
@@ -307,7 +305,7 @@ public class OperacionesDiaADiaService {
             final long tickIntervalMs = Math.max(100L, params.getTickIntervalMs());
             tickTask = scheduler.scheduleWithFixedDelay(
                     this::ejecutarTick, tickIntervalMs, tickIntervalMs, TimeUnit.MILLISECONDS);
-            log.info("[AeroLuggage/OperacionesDiaADia] - CONEXION CONFIRMADA: sessionId={}", sessionId);
+
             broker.convertAndSend(
                     String.format(TOPIC_ESTADO, sessionId),
                     SimulacionEstadoDTO.builder()
@@ -331,7 +329,6 @@ public class OperacionesDiaADiaService {
                 tickTask = null;
             }
             limpiarEstado();
-            log.info("[AeroLuggage/OperacionesDiaADia] - DETENIDA: sessionId={}", sessionId);
             broker.convertAndSend(
                     String.format(TOPIC_ESTADO, sessionId),
                     SimulacionEstadoDTO.builder()
@@ -390,9 +387,6 @@ public class OperacionesDiaADiaService {
                 nuevasMaletas.add(maleta);
             }
 
-            log.info("[AeroLuggage/OperacionesDiaADia] - PEDIDO: id={}, origen={}, destino={}, maletas={}",
-                    idPedido, icaoOrigen, icaoDestino, request.getCantidadMaletas());
-
             planificarPendientes();
 
             final boolean todasAsignadas = nuevasMaletas.stream()
@@ -437,7 +431,6 @@ public class OperacionesDiaADiaService {
             }
             if (!autoIniciado && clientesConectados.isEmpty()
                     && System.currentTimeMillis() - lastAccessTime > params.getTimeoutMs()) {
-                log.warn("[AeroLuggage/OperacionesDiaADia] - TIMEOUT: sesion expirada por inactividad de {}ms", params.getTimeoutMs());
                 detener();
                 return;
             }
@@ -449,8 +442,6 @@ public class OperacionesDiaADiaService {
                 generarVuelosParaFecha(hoy);
                 ultimoDiaGenerado = hoy;
             planificarPendientes();
-            log.info("[AeroLuggage/OperacionesDiaADia] - NUEVO DIA: fecha={}, vuelosInstancia={}",
-                        hoy, vuelosInstancia.size());
             }
 
             final LocalDateTime desde = ultimoTiempoProcesado;
@@ -470,8 +461,6 @@ public class OperacionesDiaADiaService {
                         case CANCELADO -> x++;
                     }
                 }
-                log.info("[AeroLuggage/OperacionesDiaADia] - TICK {}: vuelos(P={},C={},E={},F={},X={}), maletas={}, rutas={}, pedidos={}",
-                        tick, p, c, e, f, x, maletasPorId.size(), rutasPorMaleta.size(), pedidos.size());
             }
 
             if (System.currentTimeMillis() - lastDepuraMs >= DEPURA_INTERVALO_MS) {
@@ -607,11 +596,11 @@ public class OperacionesDiaADiaService {
                     final VueloInstancia v = vuelosInstancia.get(subId);
                     if (v == null) continue;
                     if (v.getEstado() == pe.edu.pucp.aeroluggage.dominio.enums.EstadoVuelo.EN_PROGRESO) {
-                        return v.getCodigo();
+                        return v.getIdVueloInstancia();
                     }
                     if (candidata == null) candidata = v;
                 }
-                if (candidata != null) return candidata.getCodigo();
+                if (candidata != null) return candidata.getIdVueloInstancia();
             }
         }
         return m.getAeropuertoActual();
@@ -619,53 +608,61 @@ public class OperacionesDiaADiaService {
 
     private void generarVuelosParaFecha(final LocalDate fecha) {
         final String fechaStr = fecha.format(DateTimeFormatter.ofPattern("yyyyMMdd"));
+        final AtomicInteger seq = new AtomicInteger(
+                vueloInstanciaRepositorio.obtenerUltimoSecuencial(fechaStr) + 1);
+        for (final VueloProgramado vp : vuelosProgramados.values()) {
+            if (vp == null) continue;
+            generarInstanciaParaVuelo(vp, fecha, seq);
+        }
+    }
+
+    private void generarInstanciaParaVuelo(final VueloProgramado vp, final LocalDate fecha, final AtomicInteger seq) {
+        if (vp.getHoraSalida() == null || vp.getHoraLlegada() == null) {
+            return;
+        }
+        final String fechaStr = fecha.format(DateTimeFormatter.ofPattern("yyyyMMdd"));
         final LocalDateTime inicioVentanaUtc = fecha.atStartOfDay();
         final LocalDateTime finVentanaUtc = inicioVentanaUtc.plusDays(1);
-        int seq = vueloInstanciaRepositorio.obtenerUltimoSecuencial(fechaStr) + 1;
-        for (final VueloProgramado vp : vuelosProgramados.values()) {
-            if (vp == null || vp.getHoraSalida() == null || vp.getHoraLlegada() == null) continue;
-            final int gmtOrigen = vp.getAeropuertoOrigen() != null
-                    ? vp.getAeropuertoOrigen().getHusoGMT() : 0;
-            final int gmtDestino = vp.getAeropuertoDestino() != null
-                    ? vp.getAeropuertoDestino().getHusoGMT() : 0;
+        final int gmtOrigen = vp.getAeropuertoOrigen() != null
+                ? vp.getAeropuertoOrigen().getHusoGMT() : 0;
+        final int gmtDestino = vp.getAeropuertoDestino() != null
+                ? vp.getAeropuertoDestino().getHusoGMT() : 0;
 
-            LocalDate fechaLocalOrigen = fecha;
-            LocalDateTime salidaUtc = LocalDateTime.of(fechaLocalOrigen, vp.getHoraSalida())
-                    .minusHours(gmtOrigen);
-            if (!salidaUtc.isBefore(finVentanaUtc)) {
-                fechaLocalOrigen = fecha.minusDays(1);
-            } else if (salidaUtc.isBefore(inicioVentanaUtc)) {
-                fechaLocalOrigen = fecha.plusDays(1);
-            }
-            salidaUtc = LocalDateTime.of(fechaLocalOrigen, vp.getHoraSalida()).minusHours(gmtOrigen);
-
-            LocalDate fechaLlegadaLocal = fechaLocalOrigen;
-            if (vp.getHoraLlegada().isBefore(vp.getHoraSalida())) {
-                fechaLlegadaLocal = fechaLlegadaLocal.plusDays(1);
-            }
-            LocalDateTime llegadaUtc = LocalDateTime.of(fechaLlegadaLocal, vp.getHoraLlegada())
-                    .minusHours(gmtDestino);
-            if (!llegadaUtc.isAfter(salidaUtc)) {
-                llegadaUtc = llegadaUtc.plusDays(1);
-            }
-            final String orig = vp.getAeropuertoOrigen() != null
-                    ? vp.getAeropuertoOrigen().getIdAeropuerto() : "??";
-            final String dest = vp.getAeropuertoDestino() != null
-                    ? vp.getAeropuertoDestino().getIdAeropuerto() : "??";
-            final String id = String.format("VUE-%s-%s-%s-%06d",
-                    orig, dest, fechaStr, seq);
-            final VueloInstancia vi = new VueloInstancia(
-                    id, vp, fecha, salidaUtc, llegadaUtc,
-                    vp.getCapacidadMaxima(), vp.getCapacidadMaxima(),
-                    EstadoVuelo.PROGRAMADO);
-            vuelosInstancia.put(vi.getIdVueloInstancia(), vi);
-            final LocalDateTime tConf = salidaUtc.minusMinutes(
-                    sistemaConfiguracion.getUmbralConfirmacionMinutos());
-            agregarEvento(tConf, TipoEventoSim.VUELO_CONFIRMA, id, null, 0);
-            agregarEvento(salidaUtc, TipoEventoSim.VUELO_INICIA, id, null, 0);
-            agregarEvento(llegadaUtc, TipoEventoSim.VUELO_FINALIZA, id, null, 0);
-            seq++;
+        LocalDate fechaLocalOrigen = fecha;
+        LocalDateTime salidaUtc = LocalDateTime.of(fechaLocalOrigen, vp.getHoraSalida())
+                .minusHours(gmtOrigen);
+        if (!salidaUtc.isBefore(finVentanaUtc)) {
+            fechaLocalOrigen = fecha.minusDays(1);
+        } else if (salidaUtc.isBefore(inicioVentanaUtc)) {
+            fechaLocalOrigen = fecha.plusDays(1);
         }
+        salidaUtc = LocalDateTime.of(fechaLocalOrigen, vp.getHoraSalida()).minusHours(gmtOrigen);
+
+        LocalDate fechaLlegadaLocal = fechaLocalOrigen;
+        if (vp.getHoraLlegada().isBefore(vp.getHoraSalida())) {
+            fechaLlegadaLocal = fechaLlegadaLocal.plusDays(1);
+        }
+        LocalDateTime llegadaUtc = LocalDateTime.of(fechaLlegadaLocal, vp.getHoraLlegada())
+                .minusHours(gmtDestino);
+        if (!llegadaUtc.isAfter(salidaUtc)) {
+            llegadaUtc = llegadaUtc.plusDays(1);
+        }
+        final String orig = vp.getAeropuertoOrigen() != null
+                ? vp.getAeropuertoOrigen().getIdAeropuerto() : "??";
+        final String dest = vp.getAeropuertoDestino() != null
+                ? vp.getAeropuertoDestino().getIdAeropuerto() : "??";
+        final String id = String.format("VUE-%s-%s-%s-%06d",
+                orig, dest, fechaStr, seq.getAndIncrement());
+        final VueloInstancia vi = new VueloInstancia(
+                id, vp, fecha, salidaUtc, llegadaUtc,
+                vp.getCapacidadMaxima(), vp.getCapacidadMaxima(),
+                EstadoVuelo.PROGRAMADO);
+        vuelosInstancia.put(vi.getIdVueloInstancia(), vi);
+        final LocalDateTime tConf = salidaUtc.minusMinutes(
+                sistemaConfiguracion.getUmbralConfirmacionMinutos());
+        agregarEvento(tConf, TipoEventoSim.VUELO_CONFIRMA, id, null, 0);
+        agregarEvento(salidaUtc, TipoEventoSim.VUELO_INICIA, id, null, 0);
+        agregarEvento(llegadaUtc, TipoEventoSim.VUELO_FINALIZA, id, null, 0);
     }
 
     private void agregarEvento(final LocalDateTime tiempo, final TipoEventoSim tipo,
@@ -703,7 +700,6 @@ public class OperacionesDiaADiaService {
         vuelosInstancia.values().removeIf(v -> v.getEstado() == EstadoVuelo.PROGRAMADO
                 && v.getFechaSalida() != null
                 && v.getFechaSalida().isAfter(corte));
-        log.info("[AeroLuggage/OperacionesDiaADia] - DEPURA: vuelosInstancia={}", vuelosInstancia.size());
     }
 
     private void aplicarEventoAhora(final EventoSim e) {
@@ -1241,9 +1237,6 @@ public class OperacionesDiaADiaService {
                 if (vp != null) {
                     vueloProgramadoRepositorio.insertar(vp);
                     vuelosProgramados.put(idVueloProgramado, vp);
-                    log.warn("[AeroLuggage/OperacionesDiaADia] - CANCELACION: vueloProgramado={} no existia; "
-                                    + "se creo un placeholder para registrar la cancelacion",
-                            idVueloProgramado);
                 }
             }
             if (vp == null) {
@@ -1278,9 +1271,6 @@ public class OperacionesDiaADiaService {
                 final VueloInstancia cancelada = crearInstanciaCancelada(vp, fechaOperacion);
                 vuelosInstancia.put(cancelada.getIdVueloInstancia(), cancelada);
                 vueloInstanciaRepositorio.insertarOActualizar(cancelada, idVueloProgramado);
-                log.info("[AeroLuggage/OperacionesDiaADia] - CANCELACION: vueloProgramado={}, fecha={}, "
-                                + "sin ocurrencia previa; creada instancia cancelada={}, maletasAfectadas=0",
-                        idVueloProgramado, fechaOperacion, cancelada.getIdVueloInstancia());
                 return SimulacionEstadoDTO.builder()
                         .withSessionId(sessionId)
                         .withEstado("VUELO_PROGRAMADO_CANCELADO")
@@ -1361,9 +1351,6 @@ public class OperacionesDiaADiaService {
                 rutasPorMaleta.remove(idMaleta);
             }
 
-            log.info("[AeroLuggage/OperacionesDiaADia] - CANCELACION: vueloProgramado={}, fecha={}, "
-                            + "vueloInstancia={}, maletasAfectadas={}",
-                    idVueloProgramado, fechaOperacion, idVuelo, maletasAfectadas.size());
 
             if (!maletasAfectadas.isEmpty()) {
                 planificarPendientes();
@@ -1383,8 +1370,7 @@ public class OperacionesDiaADiaService {
                         }
                     }
                 }
-                log.info("[AeroLuggage/OperacionesDiaADia] - CANCELACION: rutas nuevas persistidas={}",
-                        nuevasPersistidas);
+
             }
 
             return SimulacionEstadoDTO.builder()
@@ -1442,9 +1428,6 @@ public class OperacionesDiaADiaService {
             }
 
             if (!maletasAfectadas.isEmpty()) {
-                log.info("[AeroLuggage/OperacionesDiaADia] - AEROPUERTO ACTUALIZADO: iata={}, nuevaCapacidad={}, "
-                                + "maletasReplanificadas={}",
-                        iata, nuevaCapacidad, maletasAfectadas.size());
                 planificarPendientes();
 
                 for (final String idMaleta : maletasAfectadas) {
@@ -1455,6 +1438,98 @@ public class OperacionesDiaADiaService {
                 }
             }
 
+            final SimulacionTickLigeroDTO tickDTO = construirTickDTO(
+                    LocalDateTime.now(ZoneOffset.UTC));
+            broker.convertAndSend(TOPIC_SIM + sessionId, tickDTO);
+        }
+    }
+
+    public void onAeropuertoCreado(final Aeropuerto aeropuerto) {
+        synchronized (lock) {
+            if (!activa) {
+                return;
+            }
+            if (aeropuerto == null || aeropuerto.getIdAeropuerto() == null) {
+                return;
+            }
+            aeropuertos.put(aeropuerto.getIdAeropuerto(), aeropuerto);
+            final SimulacionTickLigeroDTO tickDTO = construirTickDTO(
+                    LocalDateTime.now(ZoneOffset.UTC));
+            broker.convertAndSend(TOPIC_SIM + sessionId, tickDTO);
+        }
+    }
+
+    public void onAeropuertoEliminado(final String iata) {
+        synchronized (lock) {
+            if (!activa) {
+                return;
+            }
+            aeropuertos.remove(iata);
+            final SimulacionTickLigeroDTO tickDTO = construirTickDTO(
+                    LocalDateTime.now(ZoneOffset.UTC));
+            broker.convertAndSend(TOPIC_SIM + sessionId, tickDTO);
+        }
+    }
+
+    public void onVueloProgramadoCreado(final VueloProgramado vp) {
+        synchronized (lock) {
+            if (!activa) {
+                return;
+            }
+            if (vp == null || vp.getIdVueloProgramado() == null) {
+                return;
+            }
+            vuelosProgramados.put(vp.getIdVueloProgramado(), vp);
+
+            final LocalDate hoy = LocalDate.now(ZoneOffset.UTC);
+            final String fechaStr = hoy.format(DateTimeFormatter.ofPattern("yyyyMMdd"));
+            final AtomicInteger seq = new AtomicInteger(
+                    vueloInstanciaRepositorio.obtenerUltimoSecuencial(fechaStr) + 1);
+            generarInstanciaParaVuelo(vp, hoy, seq);
+            depurarVuelos(LocalDateTime.now(ZoneOffset.UTC));
+
+            final SimulacionTickLigeroDTO tickDTO = construirTickDTO(
+                    LocalDateTime.now(ZoneOffset.UTC));
+            broker.convertAndSend(TOPIC_SIM + sessionId, tickDTO);
+        }
+    }
+
+    public void onVueloProgramadoActualizado(final String id, final VueloProgramado vp) {
+        synchronized (lock) {
+            if (!activa) {
+                return;
+            }
+            if (id == null || vp == null) {
+                return;
+            }
+            vp.setIdVueloProgramado(id);
+            vuelosProgramados.put(id, vp);
+            final SimulacionTickLigeroDTO tickDTO = construirTickDTO(
+                    LocalDateTime.now(ZoneOffset.UTC));
+            broker.convertAndSend(TOPIC_SIM + sessionId, tickDTO);
+        }
+    }
+
+    public void onVueloProgramadoEliminado(final String id) {
+        synchronized (lock) {
+            if (!activa) {
+                return;
+            }
+            if (id == null) {
+                return;
+            }
+            vuelosProgramados.remove(id);
+            for (final VueloInstancia vi : vuelosInstancia.values()) {
+                if (vi == null || vi.getEstado() == EstadoVuelo.FINALIZADO
+                        || vi.getEstado() == EstadoVuelo.CANCELADO) {
+                    continue;
+                }
+                if (vi.getVueloProgramado() != null
+                        && id.equals(vi.getVueloProgramado().getIdVueloProgramado())) {
+                    vi.cancelar();
+                }
+            }
+            planificarPendientes();
             final SimulacionTickLigeroDTO tickDTO = construirTickDTO(
                     LocalDateTime.now(ZoneOffset.UTC));
             broker.convertAndSend(TOPIC_SIM + sessionId, tickDTO);
@@ -1578,7 +1653,6 @@ public class OperacionesDiaADiaService {
             if (p == null) continue;
             pedidos.put(p.getIdPedido(), p);
         }
-        log.info("[AeroLuggage/OperacionesDiaADia] - PEDIDOS DESDE BD: {}", pedidos.size());
     }
 
     private void cargarMaletasDesdeBD() {
@@ -1587,7 +1661,6 @@ public class OperacionesDiaADiaService {
             if (m == null) continue;
             maletasPorId.put(m.getIdMaleta(), m);
         }
-        log.info("[AeroLuggage/OperacionesDiaADia] - MALETAS DESDE BD: {}", maletasBD.size());
     }
 
     private void recalcularOcupacionAeropuertos() {
@@ -1685,23 +1758,17 @@ public class OperacionesDiaADiaService {
             rutaRepositorio.actualizar(r);
             rutasPersistidas++;
         }
-        log.info("[AeroLuggage/OperacionesDiaADia] - ESTADOS BD: maletas={}, pedidos={}, rutas={}",
-                maletasPersistidas, pedidosPersistidos, rutasPersistidas);
     }
 
     public void registrarCliente(final String wsSessionId) {
         final boolean nuevo = clientesConectados.add(wsSessionId);
         if (nuevo) {
             lastAccessTime = System.currentTimeMillis();
-            log.info("[AeroLuggage/OperacionesDiaADia] - CLIENTE REGISTRADO: wsSessionId={}, total={}",
-                    wsSessionId, clientesConectados.size());
         }
     }
 
     public void desregistrarCliente(final String wsSessionId) {
         clientesConectados.remove(wsSessionId);
-        log.info("[AeroLuggage/OperacionesDiaADia] - CLIENTE DESREGISTRADO: wsSessionId={}, total={}",
-                wsSessionId, clientesConectados.size());
     }
 
     private void limpiarEstado() {
@@ -1802,7 +1869,6 @@ public class OperacionesDiaADiaService {
             }
         }
         idsVuelosRecienConfirmados.clear();
-        log.info("[AeroLuggage/OperacionesDiaADia] - VUELOS_NUEVOS: {} vuelos", resultado.size());
         return resultado;
     }
 

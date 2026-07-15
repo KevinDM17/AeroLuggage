@@ -20,7 +20,7 @@ import { adaptFlightInstance } from "../api/flightInstances";
 import { listFlightPlans, createFlightPlan } from "../api/flights";
 
 const colorByOccupancy = (pct) =>
-  pct >= 85 ? "bg-danger" : pct >= 60 ? "bg-warning" : "bg-success";
+  pct >= 85 ? "bg-danger" : pct >= 50 ? "bg-warning" : "bg-success";
 
 const formatGMT = (h) => (h >= 0 ? `GMT+${h}` : `GMT${h}`);
 

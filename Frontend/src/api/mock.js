@@ -44,6 +44,17 @@ export async function mockActualizarAeropuerto(iata, payload) {
 }
 export async function mockEliminarAeropuerto(iata) {
   await delay();
+  const airport = _airports.find(a => a.iata === iata);
+  if (!airport) throw new Error(`Aeropuerto ${iata} no encontrado`);
+  if (airport.used > 0) {
+    throw new Error(`No se puede eliminar el aeropuerto ${iata} porque tiene maletas almacenadas`);
+  }
+  const vuelosActivos = _flights.filter(
+    f => (f.origin === iata || f.dest === iata) && f.status !== "Finalizado" && f.status !== "Cancelado"
+  );
+  if (vuelosActivos.length > 0) {
+    throw new Error(`No se puede eliminar el aeropuerto ${iata} porque tiene vuelos activos con origen o destino en este aeropuerto`);
+  }
   _airports = _airports.filter(a => a.iata !== iata);
 }
 

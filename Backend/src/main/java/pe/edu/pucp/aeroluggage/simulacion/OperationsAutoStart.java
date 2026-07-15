@@ -15,11 +15,9 @@ public class OperationsAutoStart {
 
     @EventListener(ApplicationReadyEvent.class)
     public void onReady() {
-        log.info("[AeroLuggage/OperationsAutoStart] - Iniciando operaciones dia a dia 24/7...");
         try {
             service.autoStart();
         } catch (IllegalStateException e) {
-            log.warn("[AeroLuggage/OperationsAutoStart] - BD sin datos: {}. Ejecute el seed primero.", e.getMessage());
         }
     }
 }

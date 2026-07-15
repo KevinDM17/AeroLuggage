@@ -44,11 +44,6 @@ public class ServicioCargaSimulacion {
         final Map<String, Aeropuerto> indiceAeropuertos = indexarAeropuertos(aeropuertos);
         final List<VueloProgramado> vuelosProgramados = vueloProgramadoRepositorio.obtenerTodos();
 
-        log.info("[AeroLuggage/Simulacion] - SNAPSHOT: sessionId={}, totalDias={}, "
-                        + "vuelosProgramados={}, aeropuertos={}",
-                sesion.getSessionId(), sesion.getTotalDias(),
-                vuelosProgramados.size(), aeropuertos.size());
-
         final LectorLotesEnvios lector = CargadorEnvios.crearLectorLotesEnvios(
                 enviosPath, indiceAeropuertos, sesion.getFechaInicio());
         final LocalDateTime finPrimeraVentana = sesion.getFechaInicioUtc()

@@ -1,4 +1,4 @@
-import { useMemo, useState } from "react";
+import { useEffect, useMemo, useState } from "react";
 import { useOutletContext } from "react-router-dom";
 import { Clock, Plus, SlidersHorizontal } from "lucide-react";
 import MapDashboard from "../components/simulator/MapDashboard";
@@ -18,7 +18,7 @@ function formatLimaTime(utcIsoString) {
 
 export default function SimulatorPage() {
   const toast = useToast();
-  const { simulationPanelData, setSimulationPanelData, ops } = useOutletContext();
+  const { simulationPanelData, setSimulationPanelData, ops, setTopBarActions, setTopBarInfo } = useOutletContext();
 
   const { simStatus, currentSimTimeUtc, mapAirports, liveMetrics, simulatedNowMs, hasActiveRun } =
     ops ?? {};
@@ -26,6 +26,50 @@ export default function SimulatorPage() {
   const [pedidoOpen, setPedidoOpen] = useState(false);
   const [pedidoLoading, setPedidoLoading] = useState(false);
   const [showRouteLines, setShowRouteLines] = useState(true);
+
+  useEffect(() => {
+    if (!hasActiveRun) {
+      setTopBarActions(null);
+      setTopBarInfo(null);
+      return;
+    }
+    setTopBarActions(
+      <>
+        <button
+          type="button"
+          onClick={() => setShowRouteLines((v) => !v)}
+          className={`rounded px-2.5 py-1 text-xs font-medium whitespace-nowrap transition-colors ${
+            showRouteLines
+              ? "bg-blue-600/20 text-blue-400 border border-blue-500/40 hover:bg-blue-600/30"
+              : "bg-white/5 text-slate-400 border border-white/10 hover:text-slate-200"
+          }`}
+        >
+          Mostrar lineas
+        </button>
+        <button type="button" onClick={() => setPedidoOpen(true)} className="bg-blue-600 hover:bg-blue-500 text-white px-3 py-1 rounded text-xs font-medium leading-none transition-colors shrink-0 flex items-center gap-1.5">
+          <Plus className="w-3.5 h-3.5" /> Agregar Pedido
+        </button>
+      </>
+    );
+    return () => setTopBarActions(null);
+  }, [hasActiveRun, showRouteLines, setTopBarActions]);
+
+  const limaTime = formatLimaTime(currentSimTimeUtc);
+
+  useEffect(() => {
+    if (!hasActiveRun || !limaTime) {
+      setTopBarInfo(null);
+      return;
+    }
+    setTopBarInfo(
+      <div className="flex items-center gap-4 text-xs">
+        <span className="text-slate-400">Lima, Peru</span>
+        <span className="text-slate-200 tabular-nums">{limaTime.date}</span>
+        <span className="text-slate-200 tabular-nums">{limaTime.time}</span>
+      </div>
+    );
+    return () => setTopBarInfo(null);
+  }, [hasActiveRun, limaTime?.date, limaTime?.time, setTopBarInfo]);
 
   const normalizeFlightStatus = (status) =>
     String(status ?? "").trim().toUpperCase().replace(/\s+/g, "_");
@@ -80,52 +124,7 @@ export default function SimulatorPage() {
     }
   };
 
-  const limaTime = formatLimaTime(currentSimTimeUtc);
-
-  const mapOverlays = hasActiveRun
-    ? [
-        {
-          id: "clock-panel",
-          icon: <Clock className="w-4 h-4" />,
-          content: (
-            <div className="bg-surface-2/85 backdrop-blur border border-slate-700 shadow-[0_12px_35px_rgba(0,0,0,0.45)] rounded-xl px-4 py-3 flex items-center gap-5">
-              <div>
-                <div className="text-[10px] text-slate-400 font-medium uppercase tracking-wider">Fecha Lima, Peru (GMT-5)</div>
-                <div className="text-lg font-bold text-info tabular-nums">{limaTime.date}</div>
-              </div>
-              <div className="h-10 w-px bg-slate-700 shrink-0" />
-              <div>
-                <div className="text-[10px] text-slate-400 font-medium uppercase tracking-wider">Hora Lima, Peru (GMT-5)</div>
-                <div className="text-lg font-bold text-info tabular-nums">{limaTime.time}</div>
-              </div>
-            </div>
-          ),
-        },
-        {
-          id: "actions-panel",
-          icon: <SlidersHorizontal className="w-4 h-4" />,
-          content: (
-            <div className="bg-surface-2/85 backdrop-blur border border-slate-700 shadow-[0_12px_35px_rgba(0,0,0,0.45)] rounded-xl px-4 py-3 flex items-center gap-4">
-              <button
-                type="button"
-                onClick={() => setShowRouteLines((v) => !v)}
-                className={`rounded-lg px-3 py-1.5 text-sm font-medium whitespace-nowrap transition-colors ${
-                  showRouteLines
-                    ? "bg-blue-600/20 text-blue-400 border border-blue-500/40 hover:bg-blue-600/30"
-                    : "bg-surface-2 text-slate-400 border border-slate-700 hover:text-slate-200"
-                }`}
-              >
-                Mostrar lineas
-              </button>
-              <div className="h-10 w-px bg-slate-700 shrink-0" />
-              <button type="button" onClick={() => setPedidoOpen(true)} className="self-center bg-blue-600 hover:bg-blue-500 text-white px-5 py-2.5 rounded-lg flex items-center gap-2 font-medium text-sm leading-none transition-colors shrink-0">
-                <Plus className="w-4 h-4" /> Agregar Pedido
-              </button>
-            </div>
-          ),
-        },
-      ]
-    : [];
+  const mapOverlays = [];
 
   return (
     <>

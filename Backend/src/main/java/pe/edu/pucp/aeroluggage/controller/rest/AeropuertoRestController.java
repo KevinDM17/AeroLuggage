@@ -1,15 +1,18 @@
 package pe.edu.pucp.aeroluggage.controller.rest;
 
 import lombok.RequiredArgsConstructor;
+import lombok.extern.slf4j.Slf4j;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.context.annotation.Lazy;
 import org.springframework.http.HttpStatus;
+import org.springframework.web.bind.annotation.DeleteMapping;
 import org.springframework.web.bind.annotation.GetMapping;
 import org.springframework.web.bind.annotation.PathVariable;
 import org.springframework.web.bind.annotation.PostMapping;
 import org.springframework.web.bind.annotation.PutMapping;
 import org.springframework.web.bind.annotation.RequestBody;
 import org.springframework.web.bind.annotation.RequestMapping;
+import org.springframework.web.bind.annotation.ResponseStatus;
 import org.springframework.web.bind.annotation.RestController;
 import org.springframework.web.server.ResponseStatusException;
 import pe.edu.pucp.aeroluggage.dominio.entidades.Aeropuerto;
@@ -24,6 +27,7 @@ import java.util.List;
 import java.util.Optional;
 import java.util.stream.Collectors;
 
+@Slf4j
 @RestController
 @RequestMapping("/api/aeropuertos")
 @RequiredArgsConstructor
@@ -54,6 +58,14 @@ public class AeropuertoRestController {
     public AeropuertoResponse crear(@RequestBody final AeropuertoRequest request) {
         final Aeropuerto aeropuerto = toEntity(request);
         final Aeropuerto creado = servicioAeropuerto.crear(aeropuerto);
+        if (operacionesService != null) {
+            try {
+                operacionesService.onAeropuertoCreado(creado);
+            } catch (final Exception e) {
+                log.warn("[AeroLuggage/AeropuertoRestController] "
+                        + "sync onAeropuertoCreado failed: {}", e.getMessage());
+            }
+        }
         return toResponse(creado);
     }
 
@@ -67,9 +79,32 @@ public class AeropuertoRestController {
                 .orElseThrow(() -> new ResponseStatusException(HttpStatus.NOT_FOUND,
                         "Aeropuerto no encontrado: " + iata));
         if (operacionesService != null) {
-            operacionesService.onAeropuertoActualizado(iata, request.getCapacidadAlmacen());
+            try {
+                operacionesService.onAeropuertoActualizado(iata, request.getCapacidadAlmacen());
+            } catch (final Exception e) {
+                log.warn("[AeroLuggage/AeropuertoRestController] "
+                        + "sync onAeropuertoActualizado failed: {}", e.getMessage());
+            }
         }
         return response;
+    }
+
+    @DeleteMapping("/{iata}")
+    @ResponseStatus(HttpStatus.NO_CONTENT)
+    public void eliminar(@PathVariable final String iata) {
+        final boolean eliminado = servicioAeropuerto.eliminar(iata);
+        if (!eliminado) {
+            throw new ResponseStatusException(HttpStatus.NOT_FOUND,
+                    "Aeropuerto no encontrado: " + iata);
+        }
+        if (operacionesService != null) {
+            try {
+                operacionesService.onAeropuertoEliminado(iata);
+            } catch (final Exception e) {
+                log.warn("[AeroLuggage/AeropuertoRestController] "
+                        + "sync onAeropuertoEliminado failed: {}", e.getMessage());
+            }
+        }
     }
 
     private Aeropuerto toEntity(final AeropuertoRequest request) {

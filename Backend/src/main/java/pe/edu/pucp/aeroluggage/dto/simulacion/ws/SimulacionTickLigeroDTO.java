@@ -24,4 +24,5 @@ public class SimulacionTickLigeroDTO {
     private List<EstadoRutaDTO> estadosRutas;
     private List<EstadoVueloDTO> estadosVuelos;
     private List<OcupacionAeropuertoDTO> aeropuertos;
+    private List<EventoOcupacionDTO> eventosOcupacion;
 }
