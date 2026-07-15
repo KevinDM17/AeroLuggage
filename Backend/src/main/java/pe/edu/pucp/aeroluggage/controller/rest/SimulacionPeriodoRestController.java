@@ -23,6 +23,7 @@ import pe.edu.pucp.aeroluggage.dto.simulacion.rest.SimulacionBaseResponse;
 import pe.edu.pucp.aeroluggage.dto.simulacion.rest.SimulacionIniciarRequest;
 import pe.edu.pucp.aeroluggage.dto.simulacion.rest.SimulacionInicioResponse;
 import pe.edu.pucp.aeroluggage.dto.simulacion.rest.SimulacionResultadoFinalResponse;
+import pe.edu.pucp.aeroluggage.dto.simulacion.rest.SimulacionSesionResumenDTO;
 import pe.edu.pucp.aeroluggage.dto.simulacion.rest.VueloInstanciaResponse;
 import pe.edu.pucp.aeroluggage.dto.simulacion.rest.VueloManifiestoResponse;
 import pe.edu.pucp.aeroluggage.dto.simulacion.ws.SimulacionEstadoDTO;
@@ -69,6 +70,12 @@ public class SimulacionPeriodoRestController {
     @PostMapping("/iniciar")
     public SimulacionEstadoDTO iniciar(@RequestBody final SimulacionIniciarRequest params) {
         return sesionManager.iniciar(params, broker);
+    }
+
+    @GetMapping("/sesiones")
+    public List<SimulacionSesionResumenDTO> listarSesiones(
+            @RequestParam(defaultValue = "PERIODO") final String tipo) {
+        return sesionManager.listarSesionesActivas(tipo);
     }
 
     @GetMapping("/{sessionId}/base")

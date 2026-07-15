@@ -39,6 +39,9 @@ export const iniciarSimulacionPeriodo = (payload) =>
     ? mockStartPeriodSim(payload.fechaHoraInicio ?? payload.fechaInicio)
     : apiPost("/simulacion/periodo/iniciar", payload);
 
+export const listarSesionesActivas = (tipo = "PERIODO") =>
+  apiGet(`/simulacion/periodo/sesiones?tipo=${tipo}`);
+
 export const obtenerBaseSimulacion = (sessionId) =>
   apiGet(`/simulacion/periodo/${sessionId}/base`);
 

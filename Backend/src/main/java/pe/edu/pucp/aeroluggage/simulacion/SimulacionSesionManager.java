@@ -27,6 +27,7 @@ import pe.edu.pucp.aeroluggage.dto.simulacion.rest.RutaSimulacionResponse;
 import pe.edu.pucp.aeroluggage.dto.simulacion.rest.RutaVueloResponse;
 import pe.edu.pucp.aeroluggage.dto.simulacion.rest.VueloInstanciaResponse;
 import pe.edu.pucp.aeroluggage.dto.simulacion.rest.SimulacionIniciarRequest;
+import pe.edu.pucp.aeroluggage.dto.simulacion.rest.SimulacionSesionResumenDTO;
 import pe.edu.pucp.aeroluggage.dto.simulacion.ws.SimulacionTickLigeroDTO;
 import pe.edu.pucp.aeroluggage.dto.simulacion.ws.SimulacionEstadoDTO;
 
@@ -34,6 +35,7 @@ import java.io.IOException;
 import java.nio.charset.StandardCharsets;
 import java.nio.file.Files;
 import java.nio.file.Path;
+import java.time.Duration;
 import java.time.LocalDate;
 import java.time.LocalDateTime;
 import java.time.LocalTime;
@@ -283,6 +285,47 @@ public class SimulacionSesionManager {
 
     public SimulacionSesion obtenerSesionFinalizada(final String sessionId) {
         return sesionesFinalizadas.get(sessionId);
+    }
+
+    public List<SimulacionSesionResumenDTO> listarSesionesActivas(final String tipo) {
+        final boolean esColapso = "COLAPSO".equalsIgnoreCase(tipo);
+        final List<SimulacionSesionResumenDTO> resultado = new ArrayList<>();
+        final long ahoraRealMs = System.currentTimeMillis();
+
+        for (final SimulacionSesion sesion : sesionesActivas.values()) {
+            if (sesion == null) {
+                continue;
+            }
+            final boolean sesionColapso = sesion.getTotalDias() == 0;
+            if (esColapso != sesionColapso) {
+                continue;
+            }
+            final long elapsedRealSegundos = sesion.getStartedAtRealMs() > 0
+                    ? (ahoraRealMs - sesion.getStartedAtRealMs()) / 1000L : 0L;
+            final LocalDateTime simTime = sesion.getCurrentSimTimeUtc() != null
+                    ? sesion.getCurrentSimTimeUtc().get() : null;
+            final long elapsedSimMinutos = simTime != null
+                    ? Duration.between(sesion.getFechaInicioUtc(), simTime).toMinutes() : 0L;
+
+            resultado.add(SimulacionSesionResumenDTO.builder()
+                    .withSessionId(sesion.getSessionId())
+                    .withTipo(sesionColapso ? "COLAPSO" : "PERIODO")
+                    .withFechaInicio(sesion.getFechaInicio() != null
+                            ? sesion.getFechaInicio().format(FORMATO_FECHA) : "")
+                    .withHoraInicio(sesion.getFechaInicioUtc() != null
+                            ? sesion.getFechaInicioUtc().toLocalTime().format(
+                                    DateTimeFormatter.ofPattern("HH:mm")) : "")
+                    .withSimTimeUtc(simTime != null
+                            ? simTime.format(FORMATO_FECHA_HORA) : "")
+                    .withTickActual(sesion.getTickActual() != null
+                            ? sesion.getTickActual().get() : 0)
+                    .withElapsedRealSegundos(elapsedRealSegundos)
+                    .withElapsedSimMinutos(elapsedSimMinutos)
+                    .withActiva(sesion.getActiva() != null && sesion.getActiva().get())
+                    .withTotalDias(sesion.getTotalDias())
+                    .build());
+        }
+        return resultado;
     }
 
     public void limpiarPorWsSession(final String wsSessionId, final SimpMessagingTemplate broker) {
