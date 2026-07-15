@@ -25,6 +25,24 @@ public final class DijkstraRuteador {
                                               final GrafoTiempoExpandido grafo,
                                               final long minutosConexion,
                                               final Set<String> vuelosBloqueados) {
+        return rutear(origen, destino, tListo, tLimite, grafo, minutosConexion, vuelosBloqueados, false);
+    }
+
+    public static List<VueloInstancia> rutearPermitiendoOverflow(final Aeropuerto origen, final Aeropuerto destino,
+                                                                 final LocalDateTime tListo,
+                                                                 final LocalDateTime tLimite,
+                                                                 final GrafoTiempoExpandido grafo,
+                                                                 final long minutosConexion,
+                                                                 final Set<String> vuelosBloqueados) {
+        return rutear(origen, destino, tListo, tLimite, grafo, minutosConexion, vuelosBloqueados, true);
+    }
+
+    private static List<VueloInstancia> rutear(final Aeropuerto origen, final Aeropuerto destino,
+                                               final LocalDateTime tListo, final LocalDateTime tLimite,
+                                               final GrafoTiempoExpandido grafo,
+                                               final long minutosConexion,
+                                               final Set<String> vuelosBloqueados,
+                                               final boolean permitirOverflow) {
         if (origen == null || destino == null || tListo == null || tLimite == null || grafo == null) {
             return null;
         }
@@ -63,7 +81,7 @@ public final class DijkstraRuteador {
             final LocalDateTime tDesde = actual.tiempoActual.plusMinutes(minutosConexion);
             final List<VueloInstancia> vuelos = grafo.vuelosDesde(actual.icao, tDesde);
             for (final VueloInstancia vuelo : vuelos) {
-                if (!esUtilizable(vuelo, vuelosBloqueados, tLimite)) {
+                if (!esUtilizable(vuelo, vuelosBloqueados, tLimite, permitirOverflow)) {
                     continue;
                 }
                 final LocalDateTime llegada = vuelo.getFechaLlegada();
@@ -106,11 +124,12 @@ public final class DijkstraRuteador {
     }
 
     private static boolean esUtilizable(final VueloInstancia vuelo, final Set<String> bloqueados,
-                                        final LocalDateTime tLimite) {
+                                        final LocalDateTime tLimite,
+                                        final boolean permitirOverflow) {
         if (vuelo.getEstado() == EstadoVuelo.CANCELADO) {
             return false;
         }
-        if (vuelo.getCapacidadDisponible() <= 0) {
+        if (!permitirOverflow && vuelo.getCapacidadDisponible() <= 0) {
             return false;
         }
         if (vuelo.getFechaLlegada().isAfter(tLimite)) {

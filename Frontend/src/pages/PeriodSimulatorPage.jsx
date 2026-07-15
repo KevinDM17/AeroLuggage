@@ -21,6 +21,7 @@ import { adaptFlightInstance } from "../api/flightInstances";
 import { USE_MOCK } from "../api/client";
 import { clearPerformanceTimeline } from "../utils/performanceCleanup";
 import {
+  formatDateTimeDisplay,
   formatElapsedHMS,
   formatUtcDateTimeDisplay,
 } from "../utils/formatting";
@@ -209,6 +210,7 @@ export default function PeriodSimulatorPage() {
   const [colapsoInfo, setColapsoInfo] = useState(null);
   const [finalSummaryInfo, setFinalSummaryInfo] = useState(null);
   const [lastStablePlanning, setLastStablePlanning] = useState(null);
+  const [currentLocalTimeMs, setCurrentLocalTimeMs] = useState(() => Date.now());
   const startSimMsRef = useRef(null);
   const ventanasCargadasRef = useRef(new Set());
   const lastMapFlightsRef = useRef([]);
@@ -310,6 +312,13 @@ export default function PeriodSimulatorPage() {
     simStatus === "running" || simStatus === "paused" || simStatus === "done" || simStatus === "collapsed";
 
   useDefensivePerformanceCleanup(simStatus === "running");
+
+  useEffect(() => {
+    const timer = window.setInterval(() => {
+      setCurrentLocalTimeMs(Date.now());
+    }, 1000);
+    return () => window.clearInterval(timer);
+  }, []);
 
   useEffect(() => {
     if (USE_MOCK) {
@@ -656,6 +665,11 @@ export default function PeriodSimulatorPage() {
     return formatUtcDateTimeDisplay(new Date(simulatedNowMs));
   }, [simulatedNowMs]);
 
+  const currentClock = useMemo(
+    () => formatDateTimeDisplay(new Date(currentLocalTimeMs)),
+    [currentLocalTimeMs],
+  );
+
   const formattedStartDate = useMemo(() => {
     if (!startDate) return "--";
     const [y, m, d] = startDate.split("-");
@@ -771,7 +785,7 @@ export default function PeriodSimulatorPage() {
       {
         label: "Hora simulada",
         value: lastStablePlanning.timeLabel
-          ? `${lastStablePlanning.timeLabel} UTC`
+          ? lastStablePlanning.timeLabel
           : "-",
       },
       {
@@ -1019,7 +1033,25 @@ export default function PeriodSimulatorPage() {
               Inicio sim.
             </div>
             <div className="text-sm font-bold text-slate-100 tabular-nums whitespace-nowrap">
-              {formattedStartDate}  {startTime || "--:--"} UTC
+              {formattedStartDate}  {startTime || "--:--"}
+            </div>
+          </div>
+          <div className="h-9 w-px bg-slate-700 shrink-0" />
+          <div className="shrink-0">
+            <div className="text-[9px] text-slate-400 font-medium uppercase tracking-wider">
+              Fecha actual
+            </div>
+            <div className="text-sm font-bold text-slate-100 tabular-nums whitespace-nowrap">
+              {currentClock.date}
+            </div>
+          </div>
+          <div className="h-9 w-px bg-slate-700 shrink-0" />
+          <div className="shrink-0">
+            <div className="text-[9px] text-slate-400 font-medium uppercase tracking-wider">
+              Hora actual
+            </div>
+            <div className="text-sm font-bold text-slate-100 tabular-nums whitespace-nowrap">
+              {currentClock.time}
             </div>
           </div>
           <div className="h-9 w-px bg-slate-700 shrink-0" />
@@ -1054,7 +1086,7 @@ export default function PeriodSimulatorPage() {
               Hora simulada
             </div>
             <div className="text-base font-bold text-info tabular-nums whitespace-nowrap">
-              {simulationClock.time} UTC
+              {simulationClock.time}
             </div>
           </div>
           <div className="h-9 w-px bg-slate-700 shrink-0" />
@@ -1144,6 +1176,24 @@ export default function PeriodSimulatorPage() {
         />
       </div>
       <div className="h-9 w-px bg-slate-700" />
+      <div className="flex flex-col">
+        <div className="text-[10px] text-slate-400 font-medium uppercase tracking-wider">
+          Fecha actual
+        </div>
+        <div className="text-sm font-semibold text-slate-200 tabular-nums">
+          {currentClock.date}
+        </div>
+      </div>
+      <div className="h-9 w-px bg-slate-700" />
+      <div className="flex flex-col">
+        <div className="text-[10px] text-slate-400 font-medium uppercase tracking-wider">
+          Hora actual
+        </div>
+        <div className="text-sm font-semibold text-slate-200 tabular-nums">
+          {currentClock.time}
+        </div>
+      </div>
+      <div className="h-9 w-px bg-slate-700" />
       <button
         type="button"
         onClick={handleStart}
@@ -1229,7 +1279,7 @@ export default function PeriodSimulatorPage() {
                 {simulationClock.date}
               </div>
               <div className="text-sm text-info tabular-nums">
-                {simulationClock.time} UTC
+                {simulationClock.time}
               </div>
             </div>
           </div>
@@ -1345,7 +1395,7 @@ export default function PeriodSimulatorPage() {
                 {simulationClock.date}
               </div>
               <div className="text-sm text-info tabular-nums">
-                {simulationClock.time} UTC
+                {simulationClock.time}
               </div>
             </div>
           </div>

@@ -30,23 +30,30 @@ const FLIGHT_STATUS_FILTERS = [
 const PANEL_TABS = [
   { id: "flights", label: "Vuelos" },
   { id: "orders", label: "Pedidos" },
+  { id: "airports", label: "Aerop." },
   { id: "routes", label: "Rutas" },
   { id: "bags", label: "Maletas" },
-  { id: "airports", label: "Aerop." },
 ];
 
 const flightStatusColor = (s) => {
   switch ((s ?? "").toUpperCase().replace(/_/g, " ")) {
-    case "PROGRAMADO": return "bg-info text-slate-900";
-    case "EN PROGRESO": return "bg-warning text-yellow-900";
+    case "PROGRAMADO": return "bg-slate-500 text-white";
+    case "EN PROGRESO": return "bg-sky-500 text-slate-950";
     case "CONFIRMADO": return "bg-indigo-600 text-white";
-    case "CANCELADO": return "bg-danger text-white";
-    case "FINALIZADO": return "bg-success text-emerald-900";
+    case "CANCELADO": return "bg-fuchsia-600 text-white";
+    case "FINALIZADO": return "bg-violet-600 text-white";
     default: return "bg-slate-500 text-white";
   }
 };
 
 const occupancyColor = (pct) => pct >= 85 ? "bg-danger" : pct >= 60 ? "bg-warning" : "bg-success";
+const occupancyBadgeColor = (pct) => (
+  pct >= 85
+    ? "border-danger/40 bg-danger/12 text-danger"
+    : pct >= 60
+      ? "border-warning/40 bg-warning/12 text-warning"
+      : "border-success/40 bg-success/12 text-success"
+);
 
 const bagStatusColor = (s) => {
   switch (s) {
@@ -658,7 +665,7 @@ const AirportItem = memo(function AirportItem({
           )}
         </div>
         <div className="flex items-center gap-2 shrink-0">
-          <span className="rounded-full border border-slate-700/70 bg-surface-2/70 px-2 py-1 text-[11px] font-semibold text-slate-300">
+          <span className={`rounded-full border px-2 py-1 text-[11px] font-semibold ${occupancyBadgeColor(pct)}`}>
             {pct}% ocupado
           </span>
           {isSelected && onDeselect && (
