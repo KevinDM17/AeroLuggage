@@ -490,6 +490,8 @@ public class SimulacionPeriodoRestController {
                     .withOrigin(origin)
                     .withDest(dest)
                     .withBags(maletas.size())
+                    .withFechaRegistro(pedido != null && pedido.getFechaRegistro() != null
+                            ? pedido.getFechaRegistro().format(FORMATO_FECHA_HORA) : null)
                     .withUts(new ArrayList<>(uts))
                     .withOrigenesRuta(new ArrayList<>(origenes))
                     .withDestinosRuta(new ArrayList<>(destinos))

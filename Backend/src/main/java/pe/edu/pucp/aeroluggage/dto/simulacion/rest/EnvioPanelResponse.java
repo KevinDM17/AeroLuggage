@@ -18,6 +18,7 @@ public class EnvioPanelResponse {
     private String origin;
     private String dest;
     private int bags;                 // cantidad de productos (maletas)
+    private String fechaRegistro;
     private List<String> uts;         // codigos de vuelo (UT) del itinerario
     private List<String> origenesRuta;// aeropuertos de salida de algun tramo (para filtrar por origen)
     private List<String> destinosRuta;// aeropuertos de llegada de algun tramo (para filtrar por destino)

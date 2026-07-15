@@ -1498,10 +1498,10 @@ public class SimulacionSesion {
                 for (final String subId : r.getSubrutaIds()) {
                     final VueloInstancia v = vueloIndex.get(subId);
                     if (v == null) continue;
-                    if (v.getEstado() == EstadoVuelo.EN_PROGRESO) return v.getCodigo();
+                    if (v.getEstado() == EstadoVuelo.EN_PROGRESO) return v.getIdVueloInstancia();
                     if (candidata == null) candidata = v;
                 }
-                if (candidata != null) return candidata.getCodigo();
+                if (candidata != null) return candidata.getIdVueloInstancia();
             }
         }
         return m.getAeropuertoActual();

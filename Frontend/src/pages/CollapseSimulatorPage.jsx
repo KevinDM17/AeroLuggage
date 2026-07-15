@@ -126,13 +126,16 @@ const buildStablePlanningSnapshot = ({
 const updateEstadosOnly = (oldMap, stateMap, enumArr, statusField = "estado", extraFields) => {
   if (Object.keys(stateMap).length === 0) return oldMap;
   const updated = new Map(oldMap);
+  let changed = false;
   for (const [id, entity] of updated) {
     const st = stateMap[id];
-    if (st) {
-      updated.set(id, { ...entity, [statusField]: enumArr[st.e], ...(extraFields ? extraFields(st, entity) : {}) });
-    }
+    if (!st) continue;
+    const newStatus = enumArr[st.e];
+    if (entity[statusField] === newStatus && !extraFields) continue;
+    changed = true;
+    updated.set(id, { ...entity, [statusField]: newStatus, ...(extraFields ? extraFields(st, entity) : {}) });
   }
-  return updated;
+  return changed ? updated : oldMap;
 };
 
 const normalizeFlightStatus = (status) =>

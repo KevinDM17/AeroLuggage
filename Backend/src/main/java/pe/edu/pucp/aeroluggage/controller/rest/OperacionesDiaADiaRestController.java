@@ -413,6 +413,8 @@ public class OperacionesDiaADiaRestController {
                     .withDest(pedido != null && pedido.getAeropuertoDestino() != null
                             ? pedido.getAeropuertoDestino().getIdAeropuerto() : null)
                     .withBags(maletas.size())
+                    .withFechaRegistro(pedido != null && pedido.getFechaRegistro() != null
+                            ? pedido.getFechaRegistro().toString() : null)
                     .withUts(new ArrayList<>(uts))
                     .withOrigenesRuta(new ArrayList<>(origenes))
                     .withDestinosRuta(new ArrayList<>(destinos))

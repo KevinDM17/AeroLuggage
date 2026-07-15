@@ -596,11 +596,11 @@ public class OperacionesDiaADiaService {
                     final VueloInstancia v = vuelosInstancia.get(subId);
                     if (v == null) continue;
                     if (v.getEstado() == pe.edu.pucp.aeroluggage.dominio.enums.EstadoVuelo.EN_PROGRESO) {
-                        return v.getCodigo();
+                        return v.getIdVueloInstancia();
                     }
                     if (candidata == null) candidata = v;
                 }
-                if (candidata != null) return candidata.getCodigo();
+                if (candidata != null) return candidata.getIdVueloInstancia();
             }
         }
         return m.getAeropuertoActual();

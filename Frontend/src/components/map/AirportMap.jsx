@@ -950,7 +950,7 @@ function FlightInfoCard({ flight, manifest, onClose }) {
       <div className="flex items-start justify-between gap-2">
         <div>
           <div className="text-[10px] uppercase tracking-wider text-info font-semibold">Vuelo</div>
-          <div className="font-bold text-base text-white">{flight.id ?? flight.idVueloInstancia}</div>
+          <div className="font-bold text-base text-white">{flight.idVueloInstancia ?? flight.id}</div>
           <div className="text-xs text-slate-400 mt-0.5">{flight.origin} → {flight.dest}</div>
         </div>
         {onClose && (
