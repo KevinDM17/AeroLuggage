@@ -153,6 +153,7 @@ function AirportMap({
   autoload = true,
   simulatedNowMs,
   simulatedDayDurationMs,
+  eventosOcupacion = [],
 }) {
   const initialViewState = {
     longitude: -40,
@@ -180,6 +181,16 @@ function AirportMap({
     return map;
   }, [airports]);
 
+  const indicadoresResueltos = useMemo(() => {
+    return (eventosOcupacion ?? [])
+      .map((ev) => {
+        const apt = airportsByIata.get(ev.aeropuerto);
+        if (!apt) return null;
+        return { ...ev, lng: apt.lng, lat: apt.lat };
+      })
+      .filter(Boolean);
+  }, [eventosOcupacion, airportsByIata]);
+
   const airportList = useMemo(() => Array.from(airportsByIata.values()), [airportsByIata]);
 
   /* Vinculacion panel <-> mapa. */
@@ -195,8 +206,8 @@ function AirportMap({
     setPanelFocus({ ...entity, ts: Date.now() });
   }, [setSelected, setPanelFocus]);
 
-  /* Tarjetas con datos: se muestran SOLO al pasar el mouse por encima (hover),
-   * tanto del avion (NO vacio) como del aeropuerto. El click solo selecciona
+  /* Tarjetas con datos: se muestran al pasar el mouse por encima (hover),
+   * tanto del avion como del aeropuerto. El click solo selecciona
    * (enlace con el panel).
    * - manifest: pedidos/maletas a bordo, pedidos al back mientras se sobrevuela. */
   const [hoveredPlaneId, setHoveredPlaneId] = useState(null);
@@ -204,12 +215,11 @@ function AirportMap({
   const [pinnedInfo, setPinnedInfo] = useState(null);
   const [manifest, setManifest] = useState({ status: "idle", pedidos: 0, maletas: 0 });
 
-  // Vuelo sobrevolado, solo si NO esta vacio (lleva al menos una maleta).
+  // Vuelo sobrevolado (incluye vuelos vacios).
   const hoveredFlight = useMemo(() => {
     if (!hoveredPlaneId) return null;
     const f = (flights ?? []).find((fl) => (fl.id ?? fl.idVueloInstancia) === hoveredPlaneId);
-    if (!f || Number(f.used ?? 0) <= 0) return null;
-    return f;
+    return f ?? null;
   }, [hoveredPlaneId, flights]);
 
   const hoveredFlightId = hoveredFlight ? (hoveredFlight.id ?? hoveredFlight.idVueloInstancia) : null;
@@ -218,8 +228,7 @@ function AirportMap({
   const activeFlight = useMemo(() => {
     if (!activeFlightId) return null;
     const f = (flights ?? []).find((fl) => (fl.id ?? fl.idVueloInstancia) === activeFlightId);
-    if (!f || Number(f.used ?? 0) <= 0) return null;
-    return f;
+    return f ?? null;
   }, [activeFlightId, flights]);
 
   // Aeropuerto sobrevolado -> su tarjeta de datos.
@@ -864,6 +873,29 @@ function AirportMap({
             </div>
           </Popup>
         )}
+        {indicadoresResueltos.map((ev) => (
+          <Popup
+            key={ev.id}
+            longitude={ev.lng}
+            latitude={ev.lat}
+            anchor="bottom"
+            offset={42}
+            closeButton={false}
+            closeOnClick={false}
+            className="ocupacion-indicator-popup"
+          >
+            <div
+              className={`ocupacion-indicator ${
+                ev.tipo === "APARECE" || ev.tipo === "LLEGA" ? "ocupacion-positivo" : "ocupacion-negativo"
+              }`}
+              title={`${ev.tipo}: ${ev.cantidad} maletas en ${ev.aeropuerto}${ev.vuelo ? ` (${ev.vuelo})` : ""}`}
+            >
+              {ev.tipo === "SALE" || ev.tipo === "LLEGA" ? "\u2708 " : ""}
+              {ev.tipo === "APARECE" || ev.tipo === "LLEGA" ? "+" : "-"}
+              {ev.cantidad}
+            </div>
+          </Popup>
+        ))}
         {activeFlight && activePlanePosition && (
           <Popup
             longitude={activePlanePosition.lng}

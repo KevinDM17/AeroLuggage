@@ -9,14 +9,17 @@ import pe.edu.pucp.aeroluggage.dominio.enums.EstadoRuta;
 import pe.edu.pucp.aeroluggage.dto.simulacion.ws.EstadoMaletaDTO;
 import pe.edu.pucp.aeroluggage.dto.simulacion.ws.EstadoRutaDTO;
 import pe.edu.pucp.aeroluggage.dto.simulacion.ws.EstadoVueloDTO;
+import pe.edu.pucp.aeroluggage.dto.simulacion.ws.EventoOcupacionDTO;
 import pe.edu.pucp.aeroluggage.dto.simulacion.ws.SimulacionTickLigeroDTO;
 
 import java.time.Duration;
 import java.time.LocalDateTime;
 import java.time.format.DateTimeFormatter;
 import java.util.ArrayList;
+import java.util.HashMap;
 import java.util.List;
 import java.util.Map;
+import java.util.Objects;
 import java.util.Set;
 
 @Slf4j
@@ -44,6 +47,9 @@ public class SimulacionPeriodoService {
                         sesion.getWindowSpacingMinutes() * simulacionParams.getRetencionVentanas()));
             }
             snapshotService.recalcularEstadoSesion(sesion);
+
+            final List<EventoOcupacionDTO> eventosCrudos = sesion.consumirEventosOcupacion();
+            final List<EventoOcupacionDTO> eventosAgrupados = agruparEventosOcupacion(eventosCrudos);
 
             final SimulacionSesion.TickSnapshot snap = sesion.consolidar(simTimeUtc);
 
@@ -91,8 +97,10 @@ public class SimulacionPeriodoService {
                     .withEstadosRutas(estadosRutas)
                     .withEstadosVuelos(snap.estadosVuelos())
                     .withAeropuertos(snap.aeropuertos())
+                    .withEventosOcupacion(eventosAgrupados)
                     .build();
 
+            /*
             if (tick == 1 || tick % 10 == 0) {
                 int programados = 0, confirmados = 0, enProgreso = 0, finalizados = 0, cancelados = 0;
                 for (final EstadoVueloDTO ev : snap.estadosVuelos()) {
@@ -112,8 +120,30 @@ public class SimulacionPeriodoService {
                         snap.aeropuertos().size(),
                         snap.sinRuta());
             }
+            */
 
             return dto;
         });
+    }
+
+    private List<EventoOcupacionDTO> agruparEventosOcupacion(final List<EventoOcupacionDTO> crudos) {
+        if (crudos == null || crudos.isEmpty()) return List.of();
+        final Map<String, EventoOcupacionDTO> agrupados = new HashMap<>();
+        for (final EventoOcupacionDTO e : crudos) {
+            final String clave = e.getTipo() + "|" + e.getAeropuerto() + "|"
+                    + (e.getVuelo() != null ? e.getVuelo() : "");
+            final EventoOcupacionDTO existente = agrupados.get(clave);
+            if (existente != null) {
+                agrupados.put(clave, EventoOcupacionDTO.builder()
+                        .withTipo(e.getTipo())
+                        .withCantidad(existente.getCantidad() + e.getCantidad())
+                        .withAeropuerto(e.getAeropuerto())
+                        .withVuelo(e.getVuelo())
+                        .build());
+            } else {
+                agrupados.put(clave, e);
+            }
+        }
+        return new ArrayList<>(agrupados.values());
     }
 }

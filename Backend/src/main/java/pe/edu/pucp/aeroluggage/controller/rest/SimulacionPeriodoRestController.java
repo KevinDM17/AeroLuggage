@@ -1,7 +1,6 @@
 package pe.edu.pucp.aeroluggage.controller.rest;
 
 import lombok.RequiredArgsConstructor;
-import lombok.extern.slf4j.Slf4j;
 import org.springframework.messaging.simp.SimpMessagingTemplate;
 import org.springframework.web.bind.annotation.GetMapping;
 import org.springframework.web.bind.annotation.PathVariable;
@@ -54,7 +53,6 @@ import java.util.Objects;
 
 import static org.springframework.http.HttpStatus.NOT_FOUND;
 
-@Slf4j
 @RestController
 @RequestMapping("/api/simulacion/periodo")
 @RequiredArgsConstructor
@@ -70,8 +68,6 @@ public class SimulacionPeriodoRestController {
 
     @PostMapping("/iniciar")
     public SimulacionEstadoDTO iniciar(@RequestBody final SimulacionIniciarRequest params) {
-        log.info("[AeroLuggage/SimulacionRest] - API-CALL/iniciar: fechaInicio: {}, totalDias: {}",
-                params.getFechaInicio(), params.getTotalDias());
         return sesionManager.iniciar(params, broker);
     }
 
@@ -114,12 +110,6 @@ public class SimulacionPeriodoRestController {
             throw new ResponseStatusException(NOT_FOUND, "Sesion no encontrada: " + sessionId);
         }
         final var result = construirRespuestaVentana(sesion, windowId);
-        log.info("[AeroLuggage/SimulacionRest] - REST/ventana: sessionId={}, ventana={}, "
-                + "maletas={}, pedidos={}, rutas={}",
-                sessionId, windowId,
-                result.getMaletas() != null ? result.getMaletas().size() : 0,
-                result.getPedidos() != null ? result.getPedidos().size() : 0,
-                result.getRutas() != null ? result.getRutas().size() : 0);
         return result;
     }
 
@@ -161,8 +151,6 @@ public class SimulacionPeriodoRestController {
                 }
             }
         }
-        log.info("[AeroLuggage/SimulacionRest] - REST/vuelos: sessionId={}, desde={}, hasta={}, totalVuelos={}",
-                sessionId, desde, hasta, vuelos.size());
         return vuelos;
     }
 

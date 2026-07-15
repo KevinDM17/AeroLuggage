@@ -198,6 +198,16 @@ export default function PeriodSimulatorPage() {
   const [runId, setRunId] = useState(0);
   const [lastMockState, setLastMockState] = useState(null);
   const [mapAirports, setMapAirports] = useState([]);
+  const [eventosOcupacion, setEventosOcupacion] = useState([]);
+
+  useEffect(() => {
+    if (eventosOcupacion.length === 0) return;
+    const timer = setInterval(() => {
+      const cutoff = Date.now() - 3500;
+      setEventosOcupacion((prev) => prev.filter((e) => e.ts > cutoff));
+    }, 1000);
+    return () => clearInterval(timer);
+  }, [eventosOcupacion.length > 0]);
   // mapFlights se maneja dentro de simulationPanelData.flights
   const [showRouteLines, setShowRouteLines] = useState(true);
   const [currentSimTimeUtc, setCurrentSimTimeUtc] = useState(null);
@@ -213,6 +223,7 @@ export default function PeriodSimulatorPage() {
   const ventanasCargadasRef = useRef(new Set());
   const lastMapFlightsRef = useRef([]);
   const flightMetadataRef = useRef(new Map());
+  const primeraVentanaRef = useRef(null);
   const iniciarTickWatchdogRef = useRef(null);
   const iniciarTickRetriesRef = useRef(0);
   const tickReceivedRef = useRef(false);
@@ -293,8 +304,13 @@ export default function PeriodSimulatorPage() {
   const statusTopic =
     !USE_MOCK && sessionId ? `/topic/simulacion/${sessionId}/estado` : null;
 
-  const { data: tick } = useStompSubscribe(tickTopic);
+  const { data: tick, connected } = useStompSubscribe(tickTopic);
   const { data: estadoMessage } = useStompSubscribe(statusTopic);
+
+  useEffect(() => {
+    if (!connected || !sessionId) return;
+    publish("/app/simulacion/periodo/ventana-lista", { sessionId });
+  }, [connected, sessionId, publish]);
 
   const { data: mockState } = usePolling(getPeriodSimState, {
     enabled: USE_MOCK && simStatus === "running",
@@ -467,6 +483,58 @@ export default function PeriodSimulatorPage() {
     const esTick = tick.type === "TICK";
     if (!esTick && !esReconciliacion) return;
 
+    if (esReconciliacion && tick.ventanaActual && sessionId) {
+      const cargadas = ventanasCargadasRef.current;
+      const currentW = parseInt(tick.ventanaActual.substring(1), 10);
+      const firstW = primeraVentanaRef.current
+        ? parseInt(primeraVentanaRef.current.substring(1), 10)
+        : currentW;
+      for (let w = firstW; w <= currentW; w++) {
+        const wid = "W" + String(w).padStart(4, "0");
+        if (!cargadas.has(wid)) {
+          cargadas.add(wid);
+          (async () => {
+            try {
+              const [vuelosDataLocal, ventanaDataLocal] = await Promise.all([
+                obtenerVuelosSimulacion(sessionId, wid, wid),
+                obtenerVentanaSimulacion(sessionId, wid),
+              ]);
+              const adapted = (vuelosDataLocal ?? []).map(adaptFlightInstance);
+              const metadata = new Map(flightMetadataRef.current);
+              for (const f of adapted) {
+                metadata.set(f.idVueloInstancia ?? f.id, { ...f, ticksAusente: 0 });
+              }
+              flightMetadataRef.current = metadata;
+              setSimulationPanelData((prev) => {
+                const flights = new Map(prev.flights);
+                const bags = new Map(prev.bags);
+                const routes = new Map(prev.routes);
+                const orders = new Map(prev.orders);
+                for (const f of adapted) {
+                  const fid = f.idVueloInstancia ?? f.id;
+                  if (!flights.has(fid)) {
+                    flights.set(fid, { ...f, ticksAusente: 0 });
+                  }
+                }
+                for (const b of ventanaDataLocal.maletas ?? []) {
+                  bags.set(b.idMaleta, { ...b, ticksAusente: 0 });
+                }
+                for (const r of ventanaDataLocal.rutas ?? []) {
+                  routes.set(r.idRuta, { ...r, ticksAusente: 0 });
+                }
+                for (const o of ventanaDataLocal.pedidos ?? []) {
+                  orders.set(o.id ?? o.idPedido, o);
+                }
+                return { ...prev, flights, bags, routes, orders };
+              });
+            } catch (e) {
+              cargadas.delete(wid);
+            }
+          })();
+        }
+      }
+    }
+
     if (esTick && startSimMsRef.current == null) {
       const ms = Date.parse(`${tick.simTime}Z`);
       if (Number.isFinite(ms)) startSimMsRef.current = ms;
@@ -484,6 +552,21 @@ export default function PeriodSimulatorPage() {
     setMapAirports((prev) =>
       prev.map((ap) => ({ ...ap, used: occMap[ap.iata] ?? ap.used })),
     );
+
+    const ts = Date.now();
+    if (Array.isArray(tick.eventosOcupacion) && tick.eventosOcupacion.length > 0) {
+      setEventosOcupacion((prev) => [
+        ...prev,
+        ...tick.eventosOcupacion.map((e) => ({
+          id: `${ts}-${Math.random().toString(36).slice(2, 8)}`,
+          tipo: e.tipo,
+          cantidad: e.cantidad || 1,
+          aeropuerto: e.aeropuerto,
+          vuelo: e.vuelo || null,
+          ts,
+        })),
+      ]);
+    }
 
     let vueloStateMap = {};
     let maletaStateMap = {};
@@ -872,6 +955,7 @@ export default function PeriodSimulatorPage() {
       setWindowSpacingMinutes(base.windowSpacingMinutes);
 
       const primeraVentana = base.primeraVentana ?? "W0001";
+      primeraVentanaRef.current = primeraVentana;
       const [ventana1, vuelosData] = await Promise.all([
         obtenerVentanaSimulacion(newSessionId, primeraVentana),
         obtenerVuelosSimulacion(newSessionId, primeraVentana, primeraVentana),
@@ -1504,6 +1588,7 @@ export default function PeriodSimulatorPage() {
       progress={progress}
       simStatus={simStatus}
       draggable={hasActiveRun}
+      eventosOcupacion={eventosOcupacion}
     />
     </>
   );

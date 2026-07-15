@@ -1,7 +1,6 @@
 package pe.edu.pucp.aeroluggage.controller.rest;
 
 import lombok.RequiredArgsConstructor;
-import lombok.extern.slf4j.Slf4j;
 import org.springframework.http.HttpStatus;
 import org.springframework.http.ResponseEntity;
 import org.springframework.web.bind.annotation.GetMapping;
@@ -47,7 +46,6 @@ import java.util.List;
 import java.util.Map;
 import java.util.Objects;
 
-@Slf4j
 @RestController
 @RequestMapping("/api/operations")
 @RequiredArgsConstructor
@@ -59,7 +57,6 @@ public class OperacionesDiaADiaRestController {
 
     @PostMapping("/iniciar")
     public SimulacionEstadoDTO iniciar() {
-        log.info("[AeroLuggage/OperacionesDiaADiaRest] - API-CALL/iniciar");
         try {
             final String sessionId = service.iniciar();
             return SimulacionEstadoDTO.builder()
@@ -74,7 +71,6 @@ public class OperacionesDiaADiaRestController {
 
     @PostMapping("/{sessionId}/detener")
     public SimulacionEstadoDTO detener(@PathVariable final String sessionId) {
-        log.info("[AeroLuggage/OperacionesDiaADiaRest] - API-CALL/detener: sessionId={}", sessionId);
         if (!sessionId.equals(service.getSessionId())) {
             throw new ResponseStatusException(HttpStatus.NOT_FOUND,
                     "Sesion expirada o no encontrada: " + sessionId);
@@ -91,8 +87,6 @@ public class OperacionesDiaADiaRestController {
     public SimulacionEstadoDTO procesarPedido(
             @PathVariable final String sessionId,
             @RequestBody final PedidoRequest request) {
-        log.info("[AeroLuggage/OperacionesDiaADiaRest] - API-CALL/pedido: sessionId={}, origen={}, destino={}",
-                sessionId, request.getIdAeropuertoOrigen(), request.getIdAeropuertoDestino());
         if (!sessionId.equals(service.getSessionId())) {
             throw new ResponseStatusException(HttpStatus.NOT_FOUND,
                     "Sesion expirada o no encontrada: " + sessionId);
@@ -123,8 +117,6 @@ public class OperacionesDiaADiaRestController {
         if (content == null || content.isBlank()) {
             throw new ResponseStatusException(HttpStatus.BAD_REQUEST, "content es requerido");
         }
-        log.info("[AeroLuggage/OperacionesDiaADiaRest] - API-CALL/pedidos-bulk: sessionId={}, origen={}",
-                sessionId, icaoOrigen);
         if (!sessionId.equals(service.getSessionId())) {
             throw new ResponseStatusException(HttpStatus.NOT_FOUND,
                     "Sesion expirada o no encontrada: " + sessionId);
@@ -164,7 +156,6 @@ public class OperacionesDiaADiaRestController {
 
     @GetMapping("/estado-actual")
     public ResponseEntity<Map<String, Object>> estadoActual() {
-        log.info("[AeroLuggage/OperacionesDiaADiaRest] - API-CALL/estado-actual");
         final Map<String, Object> estado = service.obtenerEstadoActual();
         if (estado.isEmpty()) {
             return ResponseEntity.notFound().build();
@@ -191,7 +182,6 @@ public class OperacionesDiaADiaRestController {
 
     @PostMapping("/{sessionId}/confirmar-conexion")
     public SimulacionEstadoDTO confirmarConexion(@PathVariable final String sessionId) {
-        log.info("[AeroLuggage/OperacionesDiaADiaRest] - API-CALL/confirmar-conexion: sessionId={}", sessionId);
         if (!sessionId.equals(service.getSessionId())) {
             throw new ResponseStatusException(HttpStatus.NOT_FOUND,
                     "Sesion expirada o no encontrada: " + sessionId);
@@ -219,7 +209,6 @@ public class OperacionesDiaADiaRestController {
             if (v == null) continue;
             result.add(toVueloResponse(v, service.getOcupacionVuelo(v.getIdVueloInstancia())));
         }
-        log.info("[AeroLuggage/OperacionesDiaADiaRest] - RESPUESTA/vuelos: {} vuelos (CONFIRMADO+EN_PROGRESO)", result.size());
         return result;
     }
 
@@ -234,7 +223,6 @@ public class OperacionesDiaADiaRestController {
             if (v == null) continue;
             result.add(toVueloResponse(v, service.getOcupacionVuelo(v.getIdVueloInstancia())));
         }
-        log.info("[AeroLuggage/OperacionesDiaADiaRest] - RESPUESTA/vuelos-nuevos: {} vuelos", result.size());
         return result;
     }
 
@@ -243,8 +231,6 @@ public class OperacionesDiaADiaRestController {
             @PathVariable final String sessionId,
             @RequestBody final CancelarVueloProgramadoRequest request) {
         final String idVueloProgramado = request.getIdVueloProgramado();
-        log.info("[AeroLuggage/OperacionesDiaADiaRest] - API-CALL/cancelar-vuelo-programado: sessionId={}, vueloProgramado={}",
-                sessionId, idVueloProgramado);
         if (!sessionId.equals(service.getSessionId())) {
             throw new ResponseStatusException(HttpStatus.NOT_FOUND,
                     "Sesion expirada o no encontrada: " + sessionId);

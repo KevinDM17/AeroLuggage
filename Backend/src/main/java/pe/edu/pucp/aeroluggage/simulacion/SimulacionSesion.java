@@ -41,6 +41,7 @@ import pe.edu.pucp.aeroluggage.dominio.enums.EstadoVuelo;
 import pe.edu.pucp.aeroluggage.dto.simulacion.ws.EstadoMaletaDTO;
 import pe.edu.pucp.aeroluggage.dto.simulacion.ws.EstadoRutaDTO;
 import pe.edu.pucp.aeroluggage.dto.simulacion.ws.EstadoVueloDTO;
+import pe.edu.pucp.aeroluggage.dto.simulacion.ws.EventoOcupacionDTO;
 import pe.edu.pucp.aeroluggage.dto.simulacion.ws.OcupacionAeropuertoDTO;
 
 @Getter
@@ -68,6 +69,7 @@ public class SimulacionSesion {
     private final AtomicInteger planificando = new AtomicInteger(0);
     private final AtomicBoolean replanPendiente = new AtomicBoolean(false);
     private final AtomicBoolean csvEscrito = new AtomicBoolean(false);
+    private final AtomicBoolean snapshot72hTomado = new AtomicBoolean(false);
     private final AtomicReference<String> ultimaVentanaPlanificada = new AtomicReference<>("");
     private volatile List<Aeropuerto> aeropuertos = List.of();
     private volatile List<VueloProgramado> vuelosProgramados = List.of();
@@ -86,6 +88,7 @@ public class SimulacionSesion {
     private final ConcurrentHashMap<String, ColdEntry> maletasFrias = new ConcurrentHashMap<>();
     private final Set<String> idsEntregadasEnTick = new HashSet<>();
     private final Map<String, String> idsCompletadasEnTick = new HashMap<>();
+    private final List<EventoOcupacionDTO> eventosOcupacion = new ArrayList<>();
 
     private final List<SegmentoReplanificacion> segmentosReplanificacion = new CopyOnWriteArrayList<>();
 
@@ -325,6 +328,11 @@ public class SimulacionSesion {
                 if (a != null && a.getIdAeropuerto() != null
                         && a.getIdAeropuerto().equals(e.idAeropuerto())) {
                     a.setMaletasActuales(a.getMaletasActuales() + 1);
+                    eventosOcupacion.add(EventoOcupacionDTO.builder()
+                            .withTipo("APARECE")
+                            .withCantidad(1)
+                            .withAeropuerto(e.idAeropuerto())
+                            .build());
                     break;
                 }
             }
@@ -341,6 +349,12 @@ public class SimulacionSesion {
                 if (a != null && a.getIdAeropuerto() != null
                         && a.getIdAeropuerto().equals(e.idAeropuerto())) {
                     a.setMaletasActuales(Math.max(0, a.getMaletasActuales() - 1));
+                    eventosOcupacion.add(EventoOcupacionDTO.builder()
+                            .withTipo("SALE")
+                            .withCantidad(1)
+                            .withAeropuerto(e.idAeropuerto())
+                            .withVuelo(buscarVueloEnRuta(e.idEntidad(), e.idAeropuerto(), true))
+                            .build());
                     break;
                 }
             }
@@ -357,6 +371,12 @@ public class SimulacionSesion {
                 if (a != null && a.getIdAeropuerto() != null
                         && a.getIdAeropuerto().equals(e.idAeropuerto())) {
                     a.setMaletasActuales(a.getMaletasActuales() + 1);
+                    eventosOcupacion.add(EventoOcupacionDTO.builder()
+                            .withTipo("LLEGA")
+                            .withCantidad(1)
+                            .withAeropuerto(e.idAeropuerto())
+                            .withVuelo(buscarVueloEnRuta(e.idEntidad(), e.idAeropuerto(), false))
+                            .build());
                     break;
                 }
             }
@@ -386,6 +406,11 @@ public class SimulacionSesion {
                 if (a != null && a.getIdAeropuerto() != null
                         && a.getIdAeropuerto().equals(e.idAeropuerto())) {
                     a.setMaletasActuales(Math.max(0, a.getMaletasActuales() - 1));
+                    eventosOcupacion.add(EventoOcupacionDTO.builder()
+                            .withTipo("ENTREGADA")
+                            .withCantidad(1)
+                            .withAeropuerto(e.idAeropuerto())
+                            .build());
                     break;
                 }
             }
@@ -504,7 +529,7 @@ public class SimulacionSesion {
                             if (r != null) {
                                 final List<String> idsRuta = r.getSubrutas();
                                 if (!idsRuta.isEmpty()) {
-                                    for (final String idVueloRuta : idsRuta) {
+                                     for (final String idVueloRuta : idsRuta) {
                                         final VueloInstancia vuelo = vuelosIndex.get(idVueloRuta);
                                         if (vuelo != null) {
                                             vuelo.setCapacidadDisponible(Math.max(0, vuelo.getCapacidadDisponible() - 1));
@@ -775,6 +800,11 @@ public class SimulacionSesion {
                 if (aeropuerto != null && aeropuerto.getIdAeropuerto() != null
                         && aeropuerto.getIdAeropuerto().equals(idAero)) {
                     aeropuerto.setMaletasActuales(aeropuerto.getMaletasActuales() + 1);
+                    eventosOcupacion.add(EventoOcupacionDTO.builder()
+                            .withTipo("APARECE")
+                            .withCantidad(1)
+                            .withAeropuerto(idAero)
+                            .build());
                     break;
                 }
             }
@@ -895,6 +925,7 @@ public class SimulacionSesion {
         this.planningGeneration.set(1);
         this.stateVersion.set(1);
         this.csvEscrito.set(false);
+        this.snapshot72hTomado.set(false);
         this.planValido.set(false);
         this.planificando.set(0);
         this.replanPendiente.set(false);
@@ -1016,6 +1047,32 @@ public class SimulacionSesion {
         final Map<String, String> ids = new HashMap<>(idsCompletadasEnTick);
         idsCompletadasEnTick.clear();
         return ids;
+    }
+
+    public List<EventoOcupacionDTO> consumirEventosOcupacion() {
+        final List<EventoOcupacionDTO> copia;
+        synchronized (eventosOcupacion) {
+            copia = new ArrayList<>(eventosOcupacion);
+            eventosOcupacion.clear();
+        }
+        return copia;
+    }
+
+    private String buscarVueloEnRuta(final String idMaleta, final String idAeropuerto, final boolean esSalida) {
+        final Ruta r = rutasPorMaleta.get(idMaleta);
+        if (r == null || r.getSubrutaIds() == null) return null;
+        final Map<String, VueloInstancia> idx = getVueloIndex();
+        for (final String subId : r.getSubrutaIds()) {
+            final VueloInstancia v = idx.get(subId);
+            if (v == null) continue;
+            final String idAero = esSalida
+                    ? (v.getAeropuertoOrigen() != null ? v.getAeropuertoOrigen().getIdAeropuerto() : null)
+                    : (v.getAeropuertoDestino() != null ? v.getAeropuertoDestino().getIdAeropuerto() : null);
+            if (idAero != null && idAero.equals(idAeropuerto)) {
+                return v.getCodigo();
+            }
+        }
+        return null;
     }
 
     public synchronized void podarEntidadesAnteriores(final LocalDateTime simTimeUtc, final Duration retencionPedidos,
@@ -1157,6 +1214,10 @@ public class SimulacionSesion {
 
     public boolean marcarCsvEscrito() {
         return csvEscrito.compareAndSet(false, true);
+    }
+
+    public boolean marcarSnapshot72hTomado() {
+        return snapshot72hTomado.compareAndSet(false, true);
     }
 
     public boolean necesitaPlanificacion() {
@@ -1412,6 +1473,7 @@ public class SimulacionSesion {
     }
 
     public record TickSnapshot(
+            String ventana,
             int almacen,
             int enTransito,
             int entregadas,
@@ -1527,7 +1589,11 @@ public class SimulacionSesion {
                     .build());
         }
 
-        return new TickSnapshot(almacen, enTransito, totalMaletasEntregadas.get(), sinRuta,
+        final SimulacionVentana ventanaActual = getCurrentWindow() != null
+                ? getCurrentWindow().get() : null;
+        final String ventana = ventanaActual != null ? ventanaActual.getWindowId() : "";
+
+        return new TickSnapshot(ventana, almacen, enTransito, totalMaletasEntregadas.get(), sinRuta,
                 vuelosActivos, capacidadLibrePct, estadosMaletas, estadosRutas,
                 estadosVuelos, aeropuertosDTO);
     }

@@ -11,7 +11,6 @@ import pe.edu.pucp.aeroluggage.servicios.ServicioVueloProgramado;
 
 import java.io.IOException;
 
-@Slf4j
 @Service
 public class DataLoaderController {
 
@@ -29,7 +28,6 @@ public class DataLoaderController {
 
     @Transactional
     public void limpiarDatos() {
-        log.info("[AeroLuggage/Seed] - LIMPIANDO BASE DE DATOS...");
         jdbcTemplate.update("DELETE FROM ruta_vuelo_instancia");
         jdbcTemplate.update("DELETE FROM ruta");
         jdbcTemplate.update("DELETE FROM maleta");
@@ -38,7 +36,6 @@ public class DataLoaderController {
         jdbcTemplate.update("DELETE FROM vuelo_programado");
         jdbcTemplate.update("DELETE FROM aeropuerto");
         jdbcTemplate.update("DELETE FROM ciudad");
-        log.info("[AeroLuggage/Seed] - BASE DE DATOS LIMPIADA");
     }
 
     @Transactional(propagation = Propagation.REQUIRES_NEW)
