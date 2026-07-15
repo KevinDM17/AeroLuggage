@@ -5,6 +5,10 @@ import AirportMap from "../map/AirportMap";
 
 const BUTTON_OFFSET = 36;
 
+const getOccupancyTone = (pct) => (
+  pct >= 85 ? "danger" : pct >= 65 ? "warning" : "success"
+);
+
 const clampPanelToContainer = (nextPos, rect, containerWidth, containerHeight, buttonSide = null) => {
   const contentMargin = 16;
   const width = rect?.width ?? 0;
@@ -48,10 +52,8 @@ export default function MapDashboard({
     flightCapacityPct = 0,
   } = metrics;
 
-  const airportCapacityTone =
-    airportCapacityPct >= 85 ? "danger" : airportCapacityPct >= 65 ? "warning" : "success";
-  const flightCapacityTone =
-    flightCapacityPct >= 85 ? "danger" : flightCapacityPct >= 65 ? "warning" : "success";
+  const airportCapacityTone = getOccupancyTone(airportCapacityPct);
+  const flightCapacityTone = getOccupancyTone(flightCapacityPct);
 
   const [showKpis, setShowKpis] = useState(false);
   const mapStageRef = useRef(null);
