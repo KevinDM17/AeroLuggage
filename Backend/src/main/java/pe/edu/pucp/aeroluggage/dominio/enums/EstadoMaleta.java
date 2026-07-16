@@ -4,5 +4,6 @@ public enum EstadoMaleta {
     EN_ALMACEN,
     EN_TRANSITO,
     ENTREGADA,
-    REPLANIFICANDO
+    REPLANIFICANDO,
+    POR_RECOGER
 }

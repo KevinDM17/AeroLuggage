@@ -9,6 +9,7 @@ import pe.edu.pucp.aeroluggage.algoritmo.Solucion;
 import pe.edu.pucp.aeroluggage.algoritmo.alns.ALNS;
 import pe.edu.pucp.aeroluggage.algoritmo.alns.ALNSUtil;
 import pe.edu.pucp.aeroluggage.config.ALNSConfig;
+import pe.edu.pucp.aeroluggage.config.NegocioConfig;
 import pe.edu.pucp.aeroluggage.config.OperacionesDiaADiaParams;
 import pe.edu.pucp.aeroluggage.config.SistemaConfiguracion;
 import pe.edu.pucp.aeroluggage.dominio.entidades.Aeropuerto;
@@ -87,6 +88,7 @@ public class OperacionesDiaADiaService {
     private final OperacionesDiaADiaParams params;
     private final SistemaConfiguracion sistemaConfiguracion;
     private final ALNSConfig alnsConfig;
+    private final NegocioConfig negocioConfig;
     private final SimpMessagingTemplate broker;
 
     private static final long DEPURA_INTERVALO_MS = 3_600_000L;
@@ -147,6 +149,7 @@ public class OperacionesDiaADiaService {
                                     final OperacionesDiaADiaParams params,
                                     final SistemaConfiguracion sistemaConfiguracion,
                                     final ALNSConfig alnsConfig,
+                                    final NegocioConfig negocioConfig,
                                     final SimpMessagingTemplate broker) {
         this.aeropuertoRepositorio = aeropuertoRepositorio;
         this.jdbcTemplate = jdbcTemplate;
@@ -158,6 +161,7 @@ public class OperacionesDiaADiaService {
         this.params = params;
         this.sistemaConfiguracion = sistemaConfiguracion;
         this.alnsConfig = alnsConfig;
+        this.negocioConfig = negocioConfig;
         this.broker = broker;
     }
 
@@ -581,7 +585,8 @@ public class OperacionesDiaADiaService {
     }
 
     private String obtenerUbicacionMaleta(final Maleta m, final EstadoMaleta estado) {
-        if (estado == EstadoMaleta.EN_ALMACEN || estado == EstadoMaleta.ENTREGADA) {
+        if (estado == EstadoMaleta.EN_ALMACEN || estado == EstadoMaleta.ENTREGADA
+                || estado == EstadoMaleta.POR_RECOGER) {
             return m.getAeropuertoActual();
         }
         if (estado == EstadoMaleta.EN_TRANSITO) {
@@ -755,7 +760,11 @@ public class OperacionesDiaADiaService {
             if (m == null) return;
             maletasPorId.put(e.idEntidad(), m);
         }
-        m.setEstado(EstadoMaleta.EN_ALMACEN);
+        final boolean esDestinoFinal = m.getPedido() != null
+                && m.getPedido().getAeropuertoDestino() != null
+                && e.idAeropuerto() != null
+                && e.idAeropuerto().equals(m.getPedido().getAeropuertoDestino().getIdAeropuerto());
+        m.setEstado(esDestinoFinal ? EstadoMaleta.POR_RECOGER : EstadoMaleta.EN_ALMACEN);
         m.setAeropuertoActual(e.idAeropuerto());
         if (e.idAeropuerto() != null) {
             final Aeropuerto a = aeropuertos.get(e.idAeropuerto());
@@ -1023,7 +1032,7 @@ public class OperacionesDiaADiaService {
                         ruta.getIdMaleta(), idAeroDest, 1);
             }
             if (ultimo && v.getFechaLlegada() != null && idAeroDest != null) {
-                agregarEvento(v.getFechaLlegada().plusMinutes(10), TipoEventoSim.MALETA_ENTREGADA,
+                agregarEvento(v.getFechaLlegada().plusMinutes(negocioConfig.getMinutosRecojo()), TipoEventoSim.MALETA_ENTREGADA,
                         ruta.getIdMaleta(), idAeroDest, -1);
             }
         }
@@ -1735,7 +1744,7 @@ public class OperacionesDiaADiaService {
                     idMaleta, idDest, 1);
         }
 
-        agregarEvento(ultimoVuelo.getFechaLlegada().plusMinutes(10),
+        agregarEvento(ultimoVuelo.getFechaLlegada().plusMinutes(negocioConfig.getMinutosRecojo()),
                 TipoEventoSim.MALETA_ENTREGADA, idMaleta, aeroDestino, -1);
     }
 

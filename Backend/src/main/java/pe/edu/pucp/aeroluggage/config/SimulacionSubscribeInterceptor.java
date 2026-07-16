@@ -9,6 +9,8 @@ import org.springframework.stereotype.Component;
 import lombok.extern.slf4j.Slf4j;
 import pe.edu.pucp.aeroluggage.simulacion.SimulacionSesionManager;
 
+import java.util.Map;
+import java.util.concurrent.ConcurrentHashMap;
 import java.util.regex.Matcher;
 import java.util.regex.Pattern;
 
@@ -20,6 +22,7 @@ public class SimulacionSubscribeInterceptor implements ChannelInterceptor {
             "^/topic/simulacion/([^/]+)(?:/.*)?$");
 
     private final SimulacionSesionManager sesionManager;
+    private final Map<String, String> suscripcionesRegistradas = new ConcurrentHashMap<>();
 
     public SimulacionSubscribeInterceptor(final SimulacionSesionManager sesionManager) {
         this.sesionManager = sesionManager;
@@ -41,6 +44,11 @@ public class SimulacionSubscribeInterceptor implements ChannelInterceptor {
         }
         final String sessionId = matcher.group(1);
         final String wsSessionId = accessor.getSessionId();
+        final String clave = wsSessionId + "::" + destination;
+        final String existente = suscripcionesRegistradas.putIfAbsent(clave, sessionId);
+        if (existente != null) {
+            return message;
+        }
         log.info("[AeroLuggage/WebSocket] - CONEXION: wsSessionId={}, sessionId={}", wsSessionId, sessionId);
         sesionManager.registrarWsSession(wsSessionId, sessionId);
         return message;

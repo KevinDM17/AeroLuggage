@@ -61,6 +61,7 @@ const bagStatusColor = (s) => {
     case "EN_TRANSITO": return "bg-sky-500 text-slate-950";
     case "EN_VUELO": return "bg-info text-slate-900";
     case "ENTREGADA": return "bg-success text-emerald-900";
+    case "POR_RECOGER": return "bg-purple-500 text-purple-100";
     case "EXTRAVIADA": return "bg-danger text-white";
     default: return "bg-slate-500 text-white";
   }
@@ -503,7 +504,7 @@ const BagItem = memo(function BagItem({ bag, onShowRoute, cityByIata, continentB
               <div className="flex flex-col gap-1.5 border-b border-b-slate-800/70 pb-3">
                 <span className="font-medium text-sm">Ubicación</span>
                 <div className="flex gap-1.5">
-                  {bag.estado === "EN_ALMACEN" ? (
+                  {bag.estado === "EN_ALMACEN" || bag.estado === "POR_RECOGER" ? (
                     <MapPin className="w-3.5 h-3.5 shrink-0" />
                   ) : (
                     <Plane className="w-3.5 h-3.5 shrink-0" />
@@ -3379,7 +3380,7 @@ export default function RightPanel({
                 className="w-full appearance-none rounded-lg border border-slate-800 bg-surface-1 py-1.5 px-3 text-sm text-slate-200 focus:border-slate-600 focus:outline-none"
               >
                 <option value="ALL">Estado: todos</option>
-                {["EN_ALMACEN", "EN_TRANSITO", "ENTREGADA", "REPLANIFICANDO"].map((est) => (
+                {["EN_ALMACEN", "EN_TRANSITO", "ENTREGADA", "REPLANIFICANDO", "POR_RECOGER"].map((est) => (
                   <option key={est} value={est}>{est.replace(/_/g, " ")}</option>
                 ))}
               </select>

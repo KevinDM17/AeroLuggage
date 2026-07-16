@@ -20,7 +20,6 @@ import java.util.HashMap;
 import java.util.List;
 import java.util.Map;
 import java.util.Objects;
-import java.util.Set;
 
 @Slf4j
 @Service
@@ -57,16 +56,15 @@ public class SimulacionPeriodoService {
                     Duration.ofMinutes(simulacionParams.getRetencionPedidosMinutos()),
                     Duration.ofMinutes(simulacionParams.getRetencionVuelosMinutos()));
 
-            final Set<String> idsEntregadas = sesion.consumirIdsEntregadasEnTick();
+            final Map<String, String> idsEntregadas = sesion.consumirIdsEntregadasEnTick();
             final Map<String, String> idsCompletadas = sesion.consumirIdsCompletadasEnTick();
 
-            final List<EstadoMaletaDTO> estadosMaletas = new ArrayList<>(
-                    snapshotService.mapearEstadosMaletas(sesion.getMaletasCalientes(), simTimeUtc)
-            );
-            for (final String id : idsEntregadas) {
+            final List<EstadoMaletaDTO> estadosMaletas = new ArrayList<>(snap.estadosMaletas());
+            for (final Map.Entry<String, String> entry : idsEntregadas.entrySet()) {
                 estadosMaletas.add(EstadoMaletaDTO.builder()
-                        .withId(id)
+                        .withId(entry.getKey())
                         .withE(EstadoMaleta.ENTREGADA.ordinal())
+                        .withU(entry.getValue())
                         .build());
             }
 

@@ -1,6 +1,6 @@
 import { useEffect, useMemo, useRef, useState } from "react";
 import { useOutletContext } from "react-router-dom";
-import { Clock, Play, SlidersHorizontal, Square, RotateCw, AlertTriangle, X, CheckCircle2, ChevronDown, Users } from "lucide-react";
+import { Clock, Play, SlidersHorizontal, Square, RotateCw, AlertTriangle, X, CheckCircle2, ChevronDown, Users, Calendar, ClockIcon, Calendar1Icon } from "lucide-react";
 import MapDashboard from "../components/simulator/MapDashboard";
 import { usePolling } from "../hooks/usePolling";
 import { useElapsedTimer } from "../hooks/useElapsedTimer";
@@ -28,7 +28,7 @@ import {
 } from "../utils/formatting";
 
 const ENUM_VUELO = ["PROGRAMADO", "CONFIRMADO", "EN_PROGRESO", "FINALIZADO", "CANCELADO"];
-const ENUM_MALETA = ["EN_ALMACEN", "EN_TRANSITO", "ENTREGADA"];
+const ENUM_MALETA = ["EN_ALMACEN", "EN_TRANSITO", "ENTREGADA", "REPLANIFICANDO", "POR_RECOGER"];
 const ENUM_RUTA = ["PLANIFICADA", "ACTIVA", "COMPLETADA", "REPLANIFICADA"];
 
 
@@ -228,10 +228,10 @@ export default function PeriodSimulatorPage() {
         <button
           type="button"
           onClick={() => setShowRouteLines((v) => !v)}
-          className={`rounded px-2.5 py-1 text-xs font-medium whitespace-nowrap transition-colors ${
+          className={`h-full text-xs font-medium whitespace-nowrap transition-colors px-3 ${
             showRouteLines
-              ? "bg-blue-600/20 text-blue-400 border border-blue-500/40 hover:bg-blue-600/30"
-              : "bg-white/5 text-slate-400 border border-white/10 hover:text-slate-200"
+              ? " text-blue-400bg-blue-600/30 hover:bg-blue-700/30"
+              : " text-slate-400  hover:text-slate-200 hover:bg-gray-900/50"
           }`}
         >
           Mostrar lineas
@@ -239,7 +239,7 @@ export default function PeriodSimulatorPage() {
         <button
           type="button"
           onClick={handleStop}
-          className="shrink-0 bg-danger/10 hover:bg-danger/20 text-danger border border-danger/40 rounded px-2.5 py-1 text-xs font-medium transition-colors"
+          className="flex h-full items-center px-2  hover:bg-danger/20 text-xs font-medium transition-colors"
           title="Detener"
         >
           Detener
@@ -1216,13 +1216,20 @@ export default function PeriodSimulatorPage() {
     }
     const fmtElapsed = () => formatElapsedHMS(executionElapsedMs);
     setTopBarInfo(
-      <div className="flex items-center gap-3 text-[11px]">
+      <div className="flex items-center gap-3.5 text-[11px]">
         <span className="text-slate-500">Inicio:</span>
         <span className="text-slate-200 tabular-nums">{formattedStartDate} {startTime}</span>
         <span className="text-slate-600">|</span>
         <span className="text-slate-500">Sim:</span>
-        <span className="text-slate-200 tabular-nums">{simulationClock.date}</span>
-        <span className="text-slate-200 tabular-nums">{simulationClock.time}</span>
+        <div className="flex gap-1.5 items-center">
+          <Calendar className="w-3.5 h-3.5 text-slate-400 shrink-0" />
+          <span className="text-slate-200 tabular-nums">{simulationClock.date}</span> 
+        </div>
+        <div className="flex gap-1.5 items-start">
+          <Clock className="w-3.5 h-3.5 text-slate-400 shrink-0" />
+          <span className="text-slate-200 tabular-nums">{simulationClock.time}</span>
+        </div>
+        
         {displayedDay != null && (
           <>
             <span className="text-slate-600">|</span>
@@ -1230,9 +1237,10 @@ export default function PeriodSimulatorPage() {
           </>
         )}
         <span className="text-slate-600">|</span>
-        <span className="text-slate-500">Trans:</span>
+        <span className="text-slate-500">Transcurrido Sim:</span>
         <span className="text-slate-200 tabular-nums">{simulatedElapsedLabel}</span>
         <span className="text-slate-600">|</span>
+        <span className="text-slate-500">Cronómetro:</span>
         <span className="text-slate-200 tabular-nums">{fmtElapsed()}</span>
       </div>
     );

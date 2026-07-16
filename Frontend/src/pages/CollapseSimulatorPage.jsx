@@ -22,7 +22,7 @@ import { clearPerformanceTimeline } from "../utils/performanceCleanup";
 import { formatElapsedHMS, formatUtcDateTimeDisplay } from "../utils/formatting";
 
 const ENUM_VUELO = ["PROGRAMADO", "CONFIRMADO", "EN_PROGRESO", "FINALIZADO", "CANCELADO"];
-const ENUM_MALETA = ["EN_ALMACEN", "EN_TRANSITO", "ENTREGADA"];
+const ENUM_MALETA = ["EN_ALMACEN", "EN_TRANSITO", "ENTREGADA", "REPLANIFICANDO", "POR_RECOGER"];
 const ENUM_RUTA = ["PLANIFICADA", "ACTIVA", "COMPLETADA", "REPLANIFICADA"];
 
 const METRICAS_COLAPSO = [
@@ -688,9 +688,10 @@ export default function CollapseSimulatorPage() {
           </>
         )}
         <span className="text-slate-600">|</span>
-        <span className="text-slate-500">Trans:</span>
+        <span className="text-slate-500">Transcurrido Sim:</span>
         <span className="text-slate-200 tabular-nums">{simulatedElapsedLabel}</span>
         <span className="text-slate-600">|</span>
+        <span className="text-slate-500">Cronómetro:</span>
         <span className="text-slate-200 tabular-nums">{fmtElapsed()}</span>
       </div>
     );

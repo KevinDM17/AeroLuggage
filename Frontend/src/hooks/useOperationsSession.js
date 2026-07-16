@@ -290,7 +290,7 @@ export function useOperationsSession({ enabled, setSimulationPanelData, resetSim
 
     setSimulationPanelData((prev) => {
       const ENUM_VUELO = ["PROGRAMADO", "CONFIRMADO", "EN_PROGRESO", "FINALIZADO", "CANCELADO"];
-      const ENUM_MALETA = ["EN_ALMACEN", "EN_TRANSITO", "ENTREGADA"];
+      const ENUM_MALETA = ["EN_ALMACEN", "EN_TRANSITO", "ENTREGADA", "REPLANIFICANDO", "POR_RECOGER"];
 
       const updatedFlights = updateEstadosOnly(
         prev.flights,

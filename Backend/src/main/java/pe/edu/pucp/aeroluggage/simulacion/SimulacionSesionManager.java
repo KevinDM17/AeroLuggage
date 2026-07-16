@@ -9,6 +9,7 @@ import pe.edu.pucp.aeroluggage.algoritmo.Solucion;
 import pe.edu.pucp.aeroluggage.algoritmo.alns.ALNSUtil;
 import pe.edu.pucp.aeroluggage.algoritmo.alns.ALNS;
 import pe.edu.pucp.aeroluggage.config.ALNSConfig;
+import pe.edu.pucp.aeroluggage.config.NegocioConfig;
 import pe.edu.pucp.aeroluggage.dominio.entidades.Maleta;
 import pe.edu.pucp.aeroluggage.dominio.entidades.Pedido;
 import pe.edu.pucp.aeroluggage.dominio.entidades.Aeropuerto;
@@ -90,6 +91,7 @@ public class SimulacionSesionManager {
     private final SimulacionParams simulacionParams;
     private final pe.edu.pucp.aeroluggage.config.SistemaConfiguracion sistemaConfiguracion;
     private final ALNSConfig alnsConfig;
+    private final NegocioConfig negocioConfig;
     private final Map<String, SimulacionSesion> sesionesActivas = new ConcurrentHashMap<>();
     private final Map<String, SimulacionSesion> sesionesFinalizadas = new ConcurrentHashMap<>();
     private final Map<String, String> wsSessionIdASimSessionId = new ConcurrentHashMap<>();
@@ -198,6 +200,7 @@ public class SimulacionSesionManager {
 
         sesionesActivas.put(sessionId, sesion);
         sesion.setUmbralConfirmacionMinutos(sistemaConfiguracion.getUmbralConfirmacionMinutos());
+        sesion.setMinutosRecojo(negocioConfig.getMinutosRecojo());
 
         bootstrapService.ensureSnapshotLoaded(sesion);
 

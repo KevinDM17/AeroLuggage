@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useState } from "react";
+import { useCallback, useEffect, useRef, useState } from "react";
 import { isStompEnabled, whenConnected, subscribeToReconnects } from "../api/stomp";
 
 export function useStompSubscribe(topic, { enabled = true } = {}) {
@@ -6,6 +6,7 @@ export function useStompSubscribe(topic, { enabled = true } = {}) {
   const [error, setError] = useState(null);
   const [connected, setConnected] = useState(false);
   const [reconnectToken, setReconnectToken] = useState(0);
+  const activeSub = useRef(null);
 
   useEffect(() => {
     return subscribeToReconnects(() => setReconnectToken((c) => c + 1));
@@ -16,17 +17,19 @@ export function useStompSubscribe(topic, { enabled = true } = {}) {
       setData(null);
       setError(null);
       setConnected(false);
+      activeSub.current?.unsubscribe();
+      activeSub.current = null;
       return undefined;
     }
 
-    let subscription = null;
     let cancelled = false;
 
     whenConnected()
       .then((client) => {
         if (cancelled) return;
+        activeSub.current?.unsubscribe();
         setConnected(true);
-        subscription = client.subscribe(topic, (message) => {
+        const sub = client.subscribe(topic, (message) => {
           try {
             setData(JSON.parse(message.body));
             setError(null);
@@ -34,6 +37,7 @@ export function useStompSubscribe(topic, { enabled = true } = {}) {
             setError(e);
           }
         });
+        activeSub.current = sub;
       })
       .catch((e) => {
         if (!cancelled) setError(e);
@@ -41,7 +45,6 @@ export function useStompSubscribe(topic, { enabled = true } = {}) {
 
     return () => {
       cancelled = true;
-      if (subscription) subscription.unsubscribe();
     };
   }, [topic, enabled, reconnectToken]);
 

@@ -86,7 +86,7 @@ public class SimulacionSesion {
     private final ConcurrentHashMap<String, MaletaFallos> evaluacionesMaletas = new ConcurrentHashMap<>();
     private final AtomicInteger totalMaletasEntregadas = new AtomicInteger(0);
     private final ConcurrentHashMap<String, ColdEntry> maletasFrias = new ConcurrentHashMap<>();
-    private final Set<String> idsEntregadasEnTick = new HashSet<>();
+    private final Map<String, String> idsEntregadasEnTick = new HashMap<>();
     private final Map<String, String> idsCompletadasEnTick = new HashMap<>();
     private final List<EventoOcupacionDTO> eventosOcupacion = new ArrayList<>();
 
@@ -99,6 +99,7 @@ public class SimulacionSesion {
     private final Set<String> vuelosGenerados = ConcurrentHashMap.newKeySet();
     private final Set<String> alertasColapsoEmitidas = ConcurrentHashMap.newKeySet();
     private volatile int umbralConfirmacionMinutos;
+    private volatile long minutosRecojo = 10L;
     private CargadorEnvios.LectorLotesEnvios lectorEnvios;
     private LocalDateTime ultimaCargaPedidos;
 
@@ -133,6 +134,10 @@ public class SimulacionSesion {
 
     public void setUmbralConfirmacionMinutos(final int umbral) {
         this.umbralConfirmacionMinutos = umbral;
+    }
+
+    public void setMinutosRecojo(final long minutosRecojo) {
+        this.minutosRecojo = minutosRecojo;
     }
 
     public void setLectorEnvios(final CargadorEnvios.LectorLotesEnvios lectorEnvios) {
@@ -222,7 +227,7 @@ public class SimulacionSesion {
                             r.getIdMaleta(), idAeroDest, 1);
                 }
                 if (ultimo && v.getFechaLlegada() != null && idAeroDest != null) {
-                    agregarEvento(v.getFechaLlegada().plusMinutes(10), TipoEventoSim.MALETA_ENTREGADA,
+                    agregarEvento(v.getFechaLlegada().plusMinutes(minutosRecojo), TipoEventoSim.MALETA_ENTREGADA,
                             r.getIdMaleta(), idAeroDest, -1);
                 }
             }
@@ -364,7 +369,11 @@ public class SimulacionSesion {
     private void aplicarMaletaLlega(final EventoSim e) {
         final Maleta m = maletasPorId.get(e.idEntidad());
         if (m == null) return;
-        m.setEstado(EstadoMaleta.EN_ALMACEN);
+        final boolean esDestinoFinal = m.getPedido() != null
+                && m.getPedido().getAeropuertoDestino() != null
+                && e.idAeropuerto() != null
+                && e.idAeropuerto().equals(m.getPedido().getAeropuertoDestino().getIdAeropuerto());
+        m.setEstado(esDestinoFinal ? EstadoMaleta.POR_RECOGER : EstadoMaleta.EN_ALMACEN);
         m.setAeropuertoActual(e.idAeropuerto());
         if (e.idAeropuerto() != null) {
             for (final Aeropuerto a : aeropuertos) {
@@ -399,7 +408,7 @@ public class SimulacionSesion {
             r.setFechaEntrega(entrega);
         }
         maletasFrias.put(e.idEntidad(), new ColdEntry(m, r, entrega));
-        idsEntregadasEnTick.add(e.idEntidad());
+        idsEntregadasEnTick.put(e.idEntidad(), m.getAeropuertoActual());
         if (r != null) idsCompletadasEnTick.put(r.getIdRuta(), e.idEntidad());
         if (e.idAeropuerto() != null) {
             for (final Aeropuerto a : aeropuertos) {
@@ -565,7 +574,7 @@ public class SimulacionSesion {
                                 if (!idsRuta.isEmpty()) {
                                     final VueloInstancia lastVuelo = vuelosIndex.get(idsRuta.getLast());
                                     if (lastVuelo != null && lastVuelo.getFechaLlegada() != null) {
-                                        r.setFechaEntrega(lastVuelo.getFechaLlegada().plusMinutes(10));
+                                        r.setFechaEntrega(lastVuelo.getFechaLlegada().plusMinutes(minutosRecojo));
                                     }
                                 }
                             }
@@ -761,7 +770,7 @@ public class SimulacionSesion {
                         TipoEventoSim.MALETA_LLEGA_AEROP, ruta.getIdMaleta(), idAeroDest, 1);
             }
             if (ultimo && vuelo.getFechaLlegada() != null && idAeroDest != null) {
-                agregarEventoPlanificado(destino, vuelo.getFechaLlegada().plusMinutes(10), desdeInclusivo,
+                agregarEventoPlanificado(destino, vuelo.getFechaLlegada().plusMinutes(minutosRecojo), desdeInclusivo,
                         TipoEventoSim.MALETA_ENTREGADA, ruta.getIdMaleta(), idAeroDest, -1);
             }
         }
@@ -1037,8 +1046,8 @@ public class SimulacionSesion {
         return totalMaletasEntregadas.get();
     }
 
-    public Set<String> consumirIdsEntregadasEnTick() {
-        final Set<String> ids = new HashSet<>(idsEntregadasEnTick);
+    public Map<String, String> consumirIdsEntregadasEnTick() {
+        final Map<String, String> ids = new HashMap<>(idsEntregadasEnTick);
         idsEntregadasEnTick.clear();
         return ids;
     }
@@ -1488,7 +1497,8 @@ public class SimulacionSesion {
 
     private String obtenerUbicacionMaleta(final Maleta m, final EstadoMaleta estado,
                                           final Map<String, VueloInstancia> vueloIndex) {
-        if (estado == EstadoMaleta.EN_ALMACEN || estado == EstadoMaleta.ENTREGADA) {
+        if (estado == EstadoMaleta.EN_ALMACEN || estado == EstadoMaleta.ENTREGADA
+                || estado == EstadoMaleta.POR_RECOGER) {
             return m.getAeropuertoActual();
         }
         if (estado == EstadoMaleta.EN_TRANSITO) {
@@ -1523,7 +1533,7 @@ public class SimulacionSesion {
             if (m == null || m.getFechaRegistro() == null
                     || m.getFechaRegistro().isAfter(simTimeUtc)) continue;
             final EstadoMaleta estado = m.getEstado();
-            if (estado == EstadoMaleta.EN_ALMACEN) almacen++;
+            if (estado == EstadoMaleta.EN_ALMACEN || estado == EstadoMaleta.POR_RECOGER) almacen++;
             else if (estado == EstadoMaleta.EN_TRANSITO) enTransito++;
             estadosMaletas.add(EstadoMaletaDTO.builder()
                     .withId(m.getIdMaleta())

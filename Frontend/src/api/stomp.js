@@ -29,9 +29,12 @@ export function getStompClient() {
     heartbeatOutgoing: Number(import.meta.env.VITE_WS_HEARTBEAT_OUT_MS) || 10000,
     debug: () => {},
     onConnect: () => {
+      const wasReconnect = _connected;
       _connected = true;
       _connectionVersion++;
-      _reconnectListeners.forEach((fn) => fn());
+      if (wasReconnect) {
+        _reconnectListeners.forEach((fn) => fn());
+      }
       notifyWaiters();
     },
     onWebSocketClose: () => { _connected = false; },

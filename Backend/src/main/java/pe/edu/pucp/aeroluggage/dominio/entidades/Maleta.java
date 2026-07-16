@@ -84,7 +84,7 @@ public class Maleta {
     }
 
     public String getAeropuertoActual() {
-        if (estado == EstadoMaleta.ENTREGADA) {
+        if (estado == EstadoMaleta.ENTREGADA || estado == EstadoMaleta.POR_RECOGER) {
             return pedido != null && pedido.getAeropuertoDestino() != null
                     ? pedido.getAeropuertoDestino().getIdAeropuerto()
                     : null;
