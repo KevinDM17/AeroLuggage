@@ -364,7 +364,7 @@ public class SimulacionSnapshotService {
                                                    final Map<String, Maleta> maletasPorId) {
         final List<EstadoRutaDTO> estados = new ArrayList<>();
         for (final Ruta r : rutas) {
-            if (r == null) continue;
+            if (r == null || r.getEstado() == EstadoRuta.REPLANIFICADA) continue;
             final Maleta m = maletasPorId.get(r.getIdMaleta());
             if (m == null || m.getFechaRegistro() == null
                     || m.getFechaRegistro().isAfter(simTimeUtc)) continue;

@@ -36,7 +36,7 @@ export default function Sidebar({ onClose, closeOnNavigate = false }) {
     );
 
   return (
-    <div className="w-64 shrink-0 bg-surface-1 border-r border-slate-800 h-screen flex flex-col text-slate-300 relative z-[9999]">
+    <div className="w-64 shrink-0 bg-surface-1 border-r border-slate-800 h-full flex flex-col text-slate-300 relative z-[9999]">
       <div className="px-4 py-5 flex items-center justify-between gap-2 border-b border-transparent">
         <div className="flex items-center gap-3 min-w-0">
           {/* Logo (Frontend/public/logo.png). Si no existe, se usa el ícono SVG. */}

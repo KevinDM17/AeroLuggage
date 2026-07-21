@@ -94,7 +94,8 @@ public class ALNS extends Metaheuristico {
             if (sinMejora >= Math.max(1, parametros.getMaxIteracionesSinMejora())) {
                 break;
             }
-            if (System.currentTimeMillis() - inicio >= parametros.getTiempoMaximoMs()) {
+            final long elapsedMs = System.currentTimeMillis() - inicio;
+            if (elapsedMs >= parametros.getTiempoMaximoMs()) {
                 break;
             }
 
@@ -110,6 +111,12 @@ public class ALNS extends Metaheuristico {
                 if (!removidas.contains(maleta)) {
                     removidas.add(maleta);
                 }
+            }
+
+            final int maxReparar = q + 50;
+            final int totalAntesCap = removidas.size();
+            if (totalAntesCap > maxReparar) {
+                removidas.subList(maxReparar, totalAntesCap).clear();
             }
 
             ALNSReparador.reparar(candidato, removidas, operadorReparacion, parametros, random);

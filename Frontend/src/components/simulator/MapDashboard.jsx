@@ -41,7 +41,6 @@ export default function MapDashboard({
   simStatus,
   metrics = {},
   draggable = true,
-  eventosOcupacion = [],
 }) {
   const location = useLocation();
   const {
@@ -93,7 +92,6 @@ export default function MapDashboard({
           simulatedNowMs={simulatedNowMs}
           simulatedDayDurationMs={simulatedDayDurationMs}
           animateFlights={animateMapFlights}
-          eventosOcupacion={eventosOcupacion}
         />
 
         {enrichedOverlays.map((overlayItem, index) => (

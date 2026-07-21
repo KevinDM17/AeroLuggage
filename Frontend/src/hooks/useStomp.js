@@ -31,10 +31,12 @@ export function useStompSubscribe(topic, { enabled = true } = {}) {
         setConnected(true);
         const sub = client.subscribe(topic, (message) => {
           try {
-            setData(JSON.parse(message.body));
+            const parsed = JSON.parse(message.body);
+            setData(parsed);
             setError(null);
           } catch (e) {
             setError(e);
+            console.error("[STOMP] Error parseando mensaje en " + topic, e);
           }
         });
         activeSub.current = sub;
@@ -45,6 +47,8 @@ export function useStompSubscribe(topic, { enabled = true } = {}) {
 
     return () => {
       cancelled = true;
+      activeSub.current?.unsubscribe();
+      activeSub.current = null;
     };
   }, [topic, enabled, reconnectToken]);
 

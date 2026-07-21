@@ -10,6 +10,8 @@ import java.util.Map;
 import java.util.NavigableMap;
 import java.util.TreeMap;
 
+import java.util.concurrent.atomic.AtomicInteger;
+
 import pe.edu.pucp.aeroluggage.algoritmo.InstanciaProblema;
 import pe.edu.pucp.aeroluggage.dominio.entidades.Aeropuerto;
 import pe.edu.pucp.aeroluggage.dominio.entidades.Maleta;
@@ -22,6 +24,8 @@ public final class ALNSUtil {
     private ALNSUtil() {
         throw new UnsupportedOperationException("This class should never be instantiated");
     }
+
+    private static final AtomicInteger CONTADOR_RUTAS = new AtomicInteger(0);
 
     static List<IntervaloAeropuerto> construirIntervalosRuta(final Ruta ruta,
                                                              final InstanciaProblema instancia,
@@ -157,12 +161,20 @@ public final class ALNSUtil {
             ids.add(v != null ? v.getIdVueloInstancia() : null);
         }
         final Ruta ruta = new Ruta();
+        ruta.setIdRuta(siguienteIdRuta(CONTADOR_RUTAS.incrementAndGet()));
         ruta.setIdMaleta(idMaleta);
         ruta.setSubrutaIds(ids);
         if (maleta != null && maleta.getPedido() != null) {
             ruta.setPlazoMaximoDias(maleta.getPedido().getPlazoDias());
         }
-        ruta.setDuracion(duracionDias(camino));
+        final LocalDateTime inicio = maleta != null && maleta.getFechaRegistro() != null
+                ? maleta.getFechaRegistro()
+                : camino.get(0).getFechaSalida();
+        final LocalDateTime fin = camino.get(camino.size() - 1).getFechaLlegada();
+        final double duracion = inicio != null && fin != null && !fin.isBefore(inicio)
+                ? Duration.between(inicio, fin).toMinutes() / (24D * 60D)
+                : 0.0D;
+        ruta.setDuracion(duracion);
         ruta.setEstado(estado);
         return ruta;
     }

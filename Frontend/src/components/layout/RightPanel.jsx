@@ -1,4 +1,4 @@
-import { forwardRef, memo, useCallback, useEffect, useMemo, useRef, useState } from "react";
+import { forwardRef, memo, useCallback, useDeferredValue, useEffect, useMemo, useRef, useState } from "react";
 import { Virtuoso } from "react-virtuoso";
 import { useLocation } from "react-router-dom";
 import { Ban, Filter, PanelRightClose, Globe, Info, ChevronDown, Plane, RefreshCw, Package, Luggage, ArrowDownUp, ArrowUp, ArrowDown, Route, X, Crosshair, MapPin, Calendar, Clock } from "lucide-react";
@@ -9,7 +9,7 @@ import { listOrders } from "../../api/orders";
 import { listAirports } from "../../api/airports";
 import { listMaletas } from "../../api/maletas";
 import { listRutas } from "../../api/rutas";
-import { cancelarVueloProgramadoOperacionesDiaADia, obtenerContenidoAlmacen, obtenerEnviosOperacionesDiaADia, obtenerEnviosPanel, obtenerMaletasOperacionesDiaADia, obtenerManifiestoVuelo, obtenerManifiestoVueloOperacionesDiaADia, obtenerRutaMaleta, obtenerRutaMaletaOperacionesDiaADia, obtenerRutasEnvio, obtenerRutasEnvioOperacionesDiaADia, obtenerRutasOperacionesDiaADia, obtenerVuelosOperacionesDiaADia, obtenerSnapshotSimulacionPeriodo } from "../../api/simulator";
+import { cancelarVueloProgramadoOperacionesDiaADia, obtenerContenidoAlmacen, obtenerMaletasAfectadasVueloProgramado, obtenerMaletasOperacionesDiaADia, obtenerManifiestoVuelo, obtenerManifiestoVueloOperacionesDiaADia, obtenerRutaMaleta, obtenerRutaMaletaOperacionesDiaADia, obtenerRutasEnvio, obtenerRutasEnvioOperacionesDiaADia, obtenerRutasOperacionesDiaADia, obtenerVuelosOperacionesDiaADia, obtenerSnapshotSimulacionPeriodo } from "../../api/simulator";
 import { adaptFlightInstance } from "../../api/flightInstances";
 import { apiGet, USE_MOCK } from "../../api/client";
 import { useMapFocus } from "../../context/MapFocusContext";
@@ -73,14 +73,13 @@ const routeStatusColor = (s) => {
   switch (s) {
     case "PLANIFICADA": return "border-info/40 text-info";
     case "EN_CURSO":
-    case "ACTIVA":
-    case "REPLANIFICADA": return "border-sky-500/40 text-sky-400";
+    case "ACTIVA": return "border-sky-500/40 text-sky-400";
     case "COMPLETADA": return "border-success/40 text-success";
     default: return "border-slate-700 text-slate-400";
   }
 };
 
-const ROUTE_STATUSES = ["PLANIFICADA", "ACTIVA", "COMPLETADA", "REPLANIFICADA"];
+const ROUTE_STATUSES = ["PLANIFICADA", "ACTIVA", "COMPLETADA"];
 
 const EMPTY_MANIFEST = { bags: [], orders: [] };
 
@@ -421,8 +420,8 @@ const RouteItem = memo(function RouteItem({ route, onShowRoute, cityByIata, cont
                         <span>-</span>
                         <Clock className="w-3.5 h-3.5 shrink-0" />
                         {stop.fechaLlegada}
-                      </div>
-                    </div>
+          </div>
+        </div>
                   </div>
                 );
               })}
@@ -620,7 +619,7 @@ function Collapsible({ title, defaultOpen = false, children }) {
   );
 }
 
-const EnvioItem = memo(function EnvioItem({ envio, showOrigin = true, onShowRoute, onLoadRutas, category, isSelected, onFocus, onDeselect, cityByIata, continentByIata, bags }) {
+const EnvioItem = memo(function EnvioItem({ envio, showOrigin = true, onShowRoute, onLoadRutas, category, isSelected, onFocus, onDeselect, cityByIata, continentByIata, bagsRef }) {
   const [expanded, setExpanded] = useState(false);
   // Rutas agrupadas (cada una con sus maletas), pedidas al back al expandir.
   // No mostramos UT ni escalas aqui: ese detalle vive en "Ver rutas".
@@ -737,7 +736,7 @@ const EnvioItem = memo(function EnvioItem({ envio, showOrigin = true, onShowRout
               <div className="text-slate-200 flex flex-col gap-0.5">
                 {r.maletas.length
                   ? r.maletas.map((idMaleta, mi) => {
-                      const bag = bags?.get(idMaleta);
+                      const bag = bagsRef?.current?.get(idMaleta);
                       return (
                         <div key={mi} className="flex items-center justify-between gap-2">
                           <div className="flex items-center gap-1 min-w-0">
@@ -762,19 +761,37 @@ const EnvioItem = memo(function EnvioItem({ envio, showOrigin = true, onShowRout
   );
 });
 
-function EnvioSeccion({ title, envios, showOrigin = true, defaultOpen = false, max = 200, onShowRoute, onLoadRutas, category, selectedEnvioId, onFocus, onDeselect, cityByIata, continentByIata, bags }) {
-  const shown = envios.slice(0, max);
+function EnvioSeccion({ title, envios, showOrigin = true, defaultOpen = false, onShowRoute, onLoadRutas, category, selectedEnvioId, onFocus, onDeselect, cityByIata, continentByIata, bagsRef }) {
+  const virtuosoRef = useRef(null);
   return (
     <Collapsible title={`${title} (${envios.length})`} defaultOpen={defaultOpen}>
       {envios.length === 0 ? (
         <div className="pl-1 text-[11px] text-slate-500">Sin envios.</div>
       ) : (
-        <>
-          {shown.map((e, i) => <EnvioItem key={`${e.id}-${i}`} envio={e} showOrigin={showOrigin} onShowRoute={onShowRoute} onLoadRutas={onLoadRutas} category={category} isSelected={selectedEnvioId === e.id} onFocus={onFocus} onDeselect={onDeselect} cityByIata={cityByIata} continentByIata={continentByIata} bags={bags} />)}
-          {envios.length > shown.length && (
-            <div className="pt-1 text-[10px] text-slate-500">… y {envios.length - shown.length} mas (usa los filtros)</div>
-          )}
-        </>
+        <Virtuoso
+          ref={virtuosoRef}
+          style={{ height: "800px" }}
+          totalCount={envios.length}
+          computeItemKey={(index) => envios[index]?.id ?? index}
+          itemContent={(index) => {
+            const e = envios[index];
+            return (
+              <EnvioItem
+                envio={e}
+                showOrigin={showOrigin}
+                onShowRoute={onShowRoute}
+                onLoadRutas={onLoadRutas}
+                category={category}
+                isSelected={selectedEnvioId === e.id}
+                onFocus={onFocus}
+                onDeselect={onDeselect}
+                cityByIata={cityByIata}
+                continentByIata={continentByIata}
+                bagsRef={bagsRef}
+              />
+            );
+          }}
+        />
       )}
     </Collapsible>
   );
@@ -1085,7 +1102,7 @@ const ScheduledFlightPlanItem = memo(function ScheduledFlightPlanItem({
             {flightPlan.origin} {"->"} {flightPlan.dest}
           </div>
           <div className="mt-1 text-sm text-slate-400">
-            Sale a las {depTimeUtc} (UTC)
+            Sale a las {depTimeUtc}
           </div>
           <div className="mt-2 inline-flex rounded-md border border-slate-700 bg-surface-1 px-2.5 py-1 text-[11px] font-semibold text-slate-300">
             {timing.statusLabel}
@@ -1332,7 +1349,7 @@ function buildScheduledFlightTiming(flightPlan, simTime) {
   const utcMs = parseUtcDateTime(simTime);
   const gmtOrigin = Number(flightPlan?.gmtOrigin ?? 0);
   const depRaw = String(flightPlan?.depTime ?? "").trim();
-  const departureLabel = depRaw ? depRaw.slice(0, 5) : "--:--";
+  let departureLabel = depRaw ? depRaw.slice(0, 5) : "--:--";
   const [depHourRaw, depMinuteRaw] = depRaw.split(":");
   const depHour = Number(depHourRaw);
   const depMinute = Number(depMinuteRaw);
@@ -1354,6 +1371,7 @@ function buildScheduledFlightTiming(flightPlan, simTime) {
   const depUtcMin = ((depLocalMin - gmtOrigin * 60) + 1440) % 1440;
   const depUtcHour = Math.floor(depUtcMin / 60);
   const depUtcMinute = depUtcMin % 60;
+  departureLabel = `${String(depUtcHour).padStart(2, "0")}:${String(depUtcMinute).padStart(2, "0")}`;
 
   const simDate = new Date(utcMs);
   const departureTodayUtcMs = Date.UTC(
@@ -1454,6 +1472,8 @@ export default function RightPanel({
   const bagsVirtuosoRef = useRef(null);
   const savedRouteScrollIndexRef = useRef(0);
   const savedBagScrollIndexRef = useRef(0);
+  const savedBagScrollIdRef = useRef(null);
+  const maletasFilteredRef = useRef([]);
   const [scrollTarget, setScrollTarget] = useState(null);
   const [query, setQuery] = useState("");
   const [flightStatusFilter, setFlightStatusFilter] = useState("DEFAULT");
@@ -1468,8 +1488,6 @@ export default function RightPanel({
   const [airportSortDir, setAirportSortDir] = useState("asc");
   const [envioOriginFilter, setEnvioOriginFilter] = useState("ALL");
   const [envioDestFilter, setEnvioDestFilter] = useState("ALL");
-  const [enviosData, setEnviosData] = useState({ planificados: [], enVuelos: [], entregados: [] });
-  const [enviosStatus, setEnviosStatus] = useState("idle");
   const [selectedEnvioId, setSelectedEnvioId] = useState(null);
   const [routeOriginFilter, setRouteOriginFilter] = useState("ALL");
   const [routeDestFilter, setRouteDestFilter] = useState("ALL");
@@ -1718,11 +1736,11 @@ export default function RightPanel({
     [simulationPanelData?.airports, simulationLoaded]
   );
 
-  const flights = isSimulator ? createStaticSource(flightsData) : flightsFetch;
-  const airports = isSimulator ? createStaticSource(airportsData) : airportsFetch;
-  const orders = isSimulator ? createStaticSource(ordersData) : ordersFetch;
-  const maletas = isSimulator ? createStaticSource(bagsData) : maletasFetch;
-  const rutas = isSimulator ? createStaticSource(routesData) : rutasFetch;
+  const flights = useMemo(() => isSimulator ? createStaticSource(flightsData) : flightsFetch, [isSimulator, flightsData, flightsFetch]);
+  const airports = useMemo(() => isSimulator ? createStaticSource(airportsData) : airportsFetch, [isSimulator, airportsData, airportsFetch]);
+  const orders = useMemo(() => isSimulator ? createStaticSource(ordersData) : ordersFetch, [isSimulator, ordersData, ordersFetch]);
+  const maletas = useMemo(() => isSimulator ? createStaticSource(bagsData) : maletasFetch, [isSimulator, bagsData, maletasFetch]);
+  const rutas = useMemo(() => isSimulator ? createStaticSource(routesData) : rutasFetch, [isSimulator, routesData, rutasFetch]);
 
   const activeSource = {
     flights,
@@ -1743,30 +1761,30 @@ export default function RightPanel({
   // IATA -> ciudad, para poder buscar/filtrar UT por "almacen, ciudad o aeropuerto".
   const cityByIata = useMemo(() => {
     const map = new Map();
-    for (const a of airports.data ?? []) {
+    for (const a of simulationPanelData?.airports ?? []) {
       const code = a?.iata ?? a?.idAeropuerto;
       if (code) map.set(code, a.city ?? a.ciudad ?? "");
     }
     return map;
-  }, [airports.data]);
+  }, [simulationPanelData?.airports?.length]);
 
   const continentByIata = useMemo(() => {
     const map = new Map();
-    for (const a of airports.data ?? []) {
+    for (const a of simulationPanelData?.airports ?? []) {
       const code = a?.iata ?? a?.idAeropuerto;
       if (code) map.set(code, a.continent ?? a.continente ?? "");
     }
     return map;
-  }, [airports.data]);
+  }, [simulationPanelData?.airports?.length]);
 
   const airportCoords = useMemo(() => {
     const map = new Map();
-    for (const a of airports.data ?? []) {
+    for (const a of simulationPanelData?.airports ?? []) {
       const code = a?.iata ?? a?.idAeropuerto;
       if (code && Number.isFinite(a.lat) && Number.isFinite(a.lng)) map.set(code, { lat: a.lat, lng: a.lng });
     }
     return map;
-  }, [airports.data]);
+  }, [simulationPanelData?.airports?.length]);
 
   const centroideDe = useCallback((codes) => {
     let sx = 0, sy = 0, n = 0;
@@ -2005,7 +2023,21 @@ export default function RightPanel({
       return;
     }
 
-    setFlightPlanConfirmation({ flightPlan, timing });
+    setFlightPlanConfirmation({ flightPlan, timing, affectedBags: null });
+
+    if (isSimulacionPeriodo && sessionId) {
+      obtenerMaletasAfectadasVueloProgramado(sessionId, flightPlanId)
+        .then((ids) => {
+          setFlightPlanConfirmation((prev) =>
+            prev ? { ...prev, affectedBags: Array.isArray(ids) ? ids : [] } : null
+          );
+        })
+        .catch(() => {
+          setFlightPlanConfirmation((prev) =>
+            prev ? { ...prev, affectedBags: [] } : null
+          );
+        });
+    }
   };
 
   const confirmFlightPlanCancellation = async () => {
@@ -2020,23 +2052,22 @@ export default function RightPanel({
 
   const maletasVisibles = useMemo(() => {
     const source = maletas.data ?? [];
-    if (!simTime) return source;
-    return source.filter(b => !b.fechaRegistro || b.fechaRegistro <= simTime);
+    const filterFn = (b) => b.estado !== "ENTREGADA"
+      && (!simTime || !b.fechaRegistro || b.fechaRegistro <= simTime);
+    return source.filter(filterFn);
   }, [maletas.data, simTime]);
 
   const idMaletasVisibles = useMemo(() => {
     const source = maletas.data ?? [];
-    const visibles = simTime
-      ? source.filter(b => !b.fechaRegistro || b.fechaRegistro <= simTime)
-      : source;
+    const visibles = source.filter(b => b.estado !== "ENTREGADA"
+      && (!simTime || !b.fechaRegistro || b.fechaRegistro <= simTime));
     return new Set(visibles.map(b => b.idMaleta));
   }, [maletas.data, simTime]);
 
   const pedidosActivos = useMemo(() => {
     const source = maletas.data ?? [];
-    const visibles = simTime
-      ? source.filter(b => !b.fechaRegistro || b.fechaRegistro <= simTime)
-      : source;
+    const visibles = source.filter(b => b.estado !== "ENTREGADA"
+      && (!simTime || !b.fechaRegistro || b.fechaRegistro <= simTime));
     return new Set(visibles.map(b => b.idPedido));
   }, [maletas.data, simTime]);
 
@@ -2107,52 +2138,6 @@ export default function RightPanel({
     airportSortKey, airportSortDir, nextFlightTimesByAirport,
   ]);
 
-  // Envios del panel (planificados / en vuelos / entregados 4h). Se pide al
-  // back al entrar a la pestana Pedidos y con el boton refrescar; NO en cada
-  // tick, para no recargar (la data se mantiene hasta que el usuario refresca).
-  const fetchEnvios = useCallback(() => {
-    if (USE_MOCK || !sessionId) {
-      setEnviosData({ planificados: [], enVuelos: [], entregados: [] });
-      setEnviosStatus("ready");
-      return Promise.resolve();
-    }
-    setEnviosStatus("loading");
-
-    if (isOperacionesDiaADia) {
-      return obtenerEnviosOperacionesDiaADia()
-        .then((data) => {
-          setEnviosData({
-            planificados: data?.planificados ?? [],
-            enVuelos: data?.enVuelos ?? [],
-            entregados: data?.entregadosUltimas4h ?? [],
-          });
-          setEnviosStatus("ready");
-        })
-        .catch(() => {
-          setEnviosData({ planificados: [], enVuelos: [], entregados: [] });
-          setEnviosStatus("error");
-        });
-    }
-
-    return obtenerEnviosPanel(sessionId)
-      .then((data) => {
-        setEnviosData({
-          planificados: data?.planificados ?? [],
-          enVuelos: data?.enVuelos ?? [],
-          entregados: data?.entregadosUltimas4h ?? [],
-        });
-        setEnviosStatus("ready");
-      })
-      .catch(() => {
-        setEnviosData({ planificados: [], enVuelos: [], entregados: [] });
-        setEnviosStatus("error");
-      });
-  }, [sessionId, isOperacionesDiaADia, isSimulacionPeriodo]);
-
-  useEffect(() => {
-    if ((isSimulacionPeriodo || isOperacionesDiaADia) && activeTab === "orders") fetchEnvios();
-  }, [isSimulacionPeriodo, isOperacionesDiaADia, activeTab, fetchEnvios]);
-
   const bagAirportOptions = useMemo(() => {
     const origins = new Set();
     const dests = new Set();
@@ -2174,15 +2159,21 @@ export default function RightPanel({
     return { origins: [...origins].sort(), dests: [...dests].sort() };
   }, [rutas.data]);
 
+  const bagsRef = useRef(null);
+  bagsRef.current = simulationPanelData?.bags;
+
+  const derivedEnvios = simulationPanelData?.derivedEnvios ?? { planificados: [], enVuelos: [], entregados: [] };
+  const deferredEnvios = useDeferredValue(derivedEnvios);
+
   const enviosAirportOptions = useMemo(() => {
     const origins = new Set();
     const dests = new Set();
-    for (const e of [...enviosData.planificados, ...enviosData.enVuelos, ...(enviosData.entregados ?? [])]) {
+    for (const e of [...deferredEnvios.planificados, ...deferredEnvios.enVuelos, ...(deferredEnvios.entregados ?? [])]) {
       for (const a of e.origenesRuta ?? []) origins.add(a);
       for (const a of e.destinosRuta ?? []) dests.add(a);
     }
     return { origins: [...origins].sort(), dests: [...dests].sort() };
-  }, [enviosData]);
+  }, [deferredEnvios]);
 
   // Filtra por origen/destino considerando TODA la ruta (tramos), no solo los
   // extremos del pedido (req 32/33), mas la busqueda libre por IATA/ciudad/UT.
@@ -2203,10 +2194,14 @@ export default function RightPanel({
   }, [envioOriginFilter, envioDestFilter, query, cityByIata, orderSortKey, orderSortDir]);
 
   const enviosFilteredForMap = useMemo(() => ([
-    ...filterEnvios(enviosData.planificados),
-    ...filterEnvios(enviosData.enVuelos),
-    ...filterEnvios(enviosData.entregados ?? []),
-  ]), [enviosData, filterEnvios]);
+    ...filterEnvios(deferredEnvios.planificados),
+    ...filterEnvios(deferredEnvios.enVuelos),
+    ...filterEnvios(deferredEnvios.entregados ?? []),
+  ]), [deferredEnvios, filterEnvios]);
+
+  const planificadosFiltered = useMemo(() => filterEnvios(deferredEnvios.planificados), [deferredEnvios.planificados, filterEnvios]);
+  const enVuelosFiltered = useMemo(() => filterEnvios(deferredEnvios.enVuelos), [deferredEnvios.enVuelos, filterEnvios]);
+  const entregadosFiltered = useMemo(() => filterEnvios(deferredEnvios.entregados ?? []), [deferredEnvios.entregados, filterEnvios]);
 
   const maletasFiltered = useMemo(() => {
     let source = maletasVisibles;
@@ -2223,6 +2218,8 @@ export default function RightPanel({
     result = sortBags(result, bagSortKey, bagSortDir);
     return result;
   }, [maletasVisibles, query, bagOriginFilter, bagDestFilter, bagStatusFilter, bagSortKey, bagSortDir]);
+
+  useEffect(() => { maletasFilteredRef.current = maletasFiltered; }, [maletasFiltered]);
 
   const rutasFiltered = useMemo(() => {
     let source = rutas.data ?? [];
@@ -2471,10 +2468,9 @@ export default function RightPanel({
       || flightCodePattern.trim() !== "" || query.trim() !== "" || flightStatusFilter !== "DEFAULT";
     if (active) {
       const set = new Set(visibleFlights.map((f) => f.idVueloInstancia ?? f.id));
-      const fitKey = `flights:${flightStatusFilter}|${flightSemaforo}|${flightOriginFilter}|${flightDestFilter}|${normalizedFlightCodePattern}|${normalizedQuery}`;
-      setMapDim((prev) => ({ ...prev, airports: null, flights: set, fitKey }));
+      setMapDim((prev) => ({ ...prev, airports: null, flights: set }));
     } else {
-      setMapDim((prev) => (prev.airports || prev.flights || prev.fitKey ? { ...prev, airports: null, flights: null, fitKey: null } : prev));
+      setMapDim((prev) => (prev.airports || prev.flights ? { ...prev, airports: null, flights: null } : prev));
     }
   }, [activeTab, visibleFlights, flightSemaforo, flightOriginFilter, flightDestFilter, flightCodePattern, normalizedFlightCodePattern, normalizedQuery, query, flightStatusFilter, setMapDim]);
 
@@ -2562,10 +2558,13 @@ export default function RightPanel({
         routesVirtuosoRef.current.scrollToIndex({ index: savedIndex, align: "start" });
       }
     }
-    if (bagsSize < prevBagsSizeRef.current && bagsVirtuosoRef.current?.scrollToIndex) {
-      const savedIndex = savedBagScrollIndexRef.current;
-      if (savedIndex < bagsSize) {
-        bagsVirtuosoRef.current.scrollToIndex({ index: savedIndex, align: "start" });
+    const savedBagId = savedBagScrollIdRef.current;
+    if (savedBagId && bagsVirtuosoRef.current?.scrollToIndex) {
+      const newIndex = maletasFiltered.findIndex(b => (b.idMaleta ?? b.id) === savedBagId);
+      if (newIndex >= 0 && newIndex !== savedBagScrollIndexRef.current) {
+        requestAnimationFrame(() => {
+          bagsVirtuosoRef.current?.scrollToIndex({ index: newIndex, align: "start" });
+        });
       }
     }
     prevRoutesSizeRef.current = routesSize;
@@ -2609,52 +2608,46 @@ export default function RightPanel({
       />
     ),
     orders: (
-      enviosStatus === "loading" ? (
-        <LoadingState label="Cargando envios..." />
-      ) : enviosStatus === "error" ? (
-        <ErrorState error={{ message: "No se pudieron cargar los envios." }} onRetry={fetchEnvios} />
-      ) : (
-        <div className="space-y-2">
-          <EnvioSeccion
-            title="Planificados (por transportar)"
-            envios={filterEnvios(enviosData.planificados)}
-            onShowRoute={showEnvioRoutes}
-            onLoadRutas={loadEnvioRutas}
-            category="warehouse"
-            selectedEnvioId={selectedEnvioId}
-            onFocus={focusEnvio}
-            onDeselect={deselectEnvio}
-            cityByIata={cityByIata}
-            bags={simulationPanelData?.bags}
-            defaultOpen
-          />
-          <EnvioSeccion
-            title="En vuelos"
-            envios={filterEnvios(enviosData.enVuelos)}
-            onShowRoute={showEnvioRoutes}
-            onLoadRutas={loadEnvioRutas}
-            category="flight"
-            selectedEnvioId={selectedEnvioId}
-            onFocus={focusEnvio}
-            onDeselect={deselectEnvio}
-            cityByIata={cityByIata}
-            bags={simulationPanelData?.bags}
-            defaultOpen
-          />
-          <EnvioSeccion
-            title="Entregados (ultimas 4h)"
-            envios={filterEnvios(enviosData.entregados ?? [])}
-            onShowRoute={showEnvioRoutes}
-            onLoadRutas={loadEnvioRutas}
-            category="delivered"
-            selectedEnvioId={selectedEnvioId}
-            onFocus={focusEnvio}
-            onDeselect={deselectEnvio}
-            cityByIata={cityByIata}
-            bags={simulationPanelData?.bags}
-          />
-        </div>
-      )
+      <div className="space-y-2">
+        <EnvioSeccion
+          title="Planificados (por transportar)"
+          envios={planificadosFiltered}
+          onShowRoute={showEnvioRoutes}
+          onLoadRutas={loadEnvioRutas}
+          category="warehouse"
+          selectedEnvioId={selectedEnvioId}
+          onFocus={focusEnvio}
+          onDeselect={deselectEnvio}
+          cityByIata={cityByIata}
+          bagsRef={bagsRef}
+          defaultOpen
+        />
+        <EnvioSeccion
+          title="En vuelos"
+          envios={enVuelosFiltered}
+          onShowRoute={showEnvioRoutes}
+          onLoadRutas={loadEnvioRutas}
+          category="flight"
+          selectedEnvioId={selectedEnvioId}
+          onFocus={focusEnvio}
+          onDeselect={deselectEnvio}
+          cityByIata={cityByIata}
+          bagsRef={bagsRef}
+          defaultOpen
+        />
+        <EnvioSeccion
+          title="Entregados (ultimas 4h)"
+          envios={entregadosFiltered}
+          onShowRoute={showEnvioRoutes}
+          onLoadRutas={loadEnvioRutas}
+          category="delivered"
+          selectedEnvioId={selectedEnvioId}
+          onFocus={focusEnvio}
+          onDeselect={deselectEnvio}
+          cityByIata={cityByIata}
+          bagsRef={bagsRef}
+        />
+      </div>
     ),
     routes: (
       <TabBody
@@ -2671,7 +2664,7 @@ export default function RightPanel({
       <TabBody
         {...maletas}
         virtuosoRef={bagsVirtuosoRef}
-        onFirstItemIndexChange={(idx) => { savedBagScrollIndexRef.current = idx; }}
+        onFirstItemIndexChange={(idx) => { savedBagScrollIndexRef.current = idx; savedBagScrollIdRef.current = maletasFilteredRef.current[idx]?.idMaleta ?? null; }}
         empty="Ejecuta la simulacion para cargar las maletas de la ventana activa."
         rows={maletasFiltered}
         keyForRow={(b, index) => b.idMaleta ?? b.id ?? index}
@@ -2793,7 +2786,7 @@ export default function RightPanel({
               <div className="rounded-xl border border-slate-700/70 bg-surface-2/70 p-4">
                 <div className="text-xs uppercase tracking-wide text-slate-400">Hora de salida</div>
                 <div className="mt-1 text-lg font-semibold text-white">
-                  {flightPlanConfirmation?.timing?.departureLabel ?? "--:--"} UTC
+                  {flightPlanConfirmation?.timing?.departureLabel ?? "--:--"}
                 </div>
               </div>
 
@@ -2821,6 +2814,27 @@ export default function RightPanel({
           </div>
         </div>
 
+        {flightPlanConfirmation?.affectedBags?.length > 0 && (
+          <div className="rounded-2xl border border-slate-700/80 bg-slate-900/40 p-5">
+            <div className="text-xs font-semibold uppercase tracking-[0.2em] text-slate-400">
+              Maletas afectadas ({flightPlanConfirmation.affectedBags.length})
+            </div>
+            <div className="mt-3 max-h-32 overflow-y-auto rounded-lg border border-slate-700/50 bg-surface-2/50 p-3">
+              <div className="flex flex-wrap gap-2">
+                {flightPlanConfirmation.affectedBags.map((idMaleta) => (
+                  <span
+                    key={idMaleta}
+                    className="inline-flex items-center gap-1 rounded-md border border-slate-600 bg-surface-1 px-2 py-1 text-xs font-medium text-slate-200"
+                  >
+                    <Luggage className="h-3 w-3 shrink-0 text-slate-400" />
+                    {idMaleta}
+                  </span>
+                ))}
+              </div>
+            </div>
+          </div>
+        )}
+
         <div className="flex flex-col-reverse gap-3 border-t border-slate-800 px-6 py-5 sm:flex-row sm:justify-end">
           <button
             type="button"
@@ -2844,7 +2858,7 @@ export default function RightPanel({
   );
 
   return (
-    <div className="w-[min(360px,90vw)] lg:w-100 shrink-0 bg-surface-1 border-slate-800 h-screen flex flex-col relative z-[9999]">
+    <div className="w-[min(360px,90vw)] lg:w-100 shrink-0 bg-surface-1 border-slate-800 h-full flex flex-col relative z-[9999]">
       <div className="flex items-center border-b border-slate-800">
         <button
           type="button"
@@ -2934,13 +2948,13 @@ export default function RightPanel({
           />
           <button
             type="button"
-            onClick={() => (activeTab === "orders" ? fetchEnvios() : activeSource?.refetch?.())}
-            disabled={activeTab === "orders" ? enviosStatus === "loading" : activeSource?.loading}
+            onClick={() => activeSource?.refetch?.()}
+            disabled={activeSource?.loading}
             aria-label="Refrescar"
             title="Refrescar"
             className="shrink-0 p-1.5 rounded-lg text-slate-400 hover:text-white hover:bg-surface-2 transition-colors disabled:opacity-50"
           >
-            <RefreshCw className={`w-4 h-4 ${(activeTab === "orders" ? enviosStatus === "loading" : activeSource?.loading) ? "animate-spin" : ""}`} />
+            <RefreshCw className={`w-4 h-4 ${activeSource?.loading ? "animate-spin" : ""}`} />
           </button>
         </div>
 

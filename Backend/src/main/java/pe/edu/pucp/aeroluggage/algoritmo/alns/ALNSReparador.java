@@ -63,9 +63,11 @@ final class ALNSReparador {
     static void repararGreedy(final ALNSEstado estado,
                               final List<Maleta> pendientes,
                               final ParametrosALNS parametros) {
+        final int total = pendientes.size();
         pendientes.sort(Comparator.comparingLong(
                 maleta -> ALNSUtil.tiempoRestanteMinutos(maleta, estado.getInstancia().getFechaEvaluacion())));
         int secuencia = estado.siguienteSecuenciaRuta();
+        int procesadas = 0;
         for (final Maleta maleta : pendientes) {
             final Ruta ruta = encontrarInsercionValida(estado, maleta, parametros);
             if (ruta != null) {
@@ -73,16 +75,18 @@ final class ALNSReparador {
                 estado.reemplazarRuta(ruta);
             }
             secuencia++;
+            procesadas++;
         }
-    }
-
-    static void repararRegret2(final ALNSEstado estado,
+    }    static void repararRegret2(final ALNSEstado estado,
                                final List<Maleta> pendientes,
                                final ParametrosALNS parametros,
                                final Random random) {
         final List<Maleta> restantes = new ArrayList<>(pendientes);
+        final int totalInicial = restantes.size();
         int secuencia = estado.siguienteSecuenciaRuta();
+        int iteracion = 0;
         while (!restantes.isEmpty()) {
+            iteracion++;
             Maleta mejorMaleta = null;
             Ruta mejorRuta = null;
             double mejorRegret = Double.NEGATIVE_INFINITY;
@@ -112,9 +116,7 @@ final class ALNSReparador {
             restantes.remove(mejorMaleta);
             secuencia++;
         }
-    }
-
-    static Ruta encontrarMejorInsercion(final ALNSEstado estado,
+    }    static Ruta encontrarMejorInsercion(final ALNSEstado estado,
                                         final Maleta maleta,
                                         final ParametrosALNS parametros) {
         final InstanciaProblema instancia = estado.getInstancia();

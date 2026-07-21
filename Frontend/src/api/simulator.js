@@ -48,6 +48,15 @@ export const obtenerBaseSimulacion = (sessionId) =>
 export const obtenerVentanaSimulacion = (sessionId, windowId) =>
   apiGet(`/simulacion/periodo/${sessionId}/ventana/${windowId}`);
 
+export const obtenerVentanasSimulacion = (sessionId, desde, hasta) =>
+  apiGet(`/simulacion/periodo/${sessionId}/ventanas?desde=${encodeURIComponent(desde)}&hasta=${encodeURIComponent(hasta)}`);
+
+export const obtenerEstadoActual = (sessionId) =>
+  apiGet(`/simulacion/periodo/${sessionId}/estado-actual`);
+
+export const obtenerMaletasAfectadasVueloProgramado = (sessionId, idVueloProgramado) =>
+  apiGet(`/simulacion/periodo/${sessionId}/vuelo-programado/${encodeURIComponent(idVueloProgramado)}/maletas-afectadas`);
+
 export const obtenerVuelosSimulacion = (sessionId, desde, hasta) =>
   apiGet(`/simulacion/periodo/${sessionId}/vuelos?desde=${desde}&hasta=${hasta}`);
 

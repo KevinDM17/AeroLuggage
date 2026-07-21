@@ -3,6 +3,7 @@ package pe.edu.pucp.aeroluggage.controller.ws;
 import java.util.List;
 
 import lombok.RequiredArgsConstructor;
+import lombok.extern.slf4j.Slf4j;
 import org.springframework.messaging.handler.annotation.MessageMapping;
 import org.springframework.messaging.simp.SimpMessageHeaderAccessor;
 import org.springframework.messaging.simp.SimpMessagingTemplate;
@@ -13,6 +14,7 @@ import pe.edu.pucp.aeroluggage.dto.simulacion.ws.SimulacionEstadoDTO;
 
 @Controller
 @RequiredArgsConstructor
+@Slf4j
 public class SimulacionPeriodoWsController {
 
     private final SimulacionSesionManager sesionManager;
@@ -72,8 +74,7 @@ public class SimulacionPeriodoWsController {
     }
 
     @MessageMapping("/simulacion/periodo/ventana-lista")
-    public void ventanaLista(final SimulacionComandoDTO comando, final SimpMessageHeaderAccessor accessor) {
-        final String wsSessionId = accessor.getSessionId();
+    public void ventanaLista(final SimulacionComandoDTO comando) {
         sesionManager.reconciliarEstado(comando.getSessionId(), broker);
     }
 }

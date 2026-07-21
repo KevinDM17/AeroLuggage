@@ -1,17 +1,18 @@
 import { useEffect, useRef, useState } from "react";
 
-export function useElapsedTimer(status, resetKey, intervalMs = 1000) {
-  const [elapsedMs, setElapsedMs] = useState(0);
-  const accumulatedMsRef = useRef(0);
+export function useElapsedTimer(status, resetKey, intervalMs = 1000, initialMsRef) {
+  const [elapsedMs, setElapsedMs] = useState(initialMsRef?.current ?? 0);
+  const accumulatedMsRef = useRef(initialMsRef?.current ?? 0);
   const runningSinceRef = useRef(null);
   const lastResetKeyRef = useRef(resetKey);
 
   useEffect(() => {
     if (lastResetKeyRef.current !== resetKey) {
-      accumulatedMsRef.current = 0;
+      const initial = initialMsRef?.current ?? 0;
+      accumulatedMsRef.current = initial;
       runningSinceRef.current = null;
       lastResetKeyRef.current = resetKey;
-      setElapsedMs(0);
+      setElapsedMs(initial);
     }
 
     if (status === "idle") {

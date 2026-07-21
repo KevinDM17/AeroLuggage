@@ -16,6 +16,7 @@ const EMPTY_SIMULATION_PANEL_DATA = {
   bags: new Map(),
   routes: new Map(),
   loaded: false,
+  derivedEnvios: { planificados: [], enVuelos: [], entregados: [] },
 };
 
 function getIsDesktop() {

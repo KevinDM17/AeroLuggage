@@ -10,10 +10,12 @@ import java.util.Map;
 import java.util.PriorityQueue;
 import java.util.Set;
 
+import lombok.extern.slf4j.Slf4j;
 import pe.edu.pucp.aeroluggage.dominio.entidades.Aeropuerto;
 import pe.edu.pucp.aeroluggage.dominio.entidades.VueloInstancia;
 import pe.edu.pucp.aeroluggage.dominio.enums.EstadoVuelo;
 
+@Slf4j
 public final class DijkstraRuteador {
 
     private DijkstraRuteador() {
@@ -58,6 +60,9 @@ public final class DijkstraRuteador {
             return null;
         }
 
+        log.debug("[Dijkstra/DIAG] RUTEAR_START: {} -> {}, tListo={}, tLimite={}",
+                icaoOrigen, icaoDestino, tListo, tLimite);
+
         final Map<String, LocalDateTime> mejorLlegada = new HashMap<>();
         final Map<String, String> predecesorIcao = new HashMap<>();
         final Map<String, VueloInstancia> vueloUsado = new HashMap<>();
@@ -76,7 +81,10 @@ public final class DijkstraRuteador {
                 continue;
             }
             if (actual.icao.equals(icaoDestino)) {
-                return reconstruirCamino(icaoDestino, icaoOrigen, predecesorIcao, vueloUsado);
+                final List<VueloInstancia> camino = reconstruirCamino(icaoDestino, icaoOrigen, predecesorIcao, vueloUsado);
+                log.debug("[Dijkstra/DIAG] RUTEAR_END: {} -> {}, encontrado={}, largo={}",
+                        icaoOrigen, icaoDestino, camino != null, camino != null ? camino.size() : 0);
+                return camino;
             }
             final LocalDateTime tDesde = actual.icao.equals(icaoOrigen)
                     ? actual.tiempoActual
@@ -98,6 +106,8 @@ public final class DijkstraRuteador {
                 frontera.add(new EstadoBusqueda(icaoSiguiente, llegada));
             }
         }
+        log.debug("[Dijkstra/DIAG] RUTEAR_END: {} -> {}, encontrado=false (sin ruta)",
+                icaoOrigen, icaoDestino);
         return null;
     }
 
@@ -113,8 +123,15 @@ public final class DijkstraRuteador {
             final Map<String, String> predecesorIcao,
             final Map<String, VueloInstancia> vueloUsado) {
         final LinkedList<VueloInstancia> camino = new LinkedList<>();
+        final int maxSteps = predecesorIcao.size() + 1;
+        int steps = 0;
         String actual = icaoDestino;
         while (actual != null && !actual.equals(icaoOrigen)) {
+            if (++steps > maxSteps) {
+                log.error("[Dijkstra/DIAG] CYCLE_DETECTED: origen={}, destino={}, pasos={}, maxSteps={}",
+                        icaoOrigen, icaoDestino, steps, maxSteps);
+                return null;
+            }
             final VueloInstancia vuelo = vueloUsado.get(actual);
             if (vuelo == null) {
                 return null;

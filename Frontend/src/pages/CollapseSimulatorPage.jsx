@@ -1,6 +1,6 @@
 import { useEffect, useMemo, useRef, useState } from "react";
 import { useOutletContext } from "react-router-dom";
-import { Clock, Play, SlidersHorizontal, Square, AlertTriangle, X } from "lucide-react";
+import { Clock, Play, SlidersHorizontal, Square, AlertTriangle, X, ChevronDown } from "lucide-react";
 import MapDashboard from "../components/simulator/MapDashboard";
 import { usePolling } from "../hooks/usePolling";
 import { useElapsedTimer } from "../hooks/useElapsedTimer";
@@ -19,11 +19,12 @@ import { adaptAirport } from "../api/airports";
 import { adaptFlightInstance } from "../api/flightInstances";
 import { USE_MOCK } from "../api/client";
 import { clearPerformanceTimeline } from "../utils/performanceCleanup";
+import { Virtuoso } from "react-virtuoso";
 import { formatElapsedHMS, formatUtcDateTimeDisplay } from "../utils/formatting";
 
 const ENUM_VUELO = ["PROGRAMADO", "CONFIRMADO", "EN_PROGRESO", "FINALIZADO", "CANCELADO"];
 const ENUM_MALETA = ["EN_ALMACEN", "EN_TRANSITO", "ENTREGADA", "REPLANIFICANDO", "POR_RECOGER"];
-const ENUM_RUTA = ["PLANIFICADA", "ACTIVA", "COMPLETADA", "REPLANIFICADA"];
+const ENUM_RUTA = ["PLANIFICADA", "ACTIVA", "COMPLETADA"];
 
 const METRICAS_COLAPSO = [
   { key: "aeropuertosColapsados", label: "Aeropuertos colapsados" },
@@ -120,22 +121,36 @@ const buildStablePlanningSnapshot = ({
     flightsCount: Array.isArray(flights) ? flights.length : 0,
     ordersCount: Array.isArray(orders) ? orders.length : 0,
     routesCount: Array.isArray(routes) ? routes.length : 0,
+    orders: orders ?? [],
   };
 };
 
 const updateEstadosOnly = (oldMap, stateMap, enumArr, statusField = "estado", extraFields) => {
-  if (Object.keys(stateMap).length === 0) return oldMap;
-  const updated = new Map(oldMap);
-  let changed = false;
-  for (const [id, entity] of updated) {
+  const stateKeys = Object.keys(stateMap);
+  if (stateKeys.length === 0) return oldMap;
+
+  let hasChanges = false;
+  for (const id of stateKeys) {
     const st = stateMap[id];
-    if (!st) continue;
+    const entity = oldMap.get(id);
+    if (!entity) continue;
+    if (entity[statusField] !== enumArr[st.e] || extraFields) {
+      hasChanges = true;
+      break;
+    }
+  }
+  if (!hasChanges) return oldMap;
+
+  const updated = new Map(oldMap);
+  for (const id of stateKeys) {
+    const st = stateMap[id];
+    const entity = updated.get(id);
+    if (!entity) continue;
     const newStatus = enumArr[st.e];
     if (entity[statusField] === newStatus && !extraFields) continue;
-    changed = true;
     updated.set(id, { ...entity, [statusField]: newStatus, ...(extraFields ? extraFields(st, entity) : {}) });
   }
-  return changed ? updated : oldMap;
+  return updated;
 };
 
 const normalizeFlightStatus = (status) =>
@@ -293,11 +308,13 @@ export default function CollapseSimulatorPage() {
 
     if (tick.type === "VENTANA_READY") {
       const windowId = tick.ventana;
-      if (ventanasCargadasRef.current.has(windowId)) return;
-      ventanasCargadasRef.current.add(windowId);
+      const isNewWindow = !ventanasCargadasRef.current.has(windowId);
+      if (isNewWindow) {
+        ventanasCargadasRef.current.add(windowId);
+      }
 
       (async () => {
-        const vuelosDataRaw = tick.vuelosVentana
+        const vuelosDataRaw = (isNewWindow && tick.vuelosVentana)
           ? await obtenerVuelosSimulacion(sessionId, tick.vuelosVentana, tick.vuelosVentana)
           : [];
         const ventanaData = await obtenerVentanaSimulacion(sessionId, windowId);
@@ -354,7 +371,13 @@ export default function CollapseSimulatorPage() {
             });
           }
           const routes = new Map(prev.routes);
+          const oldRouteByMaleta = new Map();
+          for (const [id, route] of routes) {
+            if (route.idMaleta) oldRouteByMaleta.set(route.idMaleta, id);
+          }
           for (const r of ventanaData.rutas ?? []) {
+            const oldId = r.idMaleta ? oldRouteByMaleta.get(r.idMaleta) : null;
+            if (oldId) routes.delete(oldId);
             routes.set(r.idRuta, { ...r, ticksAusente: 0 });
           }
           const orders = new Map(prev.orders);
@@ -389,28 +412,37 @@ export default function CollapseSimulatorPage() {
       prev.map((ap) => ({ ...ap, used: occMap[ap.iata] ?? ap.used })),
     );
 
-    let vueloStateMap = {};
     let maletaStateMap = {};
     let rutaStateMap = {};
 
-    if (Array.isArray(tick.estadosVuelos)) {
-      vueloStateMap = Object.fromEntries(tick.estadosVuelos.map((v) => [v.id, v]));
-    }
     if (Array.isArray(tick.estadosMaletas)) {
-      maletaStateMap = Object.fromEntries(tick.estadosMaletas.map((m) => [m.id, m]));
+      for (const m of tick.estadosMaletas) maletaStateMap[m.id] = m;
     }
     if (Array.isArray(tick.estadosRutas)) {
-      rutaStateMap = Object.fromEntries(tick.estadosRutas.map((r) => [r.id, r]));
+      for (const r of tick.estadosRutas) rutaStateMap[r.id] = r;
     }
 
     setSimulationPanelData((prev) => {
       const updatedFlights = new Map(prev.flights);
       const metadata = new Map(flightMetadataRef.current);
+      const vueloStateMap = {};
 
       for (const st of tick.estadosVuelos ?? []) {
+        vueloStateMap[st.id] = st;
+
         if (st.e === 3) {
           updatedFlights.delete(st.id);
           metadata.delete(st.id);
+        } else if ((st.e === 1 || st.e === 2 || st.e === 4) && !updatedFlights.has(st.id)) {
+          const meta = metadata.get(st.id);
+          if (meta) {
+            updatedFlights.set(st.id, {
+              ...meta,
+              status: ENUM_VUELO[st.e],
+              used: Math.max(0, meta.capacity - Number(st.cap ?? meta.capacity)),
+              ticksAusente: 0,
+            });
+          }
         }
       }
 
@@ -425,20 +457,6 @@ export default function CollapseSimulatorPage() {
         }
       }
 
-      for (const st of tick.estadosVuelos ?? []) {
-        if ((st.e === 1 || st.e === 2 || st.e === 4) && !updatedFlights.has(st.id)) {
-          const meta = metadata.get(st.id);
-          if (meta) {
-            updatedFlights.set(st.id, {
-              ...meta,
-              status: ENUM_VUELO[st.e],
-              used: Math.max(0, meta.capacity - Number(st.cap ?? meta.capacity)),
-              ticksAusente: 0,
-            });
-          }
-        }
-      }
-
       flightMetadataRef.current = metadata;
 
       const updatedBags = updateEstadosOnly(prev.bags, maletaStateMap, ENUM_MALETA, "estado",
@@ -450,7 +468,14 @@ export default function CollapseSimulatorPage() {
       const updatedRoutes = updateEstadosOnly(prev.routes, rutaStateMap, ENUM_RUTA, "estado");
 
       for (const [id, bag] of updatedBags) {
-        if (bag.estado === "ENTREGADA") updatedBags.delete(id);
+        if (bag.estado === "ENTREGADA") {
+          const simTimeMs = Date.parse(tick.simTime + "Z");
+          const llegadaMs = Date.parse((bag.fechaLlegada ?? tick.simTime) + "Z");
+          if (Number.isFinite(simTimeMs) && Number.isFinite(llegadaMs)
+              && simTimeMs - llegadaMs > 4 * 3600_000) {
+            updatedBags.delete(id);
+          }
+        }
       }
       for (const [id, route] of updatedRoutes) {
         if (route.estado === "COMPLETADA") updatedRoutes.delete(id);
@@ -615,34 +640,37 @@ export default function CollapseSimulatorPage() {
   const collapseStablePlanningSummary = useMemo(() => {
     if (!lastStablePlanning) return null;
 
-    return [
-      {
-        label: "Ventana estable",
-        value: lastStablePlanning.windowId ?? "-",
-      },
-      {
-        label: "Fecha simulada",
-        value: lastStablePlanning.dateLabel ?? "-",
-      },
-      {
-        label: "Hora simulada",
-        value: lastStablePlanning.timeLabel
-          ? `${lastStablePlanning.timeLabel} UTC`
-          : "-",
-      },
-      {
-        label: "Vuelos planificados",
-        value: formatSummaryValue(lastStablePlanning.flightsCount ?? 0),
-      },
-      {
-        label: "Pedidos considerados",
-        value: formatSummaryValue(lastStablePlanning.ordersCount ?? 0),
-      },
-      {
-        label: "Rutas generadas",
-        value: formatSummaryValue(lastStablePlanning.routesCount ?? 0),
-      },
-    ];
+    return {
+      cards: [
+        {
+          label: "Ventana estable",
+          value: lastStablePlanning.windowId ?? "-",
+        },
+        {
+          label: "Fecha simulada",
+          value: lastStablePlanning.dateLabel ?? "-",
+        },
+        {
+          label: "Hora simulada",
+          value: lastStablePlanning.timeLabel
+            ? `${lastStablePlanning.timeLabel} UTC`
+            : "-",
+        },
+        {
+          label: "Vuelos planificados",
+          value: formatSummaryValue(lastStablePlanning.flightsCount ?? 0),
+        },
+        {
+          label: "Pedidos considerados",
+          value: formatSummaryValue(lastStablePlanning.ordersCount ?? 0),
+        },
+        {
+          label: "Rutas generadas",
+          value: formatSummaryValue(lastStablePlanning.routesCount ?? 0),
+        },
+      ],
+      orders: lastStablePlanning.orders ?? [],
+    };
   }, [lastStablePlanning]);
 
   const formattedStartDate = useMemo(() => {
@@ -959,7 +987,7 @@ export default function CollapseSimulatorPage() {
                 Corresponde a la ultima planificacion que se completo correctamente antes de la que desencadeno el colapso.
               </p>
               <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-3">
-                {collapseStablePlanningSummary.map(({ label, value }) => (
+                {collapseStablePlanningSummary.cards.map(({ label, value }) => (
                   <div
                     key={label}
                     className="rounded-xl border border-slate-700 bg-slate-900/40 px-4 py-3"
@@ -971,6 +999,39 @@ export default function CollapseSimulatorPage() {
                   </div>
                 ))}
               </div>
+              {collapseStablePlanningSummary.orders.length > 0 ? (
+                <details className="group mt-3" open>
+                  <summary className="cursor-pointer list-none text-sm font-medium text-slate-300 hover:text-slate-200 mb-2 select-none">
+                    Pedidos de la ventana ({collapseStablePlanningSummary.orders.length})
+                    <ChevronDown className="inline ml-1.5 h-3.5 w-3.5 text-slate-500 transition-transform group-open:rotate-180" />
+                  </summary>
+                  <div className="rounded-xl border border-slate-700 bg-slate-900/40 overflow-hidden">
+                    <div className="grid grid-cols-[1fr_2fr_1fr_1.2fr] gap-2 px-4 py-2 text-[11px] font-semibold text-slate-400 uppercase tracking-wide border-b border-slate-700/70 bg-slate-900/60 sticky top-0 z-10">
+                      <span>Pedido</span>
+                      <span>Ruta</span>
+                      <span>Maletas</span>
+                      <span>Registro</span>
+                    </div>
+                    <Virtuoso
+                      style={{ height: 200 }}
+                      totalCount={collapseStablePlanningSummary.orders.length}
+                      computeItemKey={(i) => collapseStablePlanningSummary.orders[i]?.id ?? i}
+                      itemContent={(i) => {
+                        const o = collapseStablePlanningSummary.orders[i];
+                        const registro = o.date ? `${o.date} ${o.time || "--:--"}` : "-";
+                        return (
+                          <div className="grid grid-cols-[1fr_2fr_1fr_1.2fr] gap-2 px-4 py-2 text-xs text-slate-200 border-b border-slate-800/60 last:border-0 hover:bg-slate-800/30 transition-colors">
+                            <span className="font-medium truncate">{o.id}</span>
+                            <span className="truncate text-slate-300">{o.origin ?? "-"} {"→"} {o.dest ?? "-"}</span>
+                            <span className="tabular-nums">{o.bags ?? 0}</span>
+                            <span className="text-slate-400 tabular-nums">{registro}</span>
+                          </div>
+                        );
+                      }}
+                    />
+                  </div>
+                </details>
+              ) : null}
             </div>
           ) : null}
 

@@ -17,4 +17,6 @@ public class SimulacionBaseResponse {
     private long duracionDiaSimuladoMs;
     private String primeraVentana;
     private List<AeropuertoResponse> aeropuertos;
+    private long startedAtRealMs;
+    private String currentSimTime;
 }

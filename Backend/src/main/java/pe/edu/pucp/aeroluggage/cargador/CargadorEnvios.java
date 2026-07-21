@@ -146,8 +146,8 @@ public final class CargadorEnvios {
 
     public static LectorLotesEnvios crearLectorLotesEnvios(final Path carpetaEnvios,
                                                            final Map<String, Aeropuerto> aeropuertos,
-                                                           final LocalDate fechaInicio) {
-        return new LectorLotesEnvios(carpetaEnvios, aeropuertos, fechaInicio);
+                                                           final LocalDateTime fechaInicioUtc) {
+        return new LectorLotesEnvios(carpetaEnvios, aeropuertos, fechaInicioUtc);
     }
 
     private static List<Path> listarArchivosEnvio(final Path carpetaEnvios) {
@@ -178,21 +178,21 @@ public final class CargadorEnvios {
         private final Map<String, Aeropuerto> aeropuertos;
         private final PriorityQueue<RegistroEnvio> pendientes;
         private final ArrayList<FuenteEnvio> fuentes;
-        private final LocalDate fechaInicio;
+        private final LocalDateTime fechaInicioUtc;
 
         private LectorLotesEnvios(final Path carpetaEnvios, final Map<String, Aeropuerto> aeropuertos) {
             this(carpetaEnvios, aeropuertos, null);
         }
 
         private LectorLotesEnvios(final Path carpetaEnvios, final Map<String, Aeropuerto> aeropuertos,
-                                  final LocalDate fechaInicio) {
+                                  final LocalDateTime fechaInicioUtc) {
             this.aeropuertos = aeropuertos;
             this.pendientes = new PriorityQueue<>(
                     Comparator.comparing(RegistroEnvio::getFechaRegistro)
                             .thenComparing(RegistroEnvio::getIdPedido)
             );
             this.fuentes = new ArrayList<>();
-            this.fechaInicio = fechaInicio;
+            this.fechaInicioUtc = fechaInicioUtc;
             inicializarFuentes(carpetaEnvios);
         }
 
@@ -237,8 +237,8 @@ public final class CargadorEnvios {
                 final int husoGMT = aeropuerto != null ? aeropuerto.getHusoGMT() : 0;
                 final FuenteEnvio fuente = FuenteEnvio.abrir(archivo, husoGMT);
                 fuentes.add(fuente);
-                if (fechaInicio != null) {
-                    fuente.posicionarEnFecha(fechaInicio);
+                if (fechaInicioUtc != null) {
+                    fuente.posicionarEnFecha(fechaInicioUtc);
                 }
                 fuente.leerSiguiente(aeropuertos, pendientes);
             }
@@ -273,19 +273,18 @@ public final class CargadorEnvios {
             }
         }
 
-        void posicionarEnFecha(final LocalDate fechaInicio) {
-            if (fechaInicio == null) {
+        void posicionarEnFecha(final LocalDateTime fechaInicioUtc) {
+            if (fechaInicioUtc == null) {
                 return;
             }
             try {
-                final LocalDate localFechaInicio = fechaInicio.atStartOfDay()
-                        .plusHours(husoGMT).toLocalDate();
+                final LocalDate localFechaInicio = fechaInicioUtc.plusHours(husoGMT).toLocalDate();
                 final long posicion = buscarPrimeraPosicionDesdeFecha(localFechaInicio);
                 reader.seek(posicion);
             } catch (final IOException exception) {
                 throw new IllegalStateException(
                         "No se pudo posicionar el archivo de envios de " + codigoOrigen + " en la fecha "
-                                + fechaInicio,
+                                + fechaInicioUtc,
                         exception
                 );
             }

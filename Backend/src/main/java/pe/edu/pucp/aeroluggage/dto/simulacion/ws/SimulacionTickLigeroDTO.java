@@ -4,6 +4,7 @@ import lombok.Builder;
 import lombok.Getter;
 
 import java.util.List;
+import java.util.Map;
 
 @Getter
 @Builder(setterPrefix = "with")
@@ -24,5 +25,6 @@ public class SimulacionTickLigeroDTO {
     private List<EstadoRutaDTO> estadosRutas;
     private List<EstadoVueloDTO> estadosVuelos;
     private List<OcupacionAeropuertoDTO> aeropuertos;
-    private List<EventoOcupacionDTO> eventosOcupacion;
+    private Map<String, String> idsEntregadasEnTick;
+    private Map<String, String> idsCompletadasEnTick;
 }

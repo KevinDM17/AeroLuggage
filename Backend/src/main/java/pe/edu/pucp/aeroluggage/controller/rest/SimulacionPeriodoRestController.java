@@ -1,6 +1,7 @@
 package pe.edu.pucp.aeroluggage.controller.rest;
 
 import lombok.RequiredArgsConstructor;
+import lombok.extern.slf4j.Slf4j;
 import org.springframework.messaging.simp.SimpMessagingTemplate;
 import org.springframework.web.bind.annotation.GetMapping;
 import org.springframework.web.bind.annotation.PathVariable;
@@ -33,6 +34,7 @@ import pe.edu.pucp.aeroluggage.dominio.entidades.Pedido;
 import pe.edu.pucp.aeroluggage.dominio.entidades.Ruta;
 import pe.edu.pucp.aeroluggage.dominio.entidades.VueloInstancia;
 import pe.edu.pucp.aeroluggage.dominio.enums.EstadoMaleta;
+import pe.edu.pucp.aeroluggage.dominio.enums.EstadoRuta;
 import pe.edu.pucp.aeroluggage.dominio.enums.EstadoVuelo;
 import pe.edu.pucp.aeroluggage.servicios.query.SimulacionInicioQueryService;
 import pe.edu.pucp.aeroluggage.simulacion.SimulacionSesion;
@@ -57,6 +59,7 @@ import static org.springframework.http.HttpStatus.NOT_FOUND;
 @RestController
 @RequestMapping("/api/simulacion/periodo")
 @RequiredArgsConstructor
+@Slf4j
 public class SimulacionPeriodoRestController {
 
     private static final DateTimeFormatter FORMATO_FECHA_HORA = DateTimeFormatter.ISO_LOCAL_DATE_TIME;
@@ -105,6 +108,10 @@ public class SimulacionPeriodoRestController {
                 .withDuracionDiaSimuladoMs(sesion.getDuracionDiaSimuladoMs())
                 .withPrimeraVentana(primeraVentana)
                 .withAeropuertos(aeropuertos)
+                .withStartedAtRealMs(sesion.getStartedAtRealMs())
+                .withCurrentSimTime(sesion.getCurrentSimTimeUtc().get() != null
+                        ? sesion.getCurrentSimTimeUtc().get().format(DateTimeFormatter.ISO_LOCAL_DATE_TIME)
+                        : null)
                 .build();
     }
 
@@ -117,6 +124,73 @@ public class SimulacionPeriodoRestController {
             throw new ResponseStatusException(NOT_FOUND, "Sesion no encontrada: " + sessionId);
         }
         final var result = construirRespuestaVentana(sesion, windowId);
+        return result;
+    }
+
+    @GetMapping("/{sessionId}/ventanas")
+    public SimulacionVentanaDTO ventanas(
+            @PathVariable final String sessionId,
+            @RequestParam final String desde,
+            @RequestParam final String hasta) {
+        final var sesion = sesionManager.obtenerSesion(sessionId);
+        if (sesion == null) {
+            throw new ResponseStatusException(NOT_FOUND, "Sesion no encontrada: " + sessionId);
+        }
+        final int desdeIdx = (int) SimulacionSesion.parseBucket(desde);
+        final int hastaIdx = (int) SimulacionSesion.parseBucket(hasta);
+        final LinkedHashMap<String, MaletaSimulacionResponse> maletasMap = new LinkedHashMap<>();
+        final LinkedHashMap<String, PedidoSimulacionResponse> pedidosMap = new LinkedHashMap<>();
+        final LinkedHashMap<String, RutaSimulacionResponse> rutasMap = new LinkedHashMap<>();
+        for (int w = desdeIdx; w <= hastaIdx; w++) {
+            final String wid = "W" + String.format("%04d", w);
+            final SimulacionVentanaDTO v = construirRespuestaVentana(sesion, wid);
+            if (v != null) {
+                if (v.getMaletas() != null) {
+                    for (final MaletaSimulacionResponse m : v.getMaletas()) {
+                        if (m != null && m.getIdMaleta() != null) {
+                            maletasMap.putIfAbsent(m.getIdMaleta(), m);
+                        }
+                    }
+                }
+                if (v.getPedidos() != null) {
+                    for (final PedidoSimulacionResponse p : v.getPedidos()) {
+                        if (p != null && p.getId() != null) {
+                            pedidosMap.putIfAbsent(p.getId(), p);
+                        }
+                    }
+                }
+                if (v.getRutas() != null) {
+                    for (final RutaSimulacionResponse r : v.getRutas()) {
+                        if (r != null && r.getIdRuta() != null) {
+                            rutasMap.putIfAbsent(r.getIdRuta(), r);
+                        }
+                    }
+                }
+            }
+        }
+        return SimulacionVentanaDTO.builder()
+                .withType("VENTANA")
+                .withVentana(hasta)
+                .withMaletas(new ArrayList<>(maletasMap.values()))
+                .withPedidos(new ArrayList<>(pedidosMap.values()))
+                .withRutas(new ArrayList<>(rutasMap.values()))
+                .build();
+    }
+
+    @GetMapping("/{sessionId}/estado-actual")
+    public SimulacionVentanaDTO estadoActual(@PathVariable final String sessionId) {
+        final long t0 = System.currentTimeMillis();
+        final var sesion = sesionManager.obtenerSesion(sessionId);
+        if (sesion == null) {
+            throw new ResponseStatusException(NOT_FOUND, "Sesion no encontrada: " + sessionId);
+        }
+        final SimulacionVentanaDTO result = sesion.withEventosLiveReadLock(() -> construirEstadoActual(sesion));
+        final long elapsed = System.currentTimeMillis() - t0;
+        final int maletasCnt = result.getMaletas() != null ? result.getMaletas().size() : 0;
+        final int rutasCnt = result.getRutas() != null ? result.getRutas().size() : 0;
+        final int pedidosCnt = result.getPedidos() != null ? result.getPedidos().size() : 0;
+        log.info("[AeroLuggage/PERF] GET /estado-actual: {}ms, maletas={}, rutas={}, pedidos={}",
+                elapsed, maletasCnt, rutasCnt, pedidosCnt);
         return result;
     }
 
@@ -763,6 +837,7 @@ public class SimulacionPeriodoRestController {
         final var rutas = sesion.getRutas();
         for (final var r : rutas) {
             if (r == null || r.getIdMaleta() == null || !idMaletasVentana.contains(r.getIdMaleta())) continue;
+            if (r.getEstado() == EstadoRuta.REPLANIFICADA) continue;
             final List<String> ids = r.getSubrutas();
             final List<RutaVueloResponse> vuelosRuta = ids.stream()
                     .map(vueloIndex::get)
@@ -797,5 +872,126 @@ public class SimulacionPeriodoRestController {
                 .withPedidos(pedidosDTO)
                 .withRutas(rutasDTO)
                 .build();
+    }
+
+    private SimulacionVentanaDTO construirEstadoActual(final SimulacionSesion sesion) {
+        final List<MaletaSimulacionResponse> maletasDTO = new ArrayList<>();
+        final LinkedHashMap<String, PedidoSimulacionResponse> pedidosMap = new LinkedHashMap<>();
+        final List<RutaSimulacionResponse> rutasDTO = new ArrayList<>();
+
+        final Map<String, VueloInstancia> vueloIndex = sesion.getVueloIndex();
+
+        final Map<String, Ruta> rutasPorMaleta = new HashMap<>();
+        for (final Ruta r : sesion.getRutas()) {
+            if (r != null && r.getIdMaleta() != null) {
+                rutasPorMaleta.put(r.getIdMaleta(), r);
+            }
+        }
+
+        final Collection<Maleta> maletas = sesion.getMaletasCalientes();
+        for (final Maleta m : maletas) {
+            if (m == null) {
+                continue;
+            }
+            maletasDTO.add(MaletaSimulacionResponse.builder()
+                    .withIdMaleta(m.getIdMaleta())
+                    .withIdPedido(m.getPedido() != null ? m.getPedido().getIdPedido() : null)
+                    .withFechaRegistro(m.getFechaRegistro() != null
+                            ? m.getFechaRegistro().format(FORMATO_FECHA_HORA) : null)
+                    .withEstado(m.getEstado() != null ? m.getEstado().name() : null)
+                    .withUbicacionActual(m.getAeropuertoActual())
+                    .withHoraLlegadaEstimada(obtenerHoraLlegadaEstimada(m.getIdMaleta(), vueloIndex, rutasPorMaleta))
+                    .build());
+            if (m.getPedido() != null && !pedidosMap.containsKey(m.getPedido().getIdPedido())) {
+                final Pedido p = m.getPedido();
+                final String fecha = p.getFechaRegistro() != null ? p.getFechaRegistro().toString() : "";
+                final String date = fecha.length() >= 10 ? fecha.substring(0, 10) : "";
+                final String time = fecha.length() >= 16 ? fecha.substring(11, 16) : "";
+                pedidosMap.put(p.getIdPedido(), PedidoSimulacionResponse.builder()
+                        .withId(p.getIdPedido())
+                        .withClientId("")
+                        .withOrigin(p.getAeropuertoOrigen() != null
+                                ? p.getAeropuertoOrigen().getIdAeropuerto() : null)
+                        .withDest(p.getAeropuertoDestino() != null
+                                ? p.getAeropuertoDestino().getIdAeropuerto() : null)
+                        .withBags(p.getCantidadMaletas())
+                        .withDate(date)
+                        .withTime(time)
+                        .build());
+            }
+        }
+
+        final Collection<Ruta> rutas = sesion.getRutas();
+        for (final Ruta r : rutas) {
+            if (r == null || r.getIdMaleta() == null) {
+                continue;
+            }
+            if (r.getEstado() == EstadoRuta.REPLANIFICADA) {
+                continue;
+            }
+            final List<String> ids = r.getSubrutas();
+            final List<RutaVueloResponse> vuelosRuta = ids.stream()
+                    .map(vueloIndex::get)
+                    .filter(Objects::nonNull)
+                    .map(v -> RutaVueloResponse.builder()
+                            .withIdVueloInstancia(v.getIdVueloInstancia())
+                            .withCodigo(v.getCodigo())
+                            .withFechaSalida(v.getFechaSalida() != null
+                                    ? v.getFechaSalida().format(FORMATO_FECHA_HORA) : null)
+                            .withFechaLlegada(v.getFechaLlegada() != null
+                                    ? v.getFechaLlegada().format(FORMATO_FECHA_HORA) : null)
+                            .withAeropuertoOrigen(v.getAeropuertoOrigen() != null
+                                    ? v.getAeropuertoOrigen().getIdAeropuerto() : null)
+                            .withAeropuertoDestino(v.getAeropuertoDestino() != null
+                                    ? v.getAeropuertoDestino().getIdAeropuerto() : null)
+                            .build())
+                    .toList();
+            rutasDTO.add(RutaSimulacionResponse.builder()
+                    .withIdRuta(r.getIdRuta())
+                    .withIdMaleta(r.getIdMaleta())
+                    .withPlazoMaximoDias(r.getPlazoMaximoDias())
+                    .withDuracion(r.getDuracion())
+                    .withEstado(r.getEstado() != null ? r.getEstado().name() : null)
+                    .withVuelos(vuelosRuta)
+                    .build());
+        }
+
+        return SimulacionVentanaDTO.builder()
+                .withType("VENTANA")
+                .withVentana(sesion.getCurrentWindow() != null
+                        ? sesion.getCurrentWindow().get().getWindowId() : "W0001")
+                .withMaletas(maletasDTO)
+                .withPedidos(new ArrayList<>(pedidosMap.values()))
+                .withRutas(rutasDTO)
+                .build();
+    }
+
+    @GetMapping("/{sessionId}/vuelo-programado/{idVueloProgramado}/maletas-afectadas")
+    public List<String> maletasAfectadas(
+            @PathVariable final String sessionId,
+            @PathVariable final String idVueloProgramado) {
+        final var sesion = sesionManager.obtenerSesion(sessionId);
+        if (sesion == null) {
+            throw new ResponseStatusException(NOT_FOUND, "Sesion no encontrada: " + sessionId);
+        }
+        final LocalDateTime currentSimTime = sesion.getCurrentSimTimeUtc().get();
+        final Map<String, VueloInstancia> vueloIndex = sesion.getVueloIndex();
+        final Map<String, Maleta> maletasPorId = sesion.getMaletasPorId();
+        final List<String> idsMaletas = new ArrayList<>();
+        for (final Ruta r : sesion.getRutas()) {
+            if (r == null || r.getSubrutas() == null || r.getSubrutas().isEmpty()) continue;
+            final boolean afectada = r.getSubrutas().stream()
+                    .map(vueloIndex::get)
+                    .filter(Objects::nonNull)
+                    .filter(v -> v.getVueloProgramado() != null)
+                    .anyMatch(v -> idVueloProgramado.equals(v.getVueloProgramado().getIdVueloProgramado()));
+            if (!afectada) continue;
+            final Maleta m = maletasPorId.get(r.getIdMaleta());
+            if (m == null) continue;
+            if (currentSimTime != null && m.getFechaRegistro() != null
+                    && m.getFechaRegistro().isAfter(currentSimTime)) continue;
+            idsMaletas.add(r.getIdMaleta());
+        }
+        return idsMaletas;
     }
 }

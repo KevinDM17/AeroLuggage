@@ -45,7 +45,7 @@ public class ServicioCargaSimulacion {
         final List<VueloProgramado> vuelosProgramados = vueloProgramadoRepositorio.obtenerTodos();
 
         final LectorLotesEnvios lector = CargadorEnvios.crearLectorLotesEnvios(
-                enviosPath, indiceAeropuertos, sesion.getFechaInicio());
+                enviosPath, indiceAeropuertos, sesion.getFechaInicioUtc());
         final LocalDateTime finPrimeraVentana = sesion.getFechaInicioUtc()
                 .plusMinutes(sesion.getWindowSizeMinutes());
         final DatosEntrada primerLote = lector.siguienteLoteHasta(finPrimeraVentana);

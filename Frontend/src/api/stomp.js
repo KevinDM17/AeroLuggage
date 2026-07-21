@@ -25,8 +25,8 @@ export function getStompClient() {
   _client = new Client({
     webSocketFactory: () => new SockJS(WS_ENDPOINT),
     reconnectDelay: Number(import.meta.env.VITE_WS_RECONNECT_DELAY_MS) || 5000,
-    heartbeatIncoming: Number(import.meta.env.VITE_WS_HEARTBEAT_IN_MS) || 10000,
-    heartbeatOutgoing: Number(import.meta.env.VITE_WS_HEARTBEAT_OUT_MS) || 10000,
+    heartbeatIncoming: Number(import.meta.env.VITE_WS_HEARTBEAT_IN_MS) || 30000,
+    heartbeatOutgoing: Number(import.meta.env.VITE_WS_HEARTBEAT_OUT_MS) || 30000,
     debug: () => {},
     onConnect: () => {
       const wasReconnect = _connected;
@@ -37,8 +37,18 @@ export function getStompClient() {
       }
       notifyWaiters();
     },
-    onWebSocketClose: () => { _connected = false; },
-    onStompError: () => {},
+    onDisconnect: () => {
+      _connected = false;
+    },
+    onWebSocketClose: () => {
+      _connected = false;
+    },
+    onStompError: (frame) => {
+      console.error("[STOMP] Error de protocolo", {
+        command: frame?.command, headers: frame?.headers,
+        body: typeof frame?.body === "string" ? frame.body.slice(0, 300) : frame?.body,
+      });
+    },
   });
   _client.activate();
   return _client;

@@ -1,4 +1,5 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
+import { Luggage } from "lucide-react";
 import { Map as MapGL, Popup, useControl } from "react-map-gl/maplibre";
 import { MapboxOverlay } from "@deck.gl/mapbox";
 import { ScatterplotLayer, LineLayer, IconLayer, TextLayer, PathLayer } from "@deck.gl/layers";
@@ -152,7 +153,6 @@ function AirportMap({
   autoload = true,
   simulatedNowMs,
   simulatedDayDurationMs,
-  eventosOcupacion = [],
 }) {
   const initialViewState = {
     longitude: -40,
@@ -180,21 +180,48 @@ function AirportMap({
     return map;
   }, [airports]);
 
-  const indicadoresResueltos = useMemo(() => {
-    return (eventosOcupacion ?? [])
-      .map((ev) => {
-        const apt = airportsByIata.get(ev.aeropuerto);
-        if (!apt) return null;
-        return { ...ev, lng: apt.lng, lat: apt.lat };
-      })
-      .filter(Boolean);
-  }, [eventosOcupacion, airportsByIata]);
-
   const airportList = useMemo(() => Array.from(airportsByIata.values()), [airportsByIata]);
 
   /* Vinculacion panel <-> mapa. */
   const { mapHighlight, selected, mapFocus, mapDim, cancellationNotice, setSelected, setPanelFocus, flightManifestLoader } = useMapFocus();
   const mapRef = useRef(null);
+  const [zoom, setZoom] = useState(initialViewState.zoom);
+  const zoomBarRef = useRef(null);
+  const draggingRef = useRef(false);
+
+  const ZOOM_MIN = 1;
+  const ZOOM_MAX = 10;
+  const zoomPct = Math.round(((zoom - ZOOM_MIN) / (ZOOM_MAX - ZOOM_MIN)) * 100);
+
+  const applyZoomFromClientY = useCallback((clientY) => {
+    const bar = zoomBarRef.current;
+    if (!bar) return;
+    const rect = bar.getBoundingClientRect();
+    const ratio = 1 - Math.max(0, Math.min(1, (clientY - rect.top) / rect.height));
+    const newZoom = ZOOM_MIN + ratio * (ZOOM_MAX - ZOOM_MIN);
+    const map = mapRef.current?.getMap ? mapRef.current.getMap() : mapRef.current;
+    map?.easeTo({ zoom: newZoom, duration: 80 });
+  }, []);
+
+  useEffect(() => {
+    const onMove = (e) => {
+      if (!draggingRef.current) return;
+      e.preventDefault();
+      const clientY = e.touches ? e.touches[0].clientY : e.clientY;
+      applyZoomFromClientY(clientY);
+    };
+    const onUp = () => { draggingRef.current = false; };
+    window.addEventListener("mousemove", onMove);
+    window.addEventListener("mouseup", onUp);
+    window.addEventListener("touchmove", onMove, { passive: false });
+    window.addEventListener("touchend", onUp);
+    return () => {
+      window.removeEventListener("mousemove", onMove);
+      window.removeEventListener("mouseup", onUp);
+      window.removeEventListener("touchmove", onMove);
+      window.removeEventListener("touchend", onUp);
+    };
+  }, [applyZoomFromClientY]);
   const filteredViewportCoordsRef = useRef([]);
   const [cancellationPopup, setCancellationPopup] = useState(null);
   const [dismissedCancellationTs, setDismissedCancellationTs] = useState(null);
@@ -812,6 +839,7 @@ function AirportMap({
       <MapGL
         ref={mapRef}
         initialViewState={initialViewState}
+        onMove={(evt) => setZoom(evt.viewState.zoom)}
         mapStyle={MAP_STYLE}
         attributionControl={false}
         renderWorldCopies={false}
@@ -874,29 +902,6 @@ function AirportMap({
             </div>
           </Popup>
         )}
-        {indicadoresResueltos.map((ev) => (
-          <Popup
-            key={ev.id}
-            longitude={ev.lng}
-            latitude={ev.lat}
-            anchor="bottom"
-            offset={42}
-            closeButton={false}
-            closeOnClick={false}
-            className="ocupacion-indicator-popup"
-          >
-            <div
-              className={`ocupacion-indicator ${
-                ev.tipo === "APARECE" || ev.tipo === "LLEGA" ? "ocupacion-positivo" : "ocupacion-negativo"
-              }`}
-              title={`${ev.tipo}: ${ev.cantidad} maletas en ${ev.aeropuerto}${ev.vuelo ? ` (${ev.vuelo})` : ""}`}
-            >
-              {ev.tipo === "SALE" || ev.tipo === "LLEGA" ? "\u2708 " : ""}
-              {ev.tipo === "APARECE" || ev.tipo === "LLEGA" ? "+" : "-"}
-              {ev.cantidad}
-            </div>
-          </Popup>
-        ))}
         {activeFlight && activePlanePosition && (
           <Popup
             longitude={activePlanePosition.lng}
@@ -931,6 +936,46 @@ function AirportMap({
           </Popup>
         )}
       </MapGL>
+      <div className="absolute bottom-4 left-4 z-[3000] cursor-default select-none flex flex-col items-center gap-1.5">
+        <div className="text-[10px] font-semibold tabular-nums text-slate-400">
+          {zoomPct}%
+        </div>
+        <div
+          ref={zoomBarRef}
+          role="slider"
+          aria-valuemin={ZOOM_MIN}
+          aria-valuemax={ZOOM_MAX}
+          aria-valuenow={zoom}
+          aria-label="Zoom del mapa"
+          tabIndex={0}
+          className="relative w-8 h-28 flex items-center justify-center cursor-pointer"
+          onClick={(e) => applyZoomFromClientY(e.clientY)}
+        >
+          <div className="w-1 h-full rounded-full bg-slate-700/60 relative overflow-hidden">
+            <div
+              className="absolute bottom-0 left-0 right-0 rounded-full bg-sky-500/70"
+              style={{ height: `${Math.max(0, Math.min(100, zoomPct))}%` }}
+            />
+          </div>
+          <div
+            className="absolute left-1/2 w-3.5 h-3.5 rounded-full bg-slate-300 border-2 border-surface-1 shadow-md"
+            style={{
+              bottom: `${Math.max(0, Math.min(100, zoomPct))}%`,
+              transform: "translate(-50%, -50%)",
+            }}
+            onMouseDown={(e) => {
+              e.preventDefault();
+              e.stopPropagation();
+              draggingRef.current = true;
+            }}
+            onTouchStart={(e) => {
+              e.preventDefault();
+              e.stopPropagation();
+              draggingRef.current = true;
+            }}
+          />
+        </div>
+      </div>
     </div>
   );
 }

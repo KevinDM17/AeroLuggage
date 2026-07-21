@@ -23,12 +23,18 @@ final class ALNSInicializador {
         maletas.sort(ALNSUtil.comparadorUrgenciaInicial(instancia.getFechaEvaluacion()));
 
         for (final Maleta maleta : maletas) {
-            final var ruta = ALNSReparador.encontrarInsercionValida(estado, maleta, parametros);
+            var ruta = ALNSReparador.encontrarInsercionValida(estado, maleta, parametros);
+            if (ruta == null) {
+                ruta = ALNSReparador.encontrarInsercionForzada(estado, maleta, parametros);
+            }
             if (ruta != null) {
                 estado.reemplazarRuta(ruta);
             }
         }
-        return new ResultadoInicial(estado.getSolucionActual(), estado.getRazonesFallo());
+
+        final Map<String, String> razonesFallo = estado.getRazonesFallo();
+
+        return new ResultadoInicial(estado.getSolucionActual(), razonesFallo);
     }
 
     record ResultadoInicial(Solucion solucion, Map<String, String> razonesFallo) {

@@ -20,7 +20,7 @@ import { adaptAirport } from "../api/airports";
 import { adaptFlightInstance } from "../api/flightInstances";
 import { getMockOperacionesDiaADiaState } from "../api/mock";
 
-const ENUM_RUTA = ["PLANIFICADA", "ACTIVA", "COMPLETADA", "REPLANIFICADA"];
+const ENUM_RUTA = ["PLANIFICADA", "ACTIVA", "COMPLETADA"];
 
 const REFRESH_MS = 500;
 

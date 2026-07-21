@@ -87,7 +87,6 @@ public class SimulacionSesionManager {
     private final SimulacionPeriodoService periodoService;
     private final SimulacionBootstrapService bootstrapService;
     private final SimulacionSnapshotService snapshotService;
-    private final SimulacionSnap72hExportService snap72hExportService;
     private final SimulacionParams simulacionParams;
     private final pe.edu.pucp.aeroluggage.config.SistemaConfiguracion sistemaConfiguracion;
     private final ALNSConfig alnsConfig;
@@ -366,13 +365,10 @@ public class SimulacionSesionManager {
         try {
             final SimulacionTickLigeroDTO tick = periodoService.ejecutarTick(sesion);
 
-            final LocalDateTime simTime = sesion.getCurrentSimTimeUtc().get();
-            final LocalDateTime snapTime = sesion.getFechaInicioUtc().plusHours(48);
-            if (!simTime.isBefore(snapTime) && sesion.marcarSnapshot72hTomado()) {
-                snap72hExportService.generarSnapshot72h(sesion);
-            }
-
             broker.convertAndSend(TOPIC_TICKS + sesion.getSessionId(), tick);
+            if (tick.getTick() % 50 == 0) {
+                log.info("[AeroLuggage/Simulacion] TICK_SENT: sessionId={}, tick={}", sesion.getSessionId(), tick.getTick());
+            }
             if (emitirAlertasColapsoSiCorresponde(sesion, broker, Set.of())) {
                 detenerPorColapso(sesion);
                 return;
@@ -634,7 +630,7 @@ public class SimulacionSesionManager {
         } catch (final Exception exception) {
             log.error("[AeroLuggage/Planificador] - ERROR: sessionId={}, ventana={} (doble: {}-{}), error={}",
                     sesion.getSessionId(), segundaVentana, primeraVentana, segundaVentana,
-                    exception.getMessage());
+                    exception.getMessage(), exception);
         } finally {
             if (alns != null) {
                 alns.limpiarInstancia();
@@ -665,6 +661,7 @@ public class SimulacionSesionManager {
     public void reconciliarEstado(final String sessionId, final SimpMessagingTemplate broker) {
         final SimulacionSesion sesion = sesionesActivas.get(sessionId);
         if (sesion == null) {
+            log.warn("[AeroLuggage/PERF] reconciliarEstado: sesion no encontrada {}", sessionId);
             return;
         }
         final SimulacionTickLigeroDTO dto = sesion.withEventosLiveReadLock(() -> {
@@ -733,14 +730,29 @@ public class SimulacionSesionManager {
                             0,
                             0L
                     ));
+                    log.info("[AeroLuggage/DIAG] VENTANA_READY_SKIP: sessionId={}, windowId={}, razon=SIN_MALETAS, simTime={}, currentWindow={}",
+                            sesion.getSessionId(), windowId, sesion.getCurrentSimTimeUtc().get(),
+                            sesion.getCurrentWindow().get().getWindowId());
                     return;
                 }
 
+                log.info("[AeroLuggage/DIAG] ALNS_START: sessionId={}, windowId={}, maletasPendientes={}, vuelosFiltrados={}, simTime={}, planificando={}",
+                        sesion.getSessionId(), windowId, instancia.getMaletas().size(),
+                        instancia.getVueloInstancias().size(), sesion.getCurrentSimTimeUtc().get(),
+                        sesion.getPlanificando().get());
                 alns = new ALNS(alnsConfig.toParametrosALNS());
                 final InstanciaProblema copia = instancia.deepCopy();
                 alns.ejecutar(copia);
                 tiempoPlanMs = System.currentTimeMillis() - inicioPlan;
                 final Solucion solucion = alns.getMejorSolucion();
+
+                final int enrutadasCount = solucion != null && solucion.getSolucion() != null
+                        ? (int) solucion.getSolucion().stream().filter(Objects::nonNull).count() : 0;
+                final int sinRutaCount = Math.max(0, instancia.getMaletas().size() - enrutadasCount);
+                log.info("[AeroLuggage/DIAG] ALNS_END: sessionId={}, windowId={}, tiempoMs={}, iteraciones={}, evaluadas={}, enrutadas={}, sinRuta={}, planificando={}",
+                        sesion.getSessionId(), windowId, tiempoPlanMs, alns.getIteracionesEjecutadas(),
+                        instancia.getMaletas().size(), enrutadasCount, sinRutaCount,
+                        sesion.getPlanificando().get());
 
                 registrarFallosMaletas(sesion, copia, windowId, alns);
 
@@ -775,6 +787,9 @@ public class SimulacionSesionManager {
                             instancia.getMaletas().size(),
                             tiempoPlanMs
                     ));
+                    log.warn("[AeroLuggage/DIAG] VENTANA_READY_SKIP: sessionId={}, windowId={}, razon=SIN_SOLUCION, evaluadas={}, iteraciones={}, planificando={}",
+                            sesion.getSessionId(), windowId, instancia.getMaletas().size(),
+                            iteraciones, sesion.getPlanificando().get());
                     return;
                 }
 
@@ -1073,7 +1088,7 @@ public class SimulacionSesionManager {
             );
         } catch (final Exception exception) {
             log.error("[AeroLuggage/Planificador] - ERROR: sessionId={}, ventana={}, error={}",
-                    sesion.getSessionId(), windowId, exception.getMessage());
+                    sesion.getSessionId(), windowId, exception.getMessage(), exception);
         } finally {
             if (alns != null) {
                 alns.limpiarInstancia();
@@ -1412,23 +1427,20 @@ public class SimulacionSesionManager {
     }
 
     private void dispararReplan(final SimulacionSesion sesion,
-                                final SimpMessagingTemplate broker) {
+                                 final SimpMessagingTemplate broker) {
+        final int planificandoActual = sesion.getPlanificando().get();
+        log.info("[AeroLuggage/DIAG] REPLAN_TRIGGERED: sessionId={}, planificando={}",
+                sesion.getSessionId(), planificandoActual);
         if (!sesion.iniciarPlanificacion()) {
+            log.info("[AeroLuggage/DIAG] REPLAN_BLOCKED: sessionId={}, planificando={} (no se pudo iniciar planificacion)",
+                    sesion.getSessionId(), sesion.getPlanificando().get());
             return;
         }
         final SimulacionVentana ventana = sesion.getCurrentWindow().get();
         final String windowId = ventana != null ? ventana.getWindowId() : "W0001";
-        planningPool.submit(() -> {
-            try {
-                ejecutarPlanificacion(sesion, windowId, broker);
-            } finally {
-                sesion.finalizarPlanificacion();
-                if (sesion.hayReplanPendiente()) {
-                    sesion.limpiarReplanPendiente();
-                    dispararReplan(sesion, broker);
-                }
-            }
-        });
+        log.info("[AeroLuggage/DIAG] REPLAN_SUBMITTED: sessionId={}, windowId={}, planificando={}",
+                sesion.getSessionId(), windowId, sesion.getPlanificando().get());
+        planningPool.submit(() -> ejecutarPlanificacion(sesion, windowId, broker));
     }
 
     private static LocalDateTime calcularInicioVentana(final SimulacionSesion sesion, final String windowId) {
@@ -1478,8 +1490,10 @@ public class SimulacionSesionManager {
                                                     final LocalDateTime inicioVentana,
                                                     final LocalDateTime finVentana) {
         final long bucketActual = SimulacionSesion.parseBucket(windowId);
-        sesion.asegurarVuelosParaBanda(bucketActual, bucketActual + 24L);
         sesion.asegurarPedidosParaVentana(finVentana);
+        sesion.withEventosLiveWriteLock(() -> {
+            sesion.asegurarVuelosParaBanda(bucketActual, bucketActual + 24L);
+        });
 
         return sesion.withEventosLiveReadLock(() -> {
             final ArrayList<VueloInstancia> vuelosInstanciaCopia = sesion.getVuelosInstancia().stream()
@@ -1611,11 +1625,13 @@ public class SimulacionSesionManager {
 
     private PlanningSnapshot construirPlanningSnapshot(final SimulacionSesion sesion, final String windowId) {
         final long bucketActual = SimulacionSesion.parseBucket(windowId);
-        sesion.asegurarVuelosParaBanda(bucketActual, bucketActual + 24L);
 
         final LocalDateTime inicioVentana = calcularInicioVentana(sesion, windowId);
         final LocalDateTime finVentana = inicioVentana.plusMinutes(sesion.getWindowSizeMinutes());
         sesion.asegurarPedidosParaVentana(finVentana);
+        sesion.withEventosLiveWriteLock(() -> {
+            sesion.asegurarVuelosParaBanda(bucketActual, bucketActual + 24L);
+        });
 
         return sesion.withEventosLiveReadLock(() -> {
             final ArrayList<VueloInstancia> vuelosInstanciaCopia = sesion.getVuelosInstancia().stream()
@@ -1763,6 +1779,15 @@ public class SimulacionSesionManager {
                         && !v.getFechaSalida().isBefore(snapshot.inicioVentana())
                         && !v.getFechaSalida().isAfter(snapshot.finVentana().plusDays(2)))
                 .collect(Collectors.toCollection(ArrayList::new));
+
+        final int vuelosFuturo = (int) vuelosFiltrados.stream()
+                .filter(v -> v.getFechaSalida().isAfter(snapshot.inicioVentana()))
+                .count();
+        final LocalDateTime simTime = sesion.getCurrentSimTimeUtc().get();
+        log.info("[AeroLuggage/DIAG] GRAFO_DAY_CROSS: windowId={}, simTime={}, inicioVentana={}, "
+                        + "totalVuelosInstancia={}, vuelosFiltrados={}, vuelosEnFuturo={}",
+                snapshot.windowId(), simTime, snapshot.inicioVentana(),
+                snapshot.vuelosCopia().size(), vuelosFiltrados.size(), vuelosFuturo);
 
         final InstanciaProblema instancia = new InstanciaProblema(
                 "SIM-" + sesion.getSessionId() + "-" + snapshot.windowId(),
@@ -2053,6 +2078,7 @@ public class SimulacionSesionManager {
     private void cancelarTarea(final SimulacionSesion sesion) {
         final ScheduledFuture<?> tarea = sesion.getTareaScheduled();
         if (tarea != null && !tarea.isCancelled()) {
+            log.info("[AeroLuggage/Simulacion] LOOP_STOP: sessionId={}", sesion.getSessionId());
             tarea.cancel(true);
         }
         ((ScheduledThreadPoolExecutor) scheduler).purge();

@@ -9,7 +9,6 @@ import pe.edu.pucp.aeroluggage.dominio.enums.EstadoRuta;
 import pe.edu.pucp.aeroluggage.dto.simulacion.ws.EstadoMaletaDTO;
 import pe.edu.pucp.aeroluggage.dto.simulacion.ws.EstadoRutaDTO;
 import pe.edu.pucp.aeroluggage.dto.simulacion.ws.EstadoVueloDTO;
-import pe.edu.pucp.aeroluggage.dto.simulacion.ws.EventoOcupacionDTO;
 import pe.edu.pucp.aeroluggage.dto.simulacion.ws.SimulacionTickLigeroDTO;
 
 import java.time.Duration;
@@ -44,11 +43,18 @@ public class SimulacionPeriodoService {
             if (ventanaCambio) {
                 sesion.podarEventosPasados(simTimeUtc.minusMinutes(
                         sesion.getWindowSpacingMinutes() * simulacionParams.getRetencionVentanas()));
+                if (ventanaAnterior != null) {
+                    final long bucketAnterior = SimulacionSesion.parseBucket(ventanaAnterior.getWindowId());
+                    final long bucketNuevo = SimulacionSesion.parseBucket(ventana.getWindowId());
+                    final long saltadas = bucketNuevo - bucketAnterior - 1L;
+                    if (saltadas > 0L) {
+                        log.warn("[AeroLuggage/DIAG] WINDOW_SKIP: sessionId={}, {} -> {} ({} ventanas saltadas), simTime={}, tick={}, planificando={}",
+                                sesion.getSessionId(), ventanaAnterior.getWindowId(), ventana.getWindowId(),
+                                saltadas, simTimeUtc, tick, sesion.getPlanificando().get());
+                    }
+                }
             }
             snapshotService.recalcularEstadoSesion(sesion);
-
-            final List<EventoOcupacionDTO> eventosCrudos = sesion.consumirEventosOcupacion();
-            final List<EventoOcupacionDTO> eventosAgrupados = agruparEventosOcupacion(eventosCrudos);
 
             final SimulacionSesion.TickSnapshot snap = sesion.consolidar(simTimeUtc);
 
@@ -95,7 +101,8 @@ public class SimulacionPeriodoService {
                     .withEstadosRutas(estadosRutas)
                     .withEstadosVuelos(snap.estadosVuelos())
                     .withAeropuertos(snap.aeropuertos())
-                    .withEventosOcupacion(eventosAgrupados)
+                    .withIdsEntregadasEnTick(idsEntregadas)
+                    .withIdsCompletadasEnTick(idsCompletadas)
                     .build();
 
             /*
@@ -124,24 +131,4 @@ public class SimulacionPeriodoService {
         });
     }
 
-    private List<EventoOcupacionDTO> agruparEventosOcupacion(final List<EventoOcupacionDTO> crudos) {
-        if (crudos == null || crudos.isEmpty()) return List.of();
-        final Map<String, EventoOcupacionDTO> agrupados = new HashMap<>();
-        for (final EventoOcupacionDTO e : crudos) {
-            final String clave = e.getTipo() + "|" + e.getAeropuerto() + "|"
-                    + (e.getVuelo() != null ? e.getVuelo() : "");
-            final EventoOcupacionDTO existente = agrupados.get(clave);
-            if (existente != null) {
-                agrupados.put(clave, EventoOcupacionDTO.builder()
-                        .withTipo(e.getTipo())
-                        .withCantidad(existente.getCantidad() + e.getCantidad())
-                        .withAeropuerto(e.getAeropuerto())
-                        .withVuelo(e.getVuelo())
-                        .build());
-            } else {
-                agrupados.put(clave, e);
-            }
-        }
-        return new ArrayList<>(agrupados.values());
-    }
-}
+  }

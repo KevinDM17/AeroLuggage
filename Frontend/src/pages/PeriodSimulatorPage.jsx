@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useRef, useState } from "react";
+import { startTransition, useEffect, useMemo, useRef, useState } from "react";
 import { useOutletContext } from "react-router-dom";
 import { Clock, Play, SlidersHorizontal, Square, RotateCw, AlertTriangle, X, CheckCircle2, ChevronDown, Users, Calendar, ClockIcon, Calendar1Icon } from "lucide-react";
 import MapDashboard from "../components/simulator/MapDashboard";
@@ -12,6 +12,7 @@ import {
   iniciarSimulacionPeriodo,
   obtenerBaseSimulacion,
   obtenerVentanaSimulacion,
+  obtenerEstadoActual,
   obtenerVuelosSimulacion,
   listarSesionesActivas,
   stopPeriodSim,
@@ -21,6 +22,7 @@ import { adaptAirport } from "../api/airports";
 import { adaptFlightInstance } from "../api/flightInstances";
 import { USE_MOCK } from "../api/client";
 import { clearPerformanceTimeline } from "../utils/performanceCleanup";
+import { Virtuoso } from "react-virtuoso";
 import {
   formatDateTimeDisplay,
   formatElapsedHMS,
@@ -148,6 +150,7 @@ const buildStablePlanningSnapshot = ({
     flightsCount: Array.isArray(flights) ? flights.length : 0,
     ordersCount: Array.isArray(orders) ? orders.length : 0,
     routesCount: Array.isArray(routes) ? routes.length : 0,
+    orders: orders ?? [],
   };
 };
 
@@ -202,16 +205,6 @@ export default function PeriodSimulatorPage() {
   const [runId, setRunId] = useState(0);
   const [lastMockState, setLastMockState] = useState(null);
   const [mapAirports, setMapAirports] = useState([]);
-  const [eventosOcupacion, setEventosOcupacion] = useState([]);
-
-  useEffect(() => {
-    if (eventosOcupacion.length === 0) return;
-    const timer = setInterval(() => {
-      const cutoff = Date.now() - 3500;
-      setEventosOcupacion((prev) => prev.filter((e) => e.ts > cutoff));
-    }, 1000);
-    return () => clearInterval(timer);
-  }, [eventosOcupacion.length > 0]);
   // mapFlights se maneja dentro de simulationPanelData.flights
   const [showRouteLines, setShowRouteLines] = useState(true);
   const hasActiveRun =
@@ -262,6 +255,7 @@ export default function PeriodSimulatorPage() {
   const [activeSessions, setActiveSessions] = useState([]);
   const [dropdownOpen, setDropdownOpen] = useState(false);
   const startSimMsRef = useRef(null);
+  const initialElapsedRef = useRef(0);
   const ventanasCargadasRef = useRef(new Set());
   const lastMapFlightsRef = useRef([]);
   const flightMetadataRef = useRef(new Map());
@@ -271,6 +265,10 @@ export default function PeriodSimulatorPage() {
   const tickReceivedRef = useRef(false);
   const pendienteIniciarTickRef = useRef(null);
   const planCompletionTimeoutRef = useRef(null);
+  const lastTickCommitRef = useRef(0);
+  const lastTickTimeRef = useRef(Date.now());
+  const skippedConsecutiveRef = useRef(0);
+  const entregadasRecientesRef = useRef(new Map());
 
   const clearSimulationData = () => {
     ventanasCargadasRef.current.clear();
@@ -288,6 +286,7 @@ export default function PeriodSimulatorPage() {
       bags: new Map(),
       routes: new Map(),
       loaded: false,
+      derivedEnvios: { planificados: [], enVuelos: [], entregados: [] },
     });
     startSimMsRef.current = null;
     clearPerformanceTimeline();
@@ -301,18 +300,31 @@ export default function PeriodSimulatorPage() {
     );
 
   const updateEstadosOnly = (oldMap, stateMap, enumArr, statusField = "estado", extraFields) => {
-    if (Object.keys(stateMap).length === 0) return oldMap;
-    const updated = new Map(oldMap);
-    let changed = false;
-    for (const [id, entity] of updated) {
+    const stateKeys = Object.keys(stateMap);
+    if (stateKeys.length === 0) return oldMap;
+
+    let hasChanges = false;
+    for (const id of stateKeys) {
       const st = stateMap[id];
-      if (!st) continue;
+      const entity = oldMap.get(id);
+      if (!entity) continue;
+      if (entity[statusField] !== enumArr[st.e] || extraFields) {
+        hasChanges = true;
+        break;
+      }
+    }
+    if (!hasChanges) return oldMap;
+
+    const updated = new Map(oldMap);
+    for (const id of stateKeys) {
+      const st = stateMap[id];
+      const entity = updated.get(id);
+      if (!entity) continue;
       const newStatus = enumArr[st.e];
       if (entity[statusField] === newStatus && !extraFields) continue;
-      changed = true;
       updated.set(id, { ...entity, [statusField]: newStatus, ...(extraFields ? extraFields(st, entity) : {}) });
     }
-    return changed ? updated : oldMap;
+    return updated;
   };
 
   const normalizeFlightStatus = (status) =>
@@ -344,6 +356,13 @@ export default function PeriodSimulatorPage() {
     };
   }, []);
 
+  useEffect(() => {
+    const id = setInterval(() => {
+      const elapsed = Date.now() - lastTickTimeRef.current;
+    }, 2000);
+    return () => clearInterval(id);
+  }, []);
+
   const tickTopic =
     !USE_MOCK && sessionId ? `/topic/simulacion/${sessionId}` : null;
   const statusTopic =
@@ -354,8 +373,9 @@ export default function PeriodSimulatorPage() {
 
   useEffect(() => {
     if (!connected || !sessionId) return;
+    if (simStatus !== "joining") return;
     publish("/app/simulacion/periodo/ventana-lista", { sessionId });
-  }, [connected, sessionId, publish]);
+  }, [connected, sessionId, publish, simStatus]);
 
   const { data: mockState } = usePolling(getPeriodSimState, {
     enabled: USE_MOCK && simStatus === "running",
@@ -366,6 +386,7 @@ export default function PeriodSimulatorPage() {
     simStatus,
     runId,
     CLOCK_REFRESH_MS,
+    initialElapsedRef,
   );
   useDefensivePerformanceCleanup(simStatus === "running");
 
@@ -443,6 +464,61 @@ export default function PeriodSimulatorPage() {
     );
   }, [executionElapsedMs, mockState, lastMockState, simulatedDayDurationMs]);
 
+  function computeDerivedEnvios(bagsMap, ordersMap, simTimeStr) {
+    const planificados = [];
+    const enVuelos = [];
+    const entregados = [];
+    const simTimeMs = simTimeStr ? Date.parse(simTimeStr + "Z") : null;
+
+    const pedidoBags = new Map();
+    for (const bag of bagsMap.values()) {
+      const pid = bag.idPedido;
+      if (!pid || !ordersMap.has(pid)) continue;
+      if (!pedidoBags.has(pid)) pedidoBags.set(pid, []);
+      pedidoBags.get(pid).push(bag);
+    }
+
+    for (const [pid, bagList] of pedidoBags) {
+      const order = ordersMap.get(pid);
+      if (!order) continue;
+      const allDelivered = bagList.every(b => b.estado === "ENTREGADA");
+      const hasInTransit = bagList.some(b => b.estado === "EN_TRANSITO");
+
+      const base = {
+        id: pid,
+        origin: order.origin,
+        dest: order.dest,
+        bags: bagList.length,
+        fechaRegistro: order.fechaRegistro ??
+          (order.date ? `${order.date}T${order.time || "00:00"}:00` : undefined),
+        uts: order.uts ?? [],
+        origenesRuta: order.origenesRuta ?? [],
+        destinosRuta: order.destinosRuta ?? [],
+      };
+
+      if (allDelivered) {
+        const latest = bagList.reduce((max, b) => {
+          if (b.fechaLlegada && (!max || b.fechaLlegada > max)) return b.fechaLlegada;
+          return max;
+        }, null);
+        if (latest && Number.isFinite(simTimeMs)) {
+          const dMs = Date.parse(latest + "Z");
+          if (Number.isFinite(dMs) && simTimeMs - dMs <= 4 * 3600_000) {
+            entregados.push({ ...base, horaEntrega: latest });
+          }
+        }
+        continue;
+      }
+
+      if (hasInTransit) {
+        enVuelos.push(base);
+      } else {
+        planificados.push(base);
+      }
+    }
+    return { planificados, enVuelos, entregados };
+  }
+
   useEffect(() => {
     if (simStatus === "idle") return;
     if (!tick?.type) return;
@@ -454,10 +530,13 @@ export default function PeriodSimulatorPage() {
 
     if (tick.type === "VENTANA_READY") {
       const windowId = tick.ventana;
-      if (ventanasCargadasRef.current.has(windowId)) return;
-      ventanasCargadasRef.current.add(windowId);
+      const isNewWindow = !ventanasCargadasRef.current.has(windowId);
+      if (isNewWindow) {
+        ventanasCargadasRef.current.add(windowId);
+      }
       (async () => {
-        const vuelosDataRaw = tick.vuelosVentana
+        try {
+          const vuelosDataRaw = (isNewWindow && tick.vuelosVentana)
           ? await obtenerVuelosSimulacion(sessionId, tick.vuelosVentana, tick.vuelosVentana)
           : [];
         const [ventanaData] = await Promise.all([
@@ -481,7 +560,8 @@ export default function PeriodSimulatorPage() {
             routes: ventanaData.rutas ?? [],
           }),
         );
-        setSimulationPanelData((prev) => {
+        startTransition(() =>
+          setSimulationPanelData((prev) => {
           const flights = new Map(prev.flights);
           for (const f of adaptedFlights) {
             const isActive = f.status === "EN_PROGRESO" || f.status === "CONFIRMADO";
@@ -514,18 +594,38 @@ export default function PeriodSimulatorPage() {
             });
           }
           const routes = new Map(prev.routes);
+          const oldRouteByMaleta = new Map();
+          for (const [id, route] of routes) {
+            if (route.idMaleta) oldRouteByMaleta.set(route.idMaleta, id);
+          }
           for (const r of ventanaData.rutas ?? []) {
+            const oldId = r.idMaleta ? oldRouteByMaleta.get(r.idMaleta) : null;
+            if (oldId) routes.delete(oldId);
             routes.set(r.idRuta, { ...r, ticksAusente: 0 });
           }
           const orders = new Map(prev.orders);
           for (const o of ventanaData.pedidos ?? []) {
             orders.set(o.id ?? o.idPedido, o);
           }
-          return { ...prev, flights, bags, routes, orders };
-        });
-      })()
-        .then(() => publish("/app/simulacion/periodo/ventana-lista", { sessionId }));
+          return { ...prev, flights, bags, routes, orders, derivedEnvios: computeDerivedEnvios(bags, orders, tick.simTime) };
+        }));
+        } catch (e) {
+          ventanasCargadasRef.current.delete(windowId);
+          console.error("[TICK] Error procesando VENTANA_READY " + windowId, e);
+        }
+      })();
       return;
+    }
+
+    if (tick.type === "TICK") {
+      const now = performance.now();
+      if (now - lastTickCommitRef.current < 200) {
+        skippedConsecutiveRef.current++;
+        return;
+      }
+      skippedConsecutiveRef.current = 0;
+      lastTickCommitRef.current = now;
+      lastTickTimeRef.current = Date.now();
     }
 
     const esReconciliacion = tick.type === "RECONCILIAR";
@@ -546,7 +646,7 @@ export default function PeriodSimulatorPage() {
           try {
             const [vuelosDataLocal, ventanaDataLocal] = await Promise.all([
               obtenerVuelosSimulacion(sessionId, desdeWid, tick.ventanaActual),
-              obtenerVentanaSimulacion(sessionId, tick.ventanaActual),
+              obtenerEstadoActual(sessionId),
             ]);
             const adapted = (vuelosDataLocal ?? []).map(adaptFlightInstance);
             const metadata = new Map(flightMetadataRef.current);
@@ -554,6 +654,7 @@ export default function PeriodSimulatorPage() {
               metadata.set(f.idVueloInstancia ?? f.id, { ...f, ticksAusente: 0 });
             }
             flightMetadataRef.current = metadata;
+          startTransition(() =>
             setSimulationPanelData((prev) => {
               const flights = new Map(prev.flights);
               const bags = new Map(prev.bags);
@@ -574,13 +675,15 @@ export default function PeriodSimulatorPage() {
               for (const o of ventanaDataLocal.pedidos ?? []) {
                 orders.set(o.id ?? o.idPedido, o);
               }
-              return { ...prev, flights, bags, routes, orders };
-            });
+              return { ...prev, flights, bags, routes, orders, derivedEnvios: computeDerivedEnvios(bags, orders, tick.simTime) };
+            }));
           } catch (e) {
             cargadas.delete(tick.ventanaActual);
+            console.error("[TICK] Error en RECONCILIAR " + tick.ventanaActual, e);
           }
-        })();
+          })();
       }
+      setSimStatus((current) => current === "joining" ? "running" : current);
     }
 
     if (esTick && startSimMsRef.current == null) {
@@ -589,7 +692,7 @@ export default function PeriodSimulatorPage() {
     }
 
     if (esTick) {
-      setCurrentSimTimeUtc(tick.simTime);
+      startTransition(() => setCurrentSimTimeUtc(tick.simTime));
     }
 
     const occMap = {};
@@ -597,24 +700,11 @@ export default function PeriodSimulatorPage() {
       for (const a of tick.aeropuertos) occMap[a.id] = a.occ;
     }
 
-    setMapAirports((prev) =>
-      prev.map((ap) => ({ ...ap, used: occMap[ap.iata] ?? ap.used })),
+    startTransition(() =>
+      setMapAirports((prev) =>
+        prev.map((ap) => ({ ...ap, used: occMap[ap.iata] ?? ap.used })),
+      ),
     );
-
-    const ts = Date.now();
-    if (Array.isArray(tick.eventosOcupacion) && tick.eventosOcupacion.length > 0) {
-      setEventosOcupacion((prev) => [
-        ...prev,
-        ...tick.eventosOcupacion.map((e) => ({
-          id: `${ts}-${Math.random().toString(36).slice(2, 8)}`,
-          tipo: e.tipo,
-          cantidad: e.cantidad || 1,
-          aeropuerto: e.aeropuerto,
-          vuelo: e.vuelo || null,
-          ts,
-        })),
-      ]);
-    }
 
     let vueloStateMap = {};
     let maletaStateMap = {};
@@ -650,7 +740,8 @@ export default function PeriodSimulatorPage() {
       // ignore
     }
 
-    setSimulationPanelData((prev) => {
+    startTransition(() =>
+      setSimulationPanelData((prev) => {
       const updatedFlights = new Map(prev.flights);
       const metadata = new Map(flightMetadataRef.current);
 
@@ -705,18 +796,49 @@ export default function PeriodSimulatorPage() {
 
       const updatedRoutes = updateEstadosOnly(prev.routes, rutaStateMap, ENUM_RUTA, "estado");
 
-      for (const [id, bag] of updatedBags) {
-        if (bag.estado === "ENTREGADA") updatedBags.delete(id);
+      if (tick.idsEntregadasEnTick) {
+        const simTimeMs = Date.parse(tick.simTime + "Z");
+        for (const id of Object.keys(tick.idsEntregadasEnTick)) {
+          const bag = updatedBags.get(id);
+          if (bag?.fechaLlegada) {
+            entregadasRecientesRef.current.set(id, bag.fechaLlegada);
+          }
+        }
       }
-      for (const [id, route] of updatedRoutes) {
-        if (route.estado === "COMPLETADA") updatedRoutes.delete(id);
+      const simTimeMs = Date.parse(tick.simTime + "Z");
+      for (const [id, fechaLlegada] of entregadasRecientesRef.current) {
+        const bag = updatedBags.get(id);
+        if (!bag || bag.estado !== "ENTREGADA") {
+          entregadasRecientesRef.current.delete(id);
+          continue;
+        }
+        const dMs = Date.parse(fechaLlegada + "Z");
+        if (Number.isFinite(simTimeMs) && Number.isFinite(dMs)
+            && simTimeMs - dMs > 4 * 3600_000) {
+          updatedBags.delete(id);
+          entregadasRecientesRef.current.delete(id);
+        }
+      }
+
+      if (tick.idsCompletadasEnTick) {
+        for (const id of Object.keys(tick.idsCompletadasEnTick)) {
+          updatedRoutes.delete(id);
+        }
+      } else {
+        for (const [id, route] of updatedRoutes) {
+          if (route.estado === "COMPLETADA") updatedRoutes.delete(id);
+        }
       }
       for (const [id, order] of prev.orders) {
         const s = String(order.status ?? "").toUpperCase();
-        if (s === "ENTREGADO" || s === "FINALIZADO" || s === "ENVIADO") {
+        if (s === "FINALIZADO" || s === "ENVIADO") {
           prev.orders.delete(id);
         }
       }
+
+      const derivedEnvios = updatedBags !== prev.bags
+        ? computeDerivedEnvios(updatedBags, prev.orders, tick.simTime)
+        : prev.derivedEnvios ?? computeDerivedEnvios(updatedBags, prev.orders, tick.simTime);
 
       return {
         ...prev,
@@ -726,8 +848,9 @@ export default function PeriodSimulatorPage() {
         bags: updatedBags,
         routes: updatedRoutes,
         orders: prev.orders,
+        derivedEnvios,
       };
-    });
+    }));
 
     return;
   }, [tick]);
@@ -895,34 +1018,37 @@ export default function PeriodSimulatorPage() {
   const collapseStablePlanningSummary = useMemo(() => {
     if (!lastStablePlanning) return null;
 
-    return [
-      {
-        label: "Ventana estable",
-        value: lastStablePlanning.windowId ?? "-",
-      },
-      {
-        label: "Fecha simulada",
-        value: lastStablePlanning.dateLabel ?? "-",
-      },
-      {
-        label: "Hora simulada",
-        value: lastStablePlanning.timeLabel
-          ? lastStablePlanning.timeLabel
-          : "-",
-      },
-      {
-        label: "Vuelos planificados",
-        value: formatSummaryValue(lastStablePlanning.flightsCount ?? 0),
-      },
-      {
-        label: "Pedidos considerados",
-        value: formatSummaryValue(lastStablePlanning.ordersCount ?? 0),
-      },
-      {
-        label: "Rutas generadas",
-        value: formatSummaryValue(lastStablePlanning.routesCount ?? 0),
-      },
-    ];
+    return {
+      cards: [
+        {
+          label: "Ventana estable",
+          value: lastStablePlanning.windowId ?? "-",
+        },
+        {
+          label: "Fecha simulada",
+          value: lastStablePlanning.dateLabel ?? "-",
+        },
+        {
+          label: "Hora simulada",
+          value: lastStablePlanning.timeLabel
+            ? lastStablePlanning.timeLabel
+            : "-",
+        },
+        {
+          label: "Vuelos planificados",
+          value: formatSummaryValue(lastStablePlanning.flightsCount ?? 0),
+        },
+        {
+          label: "Pedidos considerados",
+          value: formatSummaryValue(lastStablePlanning.ordersCount ?? 0),
+        },
+        {
+          label: "Rutas generadas",
+          value: formatSummaryValue(lastStablePlanning.routesCount ?? 0),
+        },
+      ],
+      orders: lastStablePlanning.orders ?? [],
+    };
   }, [lastStablePlanning]);
 
   const finalSummaryMetrics = useMemo(
@@ -1124,7 +1250,7 @@ export default function PeriodSimulatorPage() {
   const handleJoin = async (joinedSessionId) => {
     setShowSessionsModal(false);
     try {
-      setSimStatus("starting");
+      setSimStatus("joining");
       setSessionId(joinedSessionId);
       const base = await obtenerBaseSimulacion(joinedSessionId);
       const adaptedAirports = Array.isArray(base.aeropuertos)
@@ -1134,6 +1260,17 @@ export default function PeriodSimulatorPage() {
       setSimulatedDayDurationMs(base.duracionDiaSimuladoMs);
       setWindowSizeMinutes(base.windowSizeMinutes);
       setWindowSpacingMinutes(base.windowSpacingMinutes);
+      const initialElapsedMs = base.startedAtRealMs
+        ? Math.max(0, Date.now() - base.startedAtRealMs)
+        : 0;
+      initialElapsedRef.current = initialElapsedMs;
+      if (base.startedAtRealMs && base.currentSimTime) {
+        const currentSimEpoch = Date.parse(`${base.currentSimTime}Z`);
+        if (Number.isFinite(currentSimEpoch)) {
+          const ratio = 86400000 / base.duracionDiaSimuladoMs;
+          startSimMsRef.current = currentSimEpoch - initialElapsedMs * ratio;
+        }
+      }
       const primeraVentana = base.primeraVentana ?? "W0001";
       primeraVentanaRef.current = primeraVentana;
       ventanasCargadasRef.current.clear();
@@ -1141,10 +1278,7 @@ export default function PeriodSimulatorPage() {
       setCancelledFlightIds(new Set());
       setLastMockState(null);
       setRunId((current) => current + 1);
-      startSimMsRef.current = null;
       tickReceivedRef.current = true;
-      ventanasCargadasRef.current.add(primeraVentana);
-      setSimStatus("running");
       setSimulationPanelData((prev) => ({
         ...prev,
         airports: adaptedAirports,
@@ -1332,16 +1466,16 @@ export default function PeriodSimulatorPage() {
     </div>
   );
 
-  const loadingModal = simStatus === "starting" ? (
+  const loadingModal = simStatus === "starting" || simStatus === "joining" ? (
     <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/55 backdrop-blur-[2px]">
       <div className="bg-surface-2 border border-slate-700 shadow-[0_12px_35px_rgba(0,0,0,0.45)] rounded-xl px-8 py-6 flex flex-col items-center gap-4 max-w-sm mx-4">
         <div className="w-10 h-10 border-4 border-blue-500/30 border-t-blue-500 rounded-full animate-spin" />
         <div className="text-center">
           <div className="text-lg font-semibold text-slate-100">
-            Preparando simulación…
+            {simStatus === "joining" ? "Cargando datos de la sesión…" : "Preparando simulación…"}
           </div>
           <div className="text-sm text-slate-400 mt-1">
-            Planificando rutas iniciales, esto puede tomar unos segundos
+            {simStatus === "joining" ? "Recuperando información de la simulación activa" : "Planificando rutas iniciales, esto puede tomar unos segundos"}
           </div>
         </div>
       </div>
@@ -1491,7 +1625,7 @@ export default function PeriodSimulatorPage() {
                 Se muestra como referencia el ultimo cierre operativo consistente antes de finalizar la simulacion.
               </p>
               <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-3">
-                {collapseStablePlanningSummary.map(({ label, value }) => (
+                {collapseStablePlanningSummary.cards.map(({ label, value }) => (
                   <div
                     key={label}
                     className="rounded-xl border border-slate-700 bg-slate-900/40 px-4 py-3"
@@ -1503,6 +1637,39 @@ export default function PeriodSimulatorPage() {
                   </div>
                 ))}
               </div>
+              {collapseStablePlanningSummary.orders.length > 0 ? (
+                <details className="group mt-3" open>
+                  <summary className="cursor-pointer list-none text-sm font-medium text-slate-300 hover:text-slate-200 mb-2 select-none">
+                    Pedidos de la ventana ({collapseStablePlanningSummary.orders.length})
+                    <ChevronDown className="inline ml-1.5 h-3.5 w-3.5 text-slate-500 transition-transform group-open:rotate-180" />
+                  </summary>
+                  <div className="rounded-xl border border-slate-700 bg-slate-900/40 overflow-hidden">
+                    <div className="grid grid-cols-[1fr_2fr_1fr_1.2fr] gap-2 px-4 py-2 text-[11px] font-semibold text-slate-400 uppercase tracking-wide border-b border-slate-700/70 bg-slate-900/60 sticky top-0 z-10">
+                      <span>Pedido</span>
+                      <span>Ruta</span>
+                      <span>Maletas</span>
+                      <span>Registro</span>
+                    </div>
+                    <Virtuoso
+                      style={{ height: 200 }}
+                      totalCount={collapseStablePlanningSummary.orders.length}
+                      computeItemKey={(i) => collapseStablePlanningSummary.orders[i]?.id ?? i}
+                      itemContent={(i) => {
+                        const o = collapseStablePlanningSummary.orders[i];
+                        const registro = o.date ? `${o.date} ${o.time || "--:--"}` : "-";
+                        return (
+                          <div className="grid grid-cols-[1fr_2fr_1fr_1.2fr] gap-2 px-4 py-2 text-xs text-slate-200 border-b border-slate-800/60 last:border-0 hover:bg-slate-800/30 transition-colors">
+                            <span className="font-medium truncate">{o.id}</span>
+                            <span className="truncate text-slate-300">{o.origin ?? "-"} {"→"} {o.dest ?? "-"}</span>
+                            <span className="tabular-nums">{o.bags ?? 0}</span>
+                            <span className="text-slate-400 tabular-nums">{registro}</span>
+                          </div>
+                        );
+                      }}
+                    />
+                  </div>
+                </details>
+              ) : null}
             </div>
           ) : null}
 
@@ -1607,7 +1774,7 @@ export default function PeriodSimulatorPage() {
                 Corresponde a la ultima planificacion que se completo correctamente antes de la que desencadeno el colapso.
               </p>
               <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-3">
-                {collapseStablePlanningSummary.map(({ label, value }) => (
+                {collapseStablePlanningSummary.cards.map(({ label, value }) => (
                   <div
                     key={label}
                     className="rounded-xl border border-slate-700 bg-slate-900/40 px-4 py-3"
@@ -1619,6 +1786,39 @@ export default function PeriodSimulatorPage() {
                   </div>
                 ))}
               </div>
+              {collapseStablePlanningSummary.orders.length > 0 ? (
+                <details className="group mt-3" open>
+                  <summary className="cursor-pointer list-none text-sm font-medium text-slate-300 hover:text-slate-200 mb-2 select-none">
+                    Pedidos de la ventana ({collapseStablePlanningSummary.orders.length})
+                    <ChevronDown className="inline ml-1.5 h-3.5 w-3.5 text-slate-500 transition-transform group-open:rotate-180" />
+                  </summary>
+                  <div className="rounded-xl border border-slate-700 bg-slate-900/40 overflow-hidden">
+                    <div className="grid grid-cols-[1fr_2fr_1fr_1.2fr] gap-2 px-4 py-2 text-[11px] font-semibold text-slate-400 uppercase tracking-wide border-b border-slate-700/70 bg-slate-900/60 sticky top-0 z-10">
+                      <span>Pedido</span>
+                      <span>Ruta</span>
+                      <span>Maletas</span>
+                      <span>Registro</span>
+                    </div>
+                    <Virtuoso
+                      style={{ height: 200 }}
+                      totalCount={collapseStablePlanningSummary.orders.length}
+                      computeItemKey={(i) => collapseStablePlanningSummary.orders[i]?.id ?? i}
+                      itemContent={(i) => {
+                        const o = collapseStablePlanningSummary.orders[i];
+                        const registro = o.date ? `${o.date} ${o.time || "--:--"}` : "-";
+                        return (
+                          <div className="grid grid-cols-[1fr_2fr_1fr_1.2fr] gap-2 px-4 py-2 text-xs text-slate-200 border-b border-slate-800/60 last:border-0 hover:bg-slate-800/30 transition-colors">
+                            <span className="font-medium truncate">{o.id}</span>
+                            <span className="truncate text-slate-300">{o.origin ?? "-"} {"→"} {o.dest ?? "-"}</span>
+                            <span className="tabular-nums">{o.bags ?? 0}</span>
+                            <span className="text-slate-400 tabular-nums">{registro}</span>
+                          </div>
+                        );
+                      }}
+                    />
+                  </div>
+                </details>
+              ) : null}
             </div>
           ) : null}
 
@@ -1753,7 +1953,6 @@ export default function PeriodSimulatorPage() {
       progress={progress}
       simStatus={simStatus}
       draggable={hasActiveRun}
-      eventosOcupacion={eventosOcupacion}
     />
     </>
   );
