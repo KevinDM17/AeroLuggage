@@ -59,6 +59,28 @@ function getUpdatedFlightOccupancy(st, flight) {
   return Math.max(0, flight.capacity - Number(st.cap));
 }
 
+function routeAirportsByBag(routes) {
+  const bagOrigen = new Map();
+  const bagDestino = new Map();
+  for (const r of routes ?? []) {
+    const first = r?.vuelos?.[0];
+    const last = r?.vuelos?.[r.vuelos.length - 1];
+    if (r?.idMaleta) {
+      if (first?.aeropuertoOrigen) bagOrigen.set(r.idMaleta, first.aeropuertoOrigen);
+      if (last?.aeropuertoDestino) bagDestino.set(r.idMaleta, last.aeropuertoDestino);
+    }
+  }
+  return { bagOrigen, bagDestino };
+}
+
+function routesSnapshotMap(routes) {
+  const map = new Map();
+  for (const r of routes ?? []) {
+    if (r?.idRuta) map.set(r.idRuta, { ...r, ticksAusente: 0 });
+  }
+  return map;
+}
+
 export function useOperationsSession({ enabled, setSimulationPanelData, resetSimulationPanelData, toast }) {
   const [sessionId, setSessionId] = useState(null);
   const [simStatus, setSimStatus] = useState("idle");
@@ -151,19 +173,9 @@ export function useOperationsSession({ enabled, setSimulationPanelData, resetSim
           obtenerMaletasOperacionesDiaADia().catch(() => []),
         ]);
 
-        const bagOrigen = new Map();
-        const bagDestino = new Map();
-        for (const r of rutasData) {
-          const first = r?.vuelos?.[0];
-          const last = r?.vuelos?.[r.vuelos.length - 1];
-          if (r.idMaleta) {
-            if (first?.aeropuertoOrigen) bagOrigen.set(r.idMaleta, first.aeropuertoOrigen);
-            if (last?.aeropuertoDestino) bagDestino.set(r.idMaleta, last.aeropuertoDestino);
-          }
-        }
+        const { bagOrigen, bagDestino } = routeAirportsByBag(rutasData);
 
-        const routes = new Map();
-        for (const r of rutasData) routes.set(r.idRuta, { ...r, ticksAusente: 0 });
+        const routes = routesSnapshotMap(rutasData);
         const bags = new Map();
         for (const m of maletasData) bags.set(m.idMaleta, {
           ...m,
@@ -389,11 +401,21 @@ export function useOperationsSession({ enabled, setSimulationPanelData, resetSim
         const updatedOrders = new Map(prev.orders);
         for (const o of (pedidosData ?? [])) updatedOrders.set(o.id ?? o.idPedido, o);
 
-        const updatedBags = new Map(prev.bags);
-        for (const m of (maletasData ?? [])) updatedBags.set(m.idMaleta, m);
+        const { bagOrigen, bagDestino } = routeAirportsByBag(rutasData);
 
-        const updatedRoutes = new Map(prev.routes);
-        for (const r of (rutasData ?? [])) updatedRoutes.set(r.idRuta, r);
+        const updatedBags = new Map(prev.bags);
+        for (const m of (maletasData ?? [])) {
+          const existing = updatedBags.get(m.idMaleta);
+          updatedBags.set(m.idMaleta, {
+            ...existing,
+            ...m,
+            origen: bagOrigen.get(m.idMaleta) ?? null,
+            destino: bagDestino.get(m.idMaleta) ?? null,
+            ticksAusente: 0,
+          });
+        }
+
+        const updatedRoutes = routesSnapshotMap(rutasData);
 
         return { ...prev, orders: updatedOrders, bags: updatedBags, routes: updatedRoutes };
       });

@@ -353,8 +353,9 @@ const OrderItem = memo(function OrderItem({ order }) {
   );
 });
 
-const RouteItem = memo(function RouteItem({ route, onShowRoute, cityByIata, continentByIata }) {
+const RouteItem = memo(function RouteItem({ route, onShowRoute, onExpandRoute, cityByIata, continentByIata }) {
   const [expanded, setExpanded] = useState(false);
+  const [refreshStatus, setRefreshStatus] = useState("idle");
   const vuelos = route.vuelos ?? [];
   const stops = useMemo(() => {
     if (vuelos.length === 0) return [];
@@ -373,8 +374,21 @@ const RouteItem = memo(function RouteItem({ route, onShowRoute, cityByIata, cont
     return out;
   }, [vuelos]);
 
+  const toggleExpanded = useCallback(() => {
+    setExpanded((current) => {
+      const next = !current;
+      if (next && onExpandRoute && route.idMaleta) {
+        setRefreshStatus("loading");
+        Promise.resolve(onExpandRoute(route.idMaleta))
+          .then(() => setRefreshStatus("ready"))
+          .catch(() => setRefreshStatus("error"));
+      }
+      return next;
+    });
+  }, [onExpandRoute, route.idMaleta]);
+
   return (
-    <div className="mb-2 flex h-full cursor-pointer flex-col rounded-xl border border-slate-800/70 bg-surface-1/65 px-3 py-3 mr-3 transition-all duration-200 hover:border-slate-700 hover:bg-surface-2/55" onClick={() => setExpanded(!expanded)}>
+    <div className="mb-2 flex h-full cursor-pointer flex-col rounded-xl border border-slate-800/70 bg-surface-1/65 px-3 py-3 mr-3 transition-all duration-200 hover:border-slate-700 hover:bg-surface-2/55" onClick={toggleExpanded}>
       <div className="flex flex-col justify-between items-start mb-2 gap-4">
         <div>
           <h4 className="font-bold text-lg text-slate-200 flex items-center gap-1.5"><Route className="w-4 h-4 shrink-0" />{route.idRuta}</h4>
@@ -384,7 +398,7 @@ const RouteItem = memo(function RouteItem({ route, onShowRoute, cityByIata, cont
           {onShowRoute && (
             <button
               type="button"
-              onClick={(ev) => { ev.stopPropagation(); onShowRoute(route.idMaleta); }}
+              onClick={(ev) => { ev.stopPropagation(); onShowRoute(route.idMaleta, route); }}
               className="inline-flex items-center gap-1 rounded-md border border-info/40 bg-info/10 px-2 py-0.5 text-[10px] font-bold uppercase tracking-wide text-info transition-colors hover:bg-info/20"
             >
               <Route className="h-3 w-3" /> Ver en mapa
@@ -397,6 +411,12 @@ const RouteItem = memo(function RouteItem({ route, onShowRoute, cityByIata, cont
       </div>
       {expanded && (
         <div className="flex flex-col mt-2 cursor-default gap-2 border-t border-t-slate-800/70 pt-3" onClick={(e) => e.stopPropagation()}>
+          {refreshStatus === "loading" && (
+            <div className="text-[11px] text-slate-500">Actualizando ruta...</div>
+          )}
+          {refreshStatus === "error" && (
+            <div className="text-[11px] text-danger">No se pudo actualizar la ruta.</div>
+          )}
           <div className="rounded-lg border border-slate-800 bg-surface-2/40 px-3 pb-3 space-y-2">
             <div className="flex flex-col mt-4 mb-2">
               {stops.map((stop, j) => {
@@ -576,6 +596,57 @@ const toEscala = (v) => ({
   salida: v?.fechaSalida,
   llegada: v?.fechaLlegada,
 });
+
+function routeAirportsByBag(routes) {
+  const bagOrigen = new Map();
+  const bagDestino = new Map();
+  for (const r of routes ?? []) {
+    const first = r?.vuelos?.[0];
+    const last = r?.vuelos?.[r.vuelos.length - 1];
+    if (r?.idMaleta) {
+      if (first?.aeropuertoOrigen) bagOrigen.set(r.idMaleta, first.aeropuertoOrigen);
+      if (last?.aeropuertoDestino) bagDestino.set(r.idMaleta, last.aeropuertoDestino);
+    }
+  }
+  return { bagOrigen, bagDestino };
+}
+
+function routesSnapshotMap(routes) {
+  const map = new Map();
+  for (const r of routes ?? []) {
+    if (r?.idRuta) map.set(r.idRuta, { ...r, ticksAusente: 0 });
+  }
+  return map;
+}
+
+function bagsSnapshotMap(previousBags, bagsData, routesData, ordersData) {
+  const bags = new Map(previousBags ?? new Map());
+  const { bagOrigen, bagDestino } = routeAirportsByBag(routesData);
+  const orders = new Map();
+  for (const p of ordersData ?? []) orders.set(p.id ?? p.idPedido, p);
+  for (const m of bagsData ?? []) {
+    const existing = bags.get(m.idMaleta);
+    const pedido = orders.get(m.idPedido);
+    bags.set(m.idMaleta, {
+      ...existing,
+      ...m,
+      origen: bagOrigen.get(m.idMaleta) ?? pedido?.origin ?? existing?.origen ?? null,
+      destino: bagDestino.get(m.idMaleta) ?? pedido?.dest ?? existing?.destino ?? null,
+      ticksAusente: 0,
+    });
+  }
+  return bags;
+}
+
+function replaceRouteForBag(previousRoutes, route) {
+  const routes = new Map(previousRoutes ?? new Map());
+  if (!route?.idMaleta || !route?.idRuta) return routes;
+  for (const [id, current] of routes) {
+    if (current?.idMaleta === route.idMaleta) routes.delete(id);
+  }
+  routes.set(route.idRuta, { ...route, ticksAusente: 0 });
+  return routes;
+}
 
 /* El backend devuelve UNA ruta por maleta. Aqui agrupamos por itinerario
  * (secuencia de codigos de vuelo) para obtener, por cada ruta distinta:
@@ -1681,14 +1752,21 @@ export default function RightPanel({
             const cancelados = (snap?.vuelosInstancia ?? [])
               .map(adaptFlightInstance)
               .filter((f) => normalizeFlightStatus(f.status) === "CANCELADO");
-            if (cancelados.length === 0) return;
             setSimulationPanelData?.((prev) => {
               const flights = new Map(prev?.flights ?? new Map());
               for (const f of cancelados) {
                 const id = f.idVueloInstancia ?? f.id;
                 flights.set(id, { ...flights.get(id), ...f, ticksAusente: 0 });
               }
-              return { ...prev, flights };
+              const routes = Array.isArray(snap?.rutas)
+                ? routesSnapshotMap(snap.rutas)
+                : prev?.routes;
+              const bags = Array.isArray(snap?.maletas)
+                ? bagsSnapshotMap(prev?.bags, snap.maletas, snap?.rutas ?? [], snap?.pedidos ?? [])
+                : prev?.bags;
+              const orders = new Map(prev?.orders ?? new Map());
+              for (const o of snap?.pedidos ?? []) orders.set(o.id ?? o.idPedido, o);
+              return { ...prev, flights, routes, bags, orders };
             });
           })
           .catch(() => {});
@@ -1923,28 +2001,8 @@ export default function RightPanel({
           obtenerVuelosOperacionesDiaADia().catch(() => []),
         ]);
         setSimulationPanelData?.((previous) => {
-          const bagOrigen = new Map();
-          const bagDestino = new Map();
-          for (const r of rutasData) {
-            const first = r?.vuelos?.[0];
-            const last = r?.vuelos?.[r.vuelos.length - 1];
-            if (r.idMaleta) {
-              if (first?.aeropuertoOrigen) bagOrigen.set(r.idMaleta, first.aeropuertoOrigen);
-              if (last?.aeropuertoDestino) bagDestino.set(r.idMaleta, last.aeropuertoDestino);
-            }
-          }
-          const routes = new Map();
-          for (const r of rutasData) routes.set(r.idRuta, { ...r, ticksAusente: 0 });
-          const bags = new Map(previous?.bags ?? new Map());
-          for (const m of maletasData) {
-            const existing = bags.get(m.idMaleta);
-            bags.set(m.idMaleta, {
-              ...m,
-              origen: bagOrigen.get(m.idMaleta) ?? existing?.origen ?? null,
-              destino: bagDestino.get(m.idMaleta) ?? existing?.destino ?? null,
-              ticksAusente: 0,
-            });
-          }
+          const routes = routesSnapshotMap(rutasData);
+          const bags = bagsSnapshotMap(previous?.bags, maletasData, rutasData);
           // Mezclar la lista de vuelos re-obtenida (ya incluye CANCELADO) para que
           // el vuelo cancelado aparezca de inmediato sin esperar un tick ni recargar.
           const flights = new Map(previous?.flights ?? new Map());
@@ -2300,14 +2358,41 @@ export default function RightPanel({
     [sessionId]
   );
 
+  const loadRouteForPanel = useCallback(
+    async (idMaleta) => {
+      if (!idMaleta || !sessionId || USE_MOCK) return null;
+      const ruta = isOperacionesDiaADia
+        ? await obtenerRutaMaletaOperacionesDiaADia(idMaleta)
+        : await obtenerRutaMaleta(sessionId, idMaleta);
+      const escalas = (ruta?.vuelos ?? []).map(toEscala);
+      if (escalas.length === 0) {
+        throw new Error(`La maleta ${idMaleta} no tiene ruta asignada.`);
+      }
+      setSimulationPanelData?.((prev) => {
+        const routes = replaceRouteForBag(prev?.routes, ruta);
+        const bags = new Map(prev?.bags ?? new Map());
+        const bag = bags.get(idMaleta);
+        if (bag) {
+          bags.set(idMaleta, {
+            ...bag,
+            origen: escalas[0]?.origen ?? bag.origen ?? null,
+            destino: escalas[escalas.length - 1]?.destino ?? bag.destino ?? null,
+            horaLlegadaEstimada: escalas[escalas.length - 1]?.llegada ?? bag.horaLlegadaEstimada,
+          });
+        }
+        return { ...prev, routes, bags };
+      });
+      return ruta;
+    },
+    [sessionId, isOperacionesDiaADia, setSimulationPanelData]
+  );
+
   // Resalta en el mapa la ruta de una maleta por su ID (req 1/2).
   const showMaletaRoute = useCallback(
-    async (idMaleta) => {
+    async (idMaleta, currentRoute = null) => {
       if (!idMaleta || !sessionId || USE_MOCK) return;
       try {
-        const ruta = isOperacionesDiaADia
-          ? await obtenerRutaMaletaOperacionesDiaADia(idMaleta)
-          : await obtenerRutaMaleta(sessionId, idMaleta);
+        const ruta = currentRoute ?? await loadRouteForPanel(idMaleta);
         const escalas = (ruta?.vuelos ?? []).map(toEscala);
         if (escalas.length === 0) {
           toast.push({ type: "warning", title: "Sin ruta", message: `La maleta ${idMaleta} no tiene ruta asignada.` });
@@ -2331,7 +2416,7 @@ export default function RightPanel({
         toast.push({ type: "error", title: "No se pudo cargar la ruta", message: err.message });
       }
     },
-    [sessionId, isOperacionesDiaADia, setMapHighlight, setMapFocus, centroideDe, toast]
+    [sessionId, loadRouteForPanel, setMapHighlight, setMapFocus, centroideDe, toast]
   );
 
   // Resalta en el mapa las rutas de un envio por su ID (req 3/4).
@@ -2657,7 +2742,16 @@ export default function RightPanel({
         empty="Ejecuta la simulacion para cargar las rutas de la ventana activa."
         rows={rutasFiltered}
         keyForRow={(r, index) => r.idRuta ?? r.id ?? index}
-        renderItem={(r, index) => <RouteItem key={r.idRuta ?? r.id ?? index} route={r} onShowRoute={showMaletaRoute} cityByIata={cityByIata} continentByIata={continentByIata} />}
+        renderItem={(r, index) => (
+          <RouteItem
+            key={r.idRuta ?? r.id ?? index}
+            route={r}
+            onShowRoute={showMaletaRoute}
+            onExpandRoute={loadRouteForPanel}
+            cityByIata={cityByIata}
+            continentByIata={continentByIata}
+          />
+        )}
       />
     ),
     bags: (
