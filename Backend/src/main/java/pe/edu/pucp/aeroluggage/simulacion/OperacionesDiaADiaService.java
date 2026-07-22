@@ -122,6 +122,7 @@ public class OperacionesDiaADiaService {
     private LocalDateTime ultimoTiempoProcesado;
     private final AtomicInteger tickActual = new AtomicInteger(0);
     private final AtomicLong stateVersion = new AtomicLong(1);
+    private final AtomicLong secuencialVueloGlobal = new AtomicLong(0);
     private volatile boolean ticksActivos;
     private volatile boolean autoIniciado;
 
@@ -211,6 +212,7 @@ public class OperacionesDiaADiaService {
 
             final LocalDate hoy = LocalDate.now(ZoneOffset.UTC);
             ultimoDiaGenerado = hoy;
+            secuencialVueloGlobal.set(vueloInstanciaRepositorio.obtenerUltimoSecuencialGlobal() + 1L);
             for (int i = 0; i <= 2; i++) {
                 generarVuelosParaFecha(hoy.plusDays(i));
             }
@@ -612,20 +614,16 @@ public class OperacionesDiaADiaService {
     }
 
     private void generarVuelosParaFecha(final LocalDate fecha) {
-        final String fechaStr = fecha.format(DateTimeFormatter.ofPattern("yyyyMMdd"));
-        final AtomicInteger seq = new AtomicInteger(
-                vueloInstanciaRepositorio.obtenerUltimoSecuencial(fechaStr) + 1);
         for (final VueloProgramado vp : vuelosProgramados.values()) {
             if (vp == null) continue;
-            generarInstanciaParaVuelo(vp, fecha, seq);
+            generarInstanciaParaVuelo(vp, fecha);
         }
     }
 
-    private void generarInstanciaParaVuelo(final VueloProgramado vp, final LocalDate fecha, final AtomicInteger seq) {
+    private void generarInstanciaParaVuelo(final VueloProgramado vp, final LocalDate fecha) {
         if (vp.getHoraSalida() == null || vp.getHoraLlegada() == null) {
             return;
         }
-        final String fechaStr = fecha.format(DateTimeFormatter.ofPattern("yyyyMMdd"));
         final LocalDateTime inicioVentanaUtc = fecha.atStartOfDay();
         final LocalDateTime finVentanaUtc = inicioVentanaUtc.plusDays(1);
         final int gmtOrigen = vp.getAeropuertoOrigen() != null
@@ -652,12 +650,7 @@ public class OperacionesDiaADiaService {
         if (!llegadaUtc.isAfter(salidaUtc)) {
             llegadaUtc = llegadaUtc.plusDays(1);
         }
-        final String orig = vp.getAeropuertoOrigen() != null
-                ? vp.getAeropuertoOrigen().getIdAeropuerto() : "??";
-        final String dest = vp.getAeropuertoDestino() != null
-                ? vp.getAeropuertoDestino().getIdAeropuerto() : "??";
-        final String id = String.format("VUE-%s-%s-%s-%06d",
-                orig, dest, fechaStr, seq.getAndIncrement());
+        final String id = String.format("VI%08d", secuencialVueloGlobal.getAndIncrement());
         final VueloInstancia vi = new VueloInstancia(
                 id, vp, fecha, salidaUtc, llegadaUtc,
                 vp.getCapacidadMaxima(), vp.getCapacidadMaxima(),
@@ -1491,10 +1484,7 @@ public class OperacionesDiaADiaService {
             vuelosProgramados.put(vp.getIdVueloProgramado(), vp);
 
             final LocalDate hoy = LocalDate.now(ZoneOffset.UTC);
-            final String fechaStr = hoy.format(DateTimeFormatter.ofPattern("yyyyMMdd"));
-            final AtomicInteger seq = new AtomicInteger(
-                    vueloInstanciaRepositorio.obtenerUltimoSecuencial(fechaStr) + 1);
-            generarInstanciaParaVuelo(vp, hoy, seq);
+            generarInstanciaParaVuelo(vp, hoy);
             depurarVuelos(LocalDateTime.now(ZoneOffset.UTC));
 
             final SimulacionTickLigeroDTO tickDTO = construirTickDTO(
@@ -1546,7 +1536,6 @@ public class OperacionesDiaADiaService {
     }
 
     private VueloInstancia crearInstanciaCancelada(final VueloProgramado vp, final LocalDate fechaOperacion) {
-        final String fechaStr = fechaOperacion.format(DateTimeFormatter.ofPattern("yyyyMMdd"));
         final int gmtOrigen = vp.getAeropuertoOrigen() != null
                 ? vp.getAeropuertoOrigen().getHusoGMT() : 0;
         final int gmtDestino = vp.getAeropuertoDestino() != null
@@ -1570,12 +1559,7 @@ public class OperacionesDiaADiaService {
         if (!llegadaUtc.isAfter(salidaUtc)) {
             llegadaUtc = llegadaUtc.plusDays(1);
         }
-        final String orig = vp.getAeropuertoOrigen() != null
-                ? vp.getAeropuertoOrigen().getIdAeropuerto() : "??";
-        final String dest = vp.getAeropuertoDestino() != null
-                ? vp.getAeropuertoDestino().getIdAeropuerto() : "??";
-        final int seq = vueloInstanciaRepositorio.obtenerUltimoSecuencial(fechaStr);
-        final String id = String.format("VUE-%s-%s-%s-%06d", orig, dest, fechaStr, seq + 1);
+        final String id = String.format("VI%08d", secuencialVueloGlobal.getAndIncrement());
         final VueloInstancia vi = new VueloInstancia(
                 id, vp, fechaOperacion, salidaUtc, llegadaUtc,
                 vp.getCapacidadMaxima(), vp.getCapacidadMaxima(),

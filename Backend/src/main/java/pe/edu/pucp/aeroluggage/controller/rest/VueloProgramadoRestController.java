@@ -28,6 +28,7 @@ import pe.edu.pucp.aeroluggage.simulacion.OperacionesDiaADiaService;
 import java.time.LocalTime;
 import java.time.format.DateTimeParseException;
 import java.util.List;
+import java.util.Map;
 import java.util.Optional;
 import java.util.stream.Collectors;
 
@@ -114,6 +115,15 @@ public class VueloProgramadoRestController {
             }
         }
         return ResponseEntity.noContent().build();
+    }
+
+    @PostMapping("/bulk")
+    public Map<String, Object> crearBulk(@RequestBody final Map<String, String> request) {
+        final String content = request.get("content");
+        if (content == null || content.isBlank()) {
+            throw new ResponseStatusException(HttpStatus.BAD_REQUEST, "El campo 'content' es requerido");
+        }
+        return servicioVueloProgramado.crearDesdeTexto(content);
     }
 
     private VueloProgramado toEntity(final VueloProgramadoRequest request) {

@@ -1,5 +1,5 @@
-import { useState, useEffect, useCallback } from "react";
-import { Plus, Pencil, Trash2 } from "lucide-react";
+import { useState, useEffect, useCallback, useRef } from "react";
+import { Plus, Pencil, Trash2, Upload } from "lucide-react";
 import FlightPlanFormModal from "../components/simulator/FlightPlanFormModal";
 import Modal from "../components/ui/Modal";
 import { LoadingState, EmptyState, ErrorState } from "../components/ui/States";
@@ -10,6 +10,7 @@ import {
   createFlightPlan,
   updateFlightPlan,
   deleteFlightPlan,
+  bulkUploadFlights,
 } from "../api/flights";
 
 const formatGMT = (h) => (h >= 0 ? `GMT+${h}` : `GMT${h}`);
@@ -31,6 +32,9 @@ export default function FlightPlansPage() {
 
   const [deleteConfirmFlight, setDeleteConfirmFlight] = useState(null);
   const [deleteLoading, setDeleteLoading] = useState(false);
+
+  const [uploadLoading, setUploadLoading] = useState(false);
+  const fileInputRef = useRef(null);
 
   const loadAirports = useCallback(async () => {
     setAirportsLoading(true);
@@ -95,6 +99,28 @@ export default function FlightPlansPage() {
     }
   };
 
+  const handleFileUpload = async (e) => {
+    const file = e.target.files?.[0];
+    if (!file) return;
+    setUploadLoading(true);
+    try {
+      const text = await file.text();
+      const result = await bulkUploadFlights(text);
+      await loadFlights();
+      const msg = `${result.created} creados, ${result.skipped} omitidos`;
+      toast.push({
+        type: "success",
+        title: "Archivo procesado",
+        message: result.errors?.length ? `${msg}. ${result.errors.length} errores.` : msg,
+      });
+    } catch (err) {
+      toast.push({ type: "error", title: "Error al cargar archivo", message: err.message });
+    } finally {
+      setUploadLoading(false);
+      if (fileInputRef.current) fileInputRef.current.value = "";
+    }
+  };
+
   const handleFormSubmit = async (payload) => {
     setFormLoading(true);
     try {
@@ -131,6 +157,24 @@ export default function FlightPlansPage() {
         >
           <Plus className="w-4 h-4" /> Agregar Plan de Vuelo
         </button>
+        <div className="flex items-center gap-2">
+          <input
+            ref={fileInputRef}
+            type="file"
+            accept=".txt"
+            onChange={handleFileUpload}
+            className="hidden"
+          />
+          <button
+            type="button"
+            disabled={uploadLoading}
+            onClick={() => fileInputRef.current?.click()}
+            className="flex items-center gap-2 bg-green-700 hover:bg-green-600 text-white px-4 py-2 rounded-lg font-medium text-sm transition-colors disabled:opacity-50"
+          >
+            <Upload className="w-4 h-4" />
+            {uploadLoading ? "Cargando..." : "Cargar archivo"}
+          </button>
+        </div>
       </div>
 
       <div className="mb-6 pl-12 sm:pl-14">

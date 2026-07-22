@@ -15,10 +15,10 @@ clean: ## Borra la carpeta target
 	$(MVN) clean
 
 seed: ## Ejecuta el seed sin limpiar
-	MAVEN_OPTS="$(MVN_OPTS)" $(MVN) exec:java@seed
+	MAVEN_OPTS="$(MVN_OPTS)" $(MVN) compile exec:java@seed
 
 seed-clean: ## Ejecuta el seed con limpieza previa
-	MAVEN_OPTS="$(MVN_OPTS)" $(MVN) exec:java@seed -Dclean=true
+	MAVEN_OPTS="$(MVN_OPTS)" $(MVN) clean compile exec:java@seed -Dclean=true
 
 reload-dep: ## Recargar dependencias
 	$(MVN) dependency:resolve

@@ -127,6 +127,25 @@ public class VueloInstanciaRepositorio {
         return maxSeq;
     }
 
+    public int obtenerUltimoSecuencialGlobal() {
+        final String sql = "SELECT id_vuelo_instancia FROM vuelo_instancia WHERE id_vuelo_instancia LIKE ?";
+        final List<String> ids = jdbcTemplate.queryForList(sql, String.class, "VI%");
+        int maxSeq = 0;
+        for (final String id : ids) {
+            if (id.length() > 2) {
+                try {
+                    final int seq = Integer.parseInt(id.substring(2));
+                    if (seq > maxSeq) {
+                        maxSeq = seq;
+                    }
+                } catch (final NumberFormatException e) {
+                    // ignore non-numeric suffixes
+                }
+            }
+        }
+        return maxSeq;
+    }
+
     private static final class VueloInstanciaRowMapper implements RowMapper<VueloInstancia> {
         @Override
         public VueloInstancia mapRow(ResultSet rs, int rowNum) throws SQLException {

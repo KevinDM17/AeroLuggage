@@ -57,7 +57,7 @@ export const deleteFlightPlan = (id) =>
   USE_MOCK ? mockDeleteFlightPlan(id) : apiDelete(`/vuelos-programados/${encodeURIComponent(id)}`);
 
 export const bulkUploadFlights = (textContent) =>
-  USE_MOCK ? mockBulkUploadFlights(textContent) : apiPost("/vuelos/bulk", { content: textContent });
+  USE_MOCK ? mockBulkUploadFlights(textContent) : apiPost("/vuelos-programados/bulk", { content: textContent });
 
 export const listFlights = (airport) => listFlightPlans(airport);
 

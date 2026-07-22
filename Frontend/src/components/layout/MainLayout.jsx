@@ -40,6 +40,7 @@ export default function MainLayout() {
   const [flightManifestLoader, setFlightManifestLoader] = useState(null);
   const [topBarActions, setTopBarActions] = useState(null);
   const [topBarInfo, setTopBarInfo] = useState(null);
+  const [clockGmtOffset, setClockGmtOffset] = useState(null);
   const location = useLocation();
   const previousIsSimulatorRef = useRef(null);
   const toast = useToast();
@@ -111,6 +112,7 @@ export default function MainLayout() {
     setCancellationNotice(null);
     setTopBarActions(null);
     setTopBarInfo(null);
+    setClockGmtOffset(null);
   }, [location.pathname]);
 
   const showLeftHamburger = !leftOpen;
@@ -139,6 +141,7 @@ export default function MainLayout() {
       ops,
       setTopBarActions,
       setTopBarInfo,
+      setClockGmtOffset,
     }),
     [simulationPanelData, resetSimulationPanelData, collapseSidebars, cancelledFlightIds, ops],
   );
@@ -146,7 +149,7 @@ export default function MainLayout() {
   return (
     <MapFocusContext.Provider value={{ mapHighlight, setMapHighlight, selected, setSelected, mapFocus, setMapFocus, panelFocus, setPanelFocus, mapDim, setMapDim, cancellationNotice, setCancellationNotice, flightManifestLoader, setFlightManifestLoader }}>
     <div className="flex h-screen overflow-hidden bg-surface-1 text-slate-200 font-sans relative">
-      <SimTopBar left={topBarInfo}>{topBarActions}</SimTopBar>
+      <SimTopBar left={topBarInfo} clockGmt={clockGmtOffset}>{topBarActions}</SimTopBar>
 
       {showLeftHamburger && (
         <button

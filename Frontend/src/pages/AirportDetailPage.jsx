@@ -36,7 +36,7 @@ export default function AirportDetailPage() {
   const { iata } = useParams();
   const location = useLocation();
   const toast = useToast();
-  const { simulationPanelData, setSimulationPanelData } = useOutletContext();
+  const { simulationPanelData, setSimulationPanelData, setClockGmtOffset } = useOutletContext();
 
   const airports = simulationPanelData?.airports ?? [];
   const airport = useMemo(() => airports.find((a) => a.iata === iata), [airports, iata]);
@@ -52,6 +52,16 @@ export default function AirportDetailPage() {
       localStorage.setItem(STORAGE_KEY, iata);
     }
   }, [isManagement, iata]);
+
+  useEffect(() => {
+    const gmt = airport?.gmt;
+    if (typeof gmt === "number" && Number.isFinite(gmt)) {
+      setClockGmtOffset(gmt);
+    } else {
+      setClockGmtOffset(null);
+    }
+    return () => setClockGmtOffset(null);
+  }, [airport?.gmt, setClockGmtOffset]);
 
   const [pedidoOpen, setPedidoOpen] = useState(false);
   const [pedidoLoading, setPedidoLoading] = useState(false);

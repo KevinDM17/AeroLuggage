@@ -125,6 +125,25 @@ public class VueloProgramadoRepositorio {
         return jdbcTemplate.update("UPDATE vuelo_programado SET activo = 0 WHERE id_vuelo_programado = ?", id);
     }
 
+    public int obtenerMaximoSecuencial() {
+        final String sql = "SELECT id_vuelo_programado FROM vuelo_programado WHERE id_vuelo_programado LIKE ?";
+        final List<String> ids = jdbcTemplate.queryForList(sql, String.class, "VP%");
+        int maxSeq = 0;
+        for (final String id : ids) {
+            if (id.length() > 2) {
+                try {
+                    final int seq = Integer.parseInt(id.substring(2));
+                    if (seq > maxSeq) {
+                        maxSeq = seq;
+                    }
+                } catch (final NumberFormatException e) {
+                    // ignore non-numeric suffixes
+                }
+            }
+        }
+        return maxSeq;
+    }
+
     private static final class VueloProgramadoRowMapper implements RowMapper<VueloProgramado> {
         @Override
         public VueloProgramado mapRow(ResultSet rs, int rowNum) throws SQLException {

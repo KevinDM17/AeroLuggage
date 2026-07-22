@@ -168,6 +168,7 @@ public class OperacionesDiaADiaRestController {
                         .withMaletasActuales(a.getMaletasActuales())
                         .withLatitud(a.getLatitud())
                         .withLongitud(a.getLongitud())
+                        .withHusoGMT(a.getHusoGMT())
                         .build())
                 .toList();
         final List<VueloInstanciaResponse> vuelos = new ArrayList<>();
@@ -542,6 +543,7 @@ public class OperacionesDiaADiaRestController {
                         .withMaletasActuales(a.getMaletasActuales())
                         .withLatitud(a.getLatitud())
                         .withLongitud(a.getLongitud())
+                        .withHusoGMT(a.getHusoGMT())
                         .build())
                 .toList();
     }

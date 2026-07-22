@@ -18,6 +18,10 @@ import java.nio.file.Files;
 import java.nio.file.Path;
 import java.nio.file.StandardCopyOption;
 import java.time.LocalTime;
+import java.time.format.DateTimeFormatter;
+import java.time.format.DateTimeParseException;
+import java.util.ArrayList;
+import java.util.HashMap;
 import java.util.List;
 import java.util.Map;
 import java.util.Optional;
@@ -109,5 +113,73 @@ public class ServicioVueloProgramado {
         }
         vueloProgramadoRepositorio.eliminar(id);
         return true;
+    }
+
+    @Transactional
+    public Map<String, Object> crearDesdeTexto(final String content) {
+        final List<String> errors = new ArrayList<>();
+        final Map<String, Aeropuerto> aeropuertosPorIcao = aeropuertoRepositorio.obtenerTodosComoMapa();
+        final String[] lineas = content.split("\\r?\\n");
+        int created = 0;
+        int skipped = 0;
+        int secuencia = vueloProgramadoRepositorio.obtenerMaximoSecuencial();
+
+        for (final String lineaCruda : lineas) {
+            final String linea = lineaCruda.trim();
+            if (linea.isEmpty() || linea.startsWith("*")) {
+                skipped++;
+                continue;
+            }
+            final String[] partes = linea.split("-");
+            if (partes.length != 5) {
+                errors.add("Formato invalido: " + linea);
+                skipped++;
+                continue;
+            }
+            final String icaoOrigen = partes[0].trim();
+            final String icaoDestino = partes[1].trim();
+            final Aeropuerto origen = aeropuertosPorIcao.get(icaoOrigen);
+            final Aeropuerto destino = aeropuertosPorIcao.get(icaoDestino);
+            if (origen == null || destino == null) {
+                errors.add("Aeropuerto no encontrado: " + icaoOrigen + " o " + icaoDestino);
+                skipped++;
+                continue;
+            }
+            final LocalTime horaSalida;
+            final LocalTime horaLlegada;
+            try {
+                horaSalida = LocalTime.parse(partes[2].trim(), DateTimeFormatter.ofPattern("HH:mm"));
+                horaLlegada = LocalTime.parse(partes[3].trim(), DateTimeFormatter.ofPattern("HH:mm"))
+                        .minusHours(origen.getHusoGMT())
+                        .plusHours(destino.getHusoGMT());
+            } catch (final DateTimeParseException e) {
+                errors.add("Hora invalida en linea: " + linea);
+                skipped++;
+                continue;
+            }
+            final int capacidad;
+            try {
+                capacidad = Integer.parseInt(partes[4].trim());
+            } catch (final NumberFormatException e) {
+                errors.add("Capacidad invalida en linea: " + linea);
+                skipped++;
+                continue;
+            }
+            secuencia++;
+            final String id = String.format("VP%06d", secuencia);
+            final String codigo = icaoOrigen + "-" + icaoDestino + "-" + partes[2].trim();
+            final VueloProgramado vuelo = new VueloProgramado(id, codigo, horaSalida, horaLlegada, capacidad,
+                    origen, destino);
+            vuelo.setActivo(true);
+            vueloProgramadoRepositorio.insertar(vuelo);
+            created++;
+        }
+
+        final Map<String, Object> resultado = new HashMap<>();
+        resultado.put("received", lineas.length);
+        resultado.put("created", created);
+        resultado.put("skipped", skipped);
+        resultado.put("errors", errors);
+        return resultado;
     }
 }
