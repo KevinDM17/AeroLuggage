@@ -123,6 +123,7 @@ public class ServicioVueloProgramado {
         int created = 0;
         int skipped = 0;
         int secuencia = vueloProgramadoRepositorio.obtenerMaximoSecuencial();
+        final List<VueloProgramado> vuelosCreados = new ArrayList<>();
 
         for (final String lineaCruda : lineas) {
             final String linea = lineaCruda.trim();
@@ -149,9 +150,7 @@ public class ServicioVueloProgramado {
             final LocalTime horaLlegada;
             try {
                 horaSalida = LocalTime.parse(partes[2].trim(), DateTimeFormatter.ofPattern("HH:mm"));
-                horaLlegada = LocalTime.parse(partes[3].trim(), DateTimeFormatter.ofPattern("HH:mm"))
-                        .minusHours(origen.getHusoGMT())
-                        .plusHours(destino.getHusoGMT());
+                horaLlegada = LocalTime.parse(partes[3].trim(), DateTimeFormatter.ofPattern("HH:mm"));
             } catch (final DateTimeParseException e) {
                 errors.add("Hora invalida en linea: " + linea);
                 skipped++;
@@ -172,6 +171,7 @@ public class ServicioVueloProgramado {
                     origen, destino);
             vuelo.setActivo(true);
             vueloProgramadoRepositorio.insertar(vuelo);
+            vuelosCreados.add(vuelo);
             created++;
         }
 
@@ -180,6 +180,7 @@ public class ServicioVueloProgramado {
         resultado.put("created", created);
         resultado.put("skipped", skipped);
         resultado.put("errors", errors);
+        resultado.put("vuelosCreados", vuelosCreados);
         return resultado;
     }
 }

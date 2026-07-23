@@ -1,24 +1,14 @@
 import { useEffect, useMemo, useState } from "react";
 import { useOutletContext } from "react-router-dom";
-import { Clock, Plus, SlidersHorizontal } from "lucide-react";
+import { SlidersHorizontal } from "lucide-react";
 import MapDashboard from "../components/simulator/MapDashboard";
 import PedidoModal from "../components/simulator/PedidoModal";
 import { useToast } from "../components/ui/Toast";
 import { procesarPedidoOperacionesDiaADia, obtenerPedidosOperacionesDiaADia, obtenerMaletasOperacionesDiaADia, obtenerRutasOperacionesDiaADia } from "../api/simulator";
 
-function formatLimaTime(utcIsoString) {
-  if (!utcIsoString) return { date: "--", time: "--:--:--" };
-  const d = new Date(utcIsoString.endsWith("Z") ? utcIsoString : utcIsoString + "Z");
-  if (Number.isNaN(d.getTime())) return { date: "--", time: "--:--:--" };
-  return {
-    date: d.toLocaleDateString("es-PE", { timeZone: "America/Lima", day: "2-digit", month: "2-digit", year: "numeric" }),
-    time: d.toLocaleTimeString("es-PE", { timeZone: "America/Lima", hour: "2-digit", minute: "2-digit", second: "2-digit", hour12: false }),
-  };
-}
-
 export default function SimulatorPage() {
   const toast = useToast();
-  const { simulationPanelData, setSimulationPanelData, ops, setTopBarActions, setTopBarInfo } = useOutletContext();
+  const { simulationPanelData, setSimulationPanelData, ops, setTopBarActions } = useOutletContext();
 
   const { simStatus, currentSimTimeUtc, mapAirports, liveMetrics, simulatedNowMs, hasActiveRun } =
     ops ?? {};
@@ -30,7 +20,6 @@ export default function SimulatorPage() {
   useEffect(() => {
     if (!hasActiveRun) {
       setTopBarActions(null);
-      setTopBarInfo(null);
       return;
     }
     setTopBarActions(
@@ -46,30 +35,10 @@ export default function SimulatorPage() {
         >
           Mostrar lineas
         </button>
-        <button type="button" onClick={() => setPedidoOpen(true)} className="bg-blue-600 hover:bg-blue-500 text-white px-3 py-1 rounded text-xs font-medium leading-none transition-colors shrink-0 flex items-center gap-1.5">
-          <Plus className="w-3.5 h-3.5" /> Agregar Pedido
-        </button>
       </>
     );
     return () => setTopBarActions(null);
   }, [hasActiveRun, showRouteLines, setTopBarActions]);
-
-  const limaTime = formatLimaTime(currentSimTimeUtc);
-
-  useEffect(() => {
-    if (!hasActiveRun || !limaTime) {
-      setTopBarInfo(null);
-      return;
-    }
-    setTopBarInfo(
-      <div className="flex items-center gap-4 text-xs">
-        <span className="text-slate-400">Lima, Peru</span>
-        <span className="text-slate-200 tabular-nums">{limaTime.date}</span>
-        <span className="text-slate-200 tabular-nums">{limaTime.time}</span>
-      </div>
-    );
-    return () => setTopBarInfo(null);
-  }, [hasActiveRun, limaTime?.date, limaTime?.time, setTopBarInfo]);
 
   const normalizeFlightStatus = (status) =>
     String(status ?? "").trim().toUpperCase().replace(/\s+/g, "_");

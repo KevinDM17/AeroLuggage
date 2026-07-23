@@ -213,7 +213,7 @@ public class OperacionesDiaADiaService {
             final LocalDate hoy = LocalDate.now(ZoneOffset.UTC);
             ultimoDiaGenerado = hoy;
             secuencialVueloGlobal.set(vueloInstanciaRepositorio.obtenerUltimoSecuencialGlobal() + 1L);
-            for (int i = 0; i <= 2; i++) {
+            for (int i = -1; i <= 2; i++) {
                 generarVuelosParaFecha(hoy.plusDays(i));
             }
 
@@ -358,6 +358,13 @@ public class OperacionesDiaADiaService {
             if (origen == null || destino == null) {
                 throw new IllegalArgumentException("Aeropuerto de origen o destino no encontrado");
             }
+            final int disponible = Math.max(0, origen.getCapacidadAlmacen() - origen.getMaletasActuales());
+            if (request.getCantidadMaletas() > disponible) {
+                throw new IllegalArgumentException(
+                        "No hay suficiente capacidad en " + icaoOrigen
+                                + ": " + request.getCantidadMaletas() + " maletas solicitadas, "
+                                + disponible + " disponibles");
+            }
             final LocalDateTime ahora = LocalDateTime.now(ZoneOffset.UTC);
             final LocalDateTime fechaRegistro = request.getFechaRegistro() != null
                     ? LocalDateTime.parse(request.getFechaRegistro())
@@ -477,7 +484,6 @@ public class OperacionesDiaADiaService {
             final SimulacionTickLigeroDTO tickDTO = construirTickDTO(ahora);
             broker.convertAndSend(TOPIC_SIM + sessionId, tickDTO);
             maletasPorId.clear();
-            idsVuelosRecienConfirmados.clear();
             idsEntregadasEnTick.clear();
             idsCompletadasEnTick.clear();
         }
@@ -651,14 +657,22 @@ public class OperacionesDiaADiaService {
             llegadaUtc = llegadaUtc.plusDays(1);
         }
         final String id = String.format("VI%08d", secuencialVueloGlobal.getAndIncrement());
+        final LocalDateTime ahora = LocalDateTime.now(ZoneOffset.UTC);
+        final boolean dentroDeVentana = !salidaUtc.isAfter(ahora.plusMinutes(
+                sistemaConfiguracion.getUmbralConfirmacionMinutos()));
+        final EstadoVuelo estadoInicial = dentroDeVentana ? EstadoVuelo.CONFIRMADO : EstadoVuelo.PROGRAMADO;
         final VueloInstancia vi = new VueloInstancia(
                 id, vp, fecha, salidaUtc, llegadaUtc,
                 vp.getCapacidadMaxima(), vp.getCapacidadMaxima(),
-                EstadoVuelo.PROGRAMADO);
+                estadoInicial);
         vuelosInstancia.put(vi.getIdVueloInstancia(), vi);
-        final LocalDateTime tConf = salidaUtc.minusMinutes(
-                sistemaConfiguracion.getUmbralConfirmacionMinutos());
-        agregarEvento(tConf, TipoEventoSim.VUELO_CONFIRMA, id, null, 0);
+        if (dentroDeVentana) {
+            idsVuelosRecienConfirmados.add(id);
+        } else {
+            final LocalDateTime tConf = salidaUtc.minusMinutes(
+                    sistemaConfiguracion.getUmbralConfirmacionMinutos());
+            agregarEvento(tConf, TipoEventoSim.VUELO_CONFIRMA, id, null, 0);
+        }
         agregarEvento(salidaUtc, TipoEventoSim.VUELO_INICIA, id, null, 0);
         agregarEvento(llegadaUtc, TipoEventoSim.VUELO_FINALIZA, id, null, 0);
     }
@@ -1125,8 +1139,28 @@ public class OperacionesDiaADiaService {
             if (pedidos.isEmpty()) {
                 throw new IllegalArgumentException("No se encontraron pedidos validos en el archivo");
             }
+            int totalMaletas = 0;
             for (final PedidoRequest req : pedidos) {
+                totalMaletas += req.getCantidadMaletas();
+            }
+            final int disponibleInicial = Math.max(0, origen.getCapacidadAlmacen() - origen.getMaletasActuales());
+            if (totalMaletas > disponibleInicial) {
+                throw new IllegalArgumentException(
+                        "No hay suficiente capacidad en " + icaoOrigen
+                                + ": " + totalMaletas + " maletas solicitadas, "
+                                + disponibleInicial + " disponibles");
+            }
+            int acumuladas = 0;
+            for (final PedidoRequest req : pedidos) {
+                final int disponible = Math.max(0, origen.getCapacidadAlmacen() - origen.getMaletasActuales() - acumuladas);
+                if (req.getCantidadMaletas() > disponible) {
+                    throw new IllegalArgumentException(
+                            "No hay suficiente capacidad para pedido " + req.getIdPedido()
+                                    + ": " + req.getCantidadMaletas() + " maletas, "
+                                    + disponible + " disponibles");
+                }
                 procesarPedidoBulk(req);
+                acumuladas += req.getCantidadMaletas();
             }
             broker.convertAndSend(
                     String.format(TOPIC_ESTADO, sessionId),

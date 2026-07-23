@@ -39,7 +39,7 @@ export default function AirportDetailPage() {
   const { simulationPanelData, setSimulationPanelData, setClockGmtOffset } = useOutletContext();
 
   const airports = simulationPanelData?.airports ?? [];
-  const airport = useMemo(() => airports.find((a) => a.iata === iata), [airports, iata]);
+  const airport = useMemo(() => airports.find((a) => a.iata === iata.toUpperCase()), [airports, iata]);
   const bags = simulationPanelData?.bags;
   const orders = simulationPanelData?.orders;
   const routes = simulationPanelData?.routes;
@@ -49,7 +49,7 @@ export default function AirportDetailPage() {
 
   useEffect(() => {
     if (isManagement && iata) {
-      localStorage.setItem(STORAGE_KEY, iata);
+      localStorage.setItem(STORAGE_KEY, iata.toUpperCase());
     }
   }, [isManagement, iata]);
 
@@ -82,7 +82,7 @@ export default function AirportDetailPage() {
     if (!bags || !iata) return [];
     const result = [];
     for (const bag of bags.values()) {
-      if (bag.ubicacionActual === iata) result.push(bag);
+      if (bag.ubicacionActual === iata.toUpperCase()) result.push(bag);
     }
     result.sort((a, b) => (a.idMaleta ?? "").localeCompare(b.idMaleta ?? ""));
     return result;
@@ -92,7 +92,7 @@ export default function AirportDetailPage() {
     if (!bags || !orders || !iata) return [];
     const orderIds = new Set();
     for (const bag of bags.values()) {
-      if (bag.ubicacionActual === iata && bag.idPedido) {
+      if (bag.ubicacionActual === iata.toUpperCase() && bag.idPedido) {
         orderIds.add(bag.idPedido);
       }
     }
@@ -111,7 +111,7 @@ export default function AirportDetailPage() {
     for (const route of routes.values()) {
       if (!route || route.idMaleta == null || !route.vuelos) continue;
       for (const vuelo of route.vuelos) {
-        if (vuelo.aeropuertoOrigen === iata) {
+        if (vuelo.aeropuertoOrigen === iata.toUpperCase()) {
           map[route.idMaleta] = vuelo;
           break;
         }
@@ -138,7 +138,7 @@ export default function AirportDetailPage() {
   const filteredFlightPlans = useMemo(() => {
     if (!flightPlans || !iata) return [];
     return flightPlans.filter((f) =>
-      viewMode === "origin" ? f.origin === iata : f.dest === iata
+      viewMode === "origin" ? f.origin === iata.toUpperCase() : f.dest === iata.toUpperCase()
     );
   }, [flightPlans, iata, viewMode]);
 
@@ -175,7 +175,7 @@ export default function AirportDetailPage() {
     setBulkLoading(true);
     try {
       const text = await bulkFile.text();
-      const result = await procesarPedidosBulkOperacionesDiaADia(iata, text);
+      const result = await procesarPedidosBulkOperacionesDiaADia(iata.toUpperCase(), text);
       const [pedidosData, maletasData] = await Promise.all([
         obtenerPedidosOperacionesDiaADia().catch(() => []),
         obtenerMaletasOperacionesDiaADia().catch(() => []),

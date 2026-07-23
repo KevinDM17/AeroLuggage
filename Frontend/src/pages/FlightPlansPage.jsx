@@ -1,4 +1,5 @@
 import { useState, useEffect, useCallback, useRef } from "react";
+import { useOutletContext } from "react-router-dom";
 import { Plus, Pencil, Trash2, Upload } from "lucide-react";
 import FlightPlanFormModal from "../components/simulator/FlightPlanFormModal";
 import Modal from "../components/ui/Modal";
@@ -12,11 +13,34 @@ import {
   deleteFlightPlan,
   bulkUploadFlights,
 } from "../api/flights";
+import { obtenerVuelosNuevosOperacionesDiaADia } from "../api/simulator";
 
 const formatGMT = (h) => (h >= 0 ? `GMT+${h}` : `GMT${h}`);
 
 export default function FlightPlansPage() {
   const toast = useToast();
+  const { simulationPanelData, setSimulationPanelData } = useOutletContext()
+    ?? {};
+
+  const refetchNewVuelos = useCallback(async () => {
+    if (!setSimulationPanelData) return;
+    try {
+      const nuevos = await obtenerVuelosNuevosOperacionesDiaADia();
+      if (nuevos?.length) {
+        setSimulationPanelData((prev) => {
+          const flights = new Map(prev.flights);
+          for (const f of nuevos) {
+            const key = f.idVueloInstancia ?? f.id;
+            const existing = flights.get(key);
+            flights.set(key, { ...f, used: existing?.used ?? f.used ?? 0, ticksAusente: 0 });
+          }
+          return { ...prev, flights };
+        });
+      }
+    } catch {
+      // silent
+    }
+  }, [setSimulationPanelData]);
 
   const [airports, setAirports] = useState([]);
   const [airportsLoading, setAirportsLoading] = useState(true);
@@ -107,6 +131,7 @@ export default function FlightPlansPage() {
       const text = await file.text();
       const result = await bulkUploadFlights(text);
       await loadFlights();
+      refetchNewVuelos();
       const msg = `${result.created} creados, ${result.skipped} omitidos`;
       toast.push({
         type: "success",
@@ -131,6 +156,7 @@ export default function FlightPlansPage() {
       }
       setFormOpen(false);
       await loadFlights();
+      refetchNewVuelos();
       toast.push({
         type: "success",
         title: editingFlight ? "Plan de vuelo actualizado" : "Plan de vuelo creado",

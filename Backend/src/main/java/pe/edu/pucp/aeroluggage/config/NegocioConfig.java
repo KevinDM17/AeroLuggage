@@ -14,6 +14,6 @@ import org.springframework.stereotype.Component;
 public class NegocioConfig {
 
     private long minutosConexion = 10L;
-    private long minutosRecojo = 10L;
-    private int umbralConfirmacionMinutos = 30;
+    private long minutosRecojo = 15L;
+    private int umbralConfirmacionMinutos = 60;
 }

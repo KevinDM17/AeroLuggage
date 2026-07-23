@@ -118,12 +118,27 @@ public class VueloProgramadoRestController {
     }
 
     @PostMapping("/bulk")
+    @SuppressWarnings("unchecked")
     public Map<String, Object> crearBulk(@RequestBody final Map<String, String> request) {
         final String content = request.get("content");
         if (content == null || content.isBlank()) {
             throw new ResponseStatusException(HttpStatus.BAD_REQUEST, "El campo 'content' es requerido");
         }
-        return servicioVueloProgramado.crearDesdeTexto(content);
+        final Map<String, Object> resultado = servicioVueloProgramado.crearDesdeTexto(content);
+        final List<VueloProgramado> vuelosCreados = (List<VueloProgramado>) resultado.get("vuelosCreados");
+        resultado.remove("vuelosCreados");
+        if (vuelosCreados != null && operacionesService != null) {
+            for (final VueloProgramado vp : vuelosCreados) {
+                try {
+                    operacionesService.onVueloProgramadoCreado(vp);
+                } catch (final Exception e) {
+                    log.warn("[AeroLuggage/VueloProgramadoRestController] "
+                            + "sync onVueloProgramadoCreado for {} failed: {}",
+                            vp.getIdVueloProgramado(), e.getMessage());
+                }
+            }
+        }
+        return resultado;
     }
 
     private VueloProgramado toEntity(final VueloProgramadoRequest request) {
