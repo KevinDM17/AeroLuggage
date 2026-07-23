@@ -9,9 +9,9 @@ import org.springframework.stereotype.Component;
 @PropertySource(value = "classpath:system_params.yml", factory = YamlPropertySourceFactory.class)
 public class SimulacionParams {
 
-    private long duracionDiaSimuladoMs = 240000L;
+    private long duracionDiaSimuladoMs = 600000L;
     private Ventana ventana = new Ventana();
-    private long tickIntervalMs = 500L;
+    private long tickIntervalMs = 1000L;
     private long maxDiasVuelosInstancias = 30L;
     private long retencionVentanas = 2L;
     private long retencionPedidosMinutos = 120L;
@@ -86,6 +86,14 @@ public class SimulacionParams {
         private int tamanioMinutos = 120;
         private int espaciadoMinutos = 120;
 
+        public Ventana() {
+        }
+
+        public Ventana(final int tamanioMinutos, final int espaciadoMinutos) {
+            this.tamanioMinutos = tamanioMinutos;
+            this.espaciadoMinutos = espaciadoMinutos;
+        }
+
         public int getTamanioMinutos() {
             return tamanioMinutos;
         }
@@ -104,8 +112,8 @@ public class SimulacionParams {
     }
 
     public static class EscenarioColapso {
-        private long duracionDiaSimuladoMs = 576000L;
-        private Ventana ventana = new Ventana();
+        private long duracionDiaSimuladoMs = 57600L;
+        private Ventana ventana = new Ventana(360, 360);
         private long tickIntervalMs = 1000L;
 
         public long getDuracionDiaSimuladoMs() {

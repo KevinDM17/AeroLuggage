@@ -110,8 +110,6 @@ export default function MainLayout() {
     setPanelFocus(null);
     setMapDim({ airports: null, flights: null, fitKey: null });
     setCancellationNotice(null);
-    setTopBarActions(null);
-    setTopBarInfo(null);
     setClockGmtOffset(null);
   }, [location.pathname]);
 

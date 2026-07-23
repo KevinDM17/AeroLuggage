@@ -9,8 +9,8 @@ import org.springframework.stereotype.Component;
 @PropertySource(value = "classpath:system_params.yml", factory = YamlPropertySourceFactory.class)
 public class OperacionesDiaADiaParams {
 
-    private long tickIntervalMs = 1000L;
-    private long heartbeatMs = 10000L;
+    private long tickIntervalMs = 5000L;
+    private long heartbeatMs = 60000L;
     private long timeoutMs = 90000L;
 
     public long getTickIntervalMs() {

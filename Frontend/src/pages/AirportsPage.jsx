@@ -216,7 +216,7 @@ export default function AirportsPage() {
       <AirportFormModal
         open={formOpen}
         initialData={editingAirport}
-        onClose={() => setFormOpen(false)}
+        onClose={() => { setFormOpen(false); setEditingAirport(null); }}
         onSubmit={handleFormSubmit}
         loading={formLoading}
       />

@@ -12,6 +12,7 @@ import { listRutas } from "../../api/rutas";
 import { cancelarVueloProgramadoOperacionesDiaADia, obtenerContenidoAlmacen, obtenerMaletasAfectadasVueloProgramado, obtenerMaletasOperacionesDiaADia, obtenerManifiestoVuelo, obtenerManifiestoVueloOperacionesDiaADia, obtenerRutaMaleta, obtenerRutaMaletaOperacionesDiaADia, obtenerRutasEnvio, obtenerRutasEnvioOperacionesDiaADia, obtenerRutasOperacionesDiaADia, obtenerVuelosOperacionesDiaADia, obtenerSnapshotSimulacionPeriodo } from "../../api/simulator";
 import { adaptFlightInstance } from "../../api/flightInstances";
 import { apiGet, USE_MOCK } from "../../api/client";
+import { ROUTE_HEX_COLORS } from "../../utils/routeColors";
 import { useMapFocus } from "../../context/MapFocusContext";
 import Modal from "../ui/Modal";
 import { LoadingState, EmptyState, ErrorState } from "../ui/States";
@@ -670,12 +671,23 @@ function agruparRutasEnvio(rutas) {
   return [...grupos.values()].map((g) => ({ ...g, cantidad: g.maletas.length }));
 }
 
+const ROUTE_COLORS = [
+  "border-l-sky-400 bg-sky-400/10",
+  "border-l-indigo-400 bg-indigo-400/10",
+  "border-l-teal-400 bg-teal-400/10",
+  "border-l-orange-400 bg-orange-400/10",
+  "border-l-pink-400 bg-pink-400/10",
+  "border-l-lime-400 bg-lime-400/10",
+  "border-l-rose-400 bg-rose-400/10",
+  "border-l-emerald-400 bg-emerald-400/10",
+];
+
 // Seccion plegable con render DIFERIDO: los hijos no se montan hasta abrirla,
 // asi las listas pesadas no cargan el DOM mientras estan cerradas.
-function Collapsible({ title, defaultOpen = false, children }) {
+function Collapsible({ title, defaultOpen = false, children, className = "" }) {
   const [open, setOpen] = useState(defaultOpen);
   return (
-    <div className="rounded-lg mr-3 border border-slate-800 bg-surface-2/40">
+    <div className={`rounded-lg mr-3 border border-slate-800 bg-surface-2/40 ${className}`}>
       <button
         type="button"
         onClick={() => setOpen((o) => !o)}
@@ -690,7 +702,7 @@ function Collapsible({ title, defaultOpen = false, children }) {
   );
 }
 
-const EnvioItem = memo(function EnvioItem({ envio, showOrigin = true, onShowRoute, onLoadRutas, category, isSelected, onFocus, onDeselect, cityByIata, continentByIata, bagsRef }) {
+const EnvioItem = memo(function EnvioItem({ envio, showOrigin = true, onShowRoute, onLoadRutas, category, isSelected, onFocus, onDeselect, cityByIata, continentByIata, bagsRef, onViewRoute }) {
   const [expanded, setExpanded] = useState(false);
   // Rutas agrupadas (cada una con sus maletas), pedidas al back al expandir.
   // No mostramos UT ni escalas aqui: ese detalle vive en "Ver rutas".
@@ -803,8 +815,18 @@ const EnvioItem = memo(function EnvioItem({ envio, showOrigin = true, onShowRout
           {rutasStatus === "error" && <div className="text-[11px] text-danger px-3">No se pudieron cargar las rutas.</div>}
           {rutasStatus === "ready" && rutas.length === 0 && <div className="text-[11px] text-slate-500 px-3">Sin rutas asignadas.</div>}
           {rutasStatus === "ready" && rutas.map((r, ri) => (
-            <Collapsible key={ri} title={`Ruta ${ri + 1} (${r.cantidad} maleta${r.cantidad !== 1 ? "s" : ""})`} defaultOpen>
-              <div className="text-slate-200 flex flex-col gap-0.5">
+            <Collapsible key={ri} className={`border-l-2 ${ROUTE_COLORS[ri % ROUTE_COLORS.length]}`} title={`Ruta ${ri + 1} (${r.cantidad} maleta${r.cantidad !== 1 ? "s" : ""})`} defaultOpen>
+              <div className="text-slate-200 flex flex-col gap-1">
+                {onViewRoute && (
+                  <button
+                    type="button"
+                    onClick={(ev) => { ev.stopPropagation(); onViewRoute(r); }}
+                    className="text-[10px] font-bold uppercase tracking-wide text-indigo-400 hover:text-indigo-300 border border-indigo-400/30 rounded px-2 py-0.5 self-start transition-colors"
+                  >
+                    Ver solo esta ruta
+                  </button>
+                )}
+                <div className="flex flex-col gap-0.5">
                 {r.maletas.length
                   ? r.maletas.map((idMaleta, mi) => {
                       const bag = bagsRef?.current?.get(idMaleta);
@@ -824,6 +846,7 @@ const EnvioItem = memo(function EnvioItem({ envio, showOrigin = true, onShowRout
                     })
                   : <span className="text-[11px] text-slate-500">—</span>}
               </div>
+              </div>
             </Collapsible>
           ))}
         </div>
@@ -832,7 +855,7 @@ const EnvioItem = memo(function EnvioItem({ envio, showOrigin = true, onShowRout
   );
 });
 
-function EnvioSeccion({ title, envios, showOrigin = true, defaultOpen = false, onShowRoute, onLoadRutas, category, selectedEnvioId, onFocus, onDeselect, cityByIata, continentByIata, bagsRef }) {
+function EnvioSeccion({ title, envios, showOrigin = true, defaultOpen = false, onShowRoute, onLoadRutas, category, selectedEnvioId, onFocus, onDeselect, cityByIata, continentByIata, bagsRef, onViewRoute }) {
   const virtuosoRef = useRef(null);
   return (
     <Collapsible title={`${title} (${envios.length})`} defaultOpen={defaultOpen}>
@@ -859,6 +882,7 @@ function EnvioSeccion({ title, envios, showOrigin = true, defaultOpen = false, o
                 cityByIata={cityByIata}
                 continentByIata={continentByIata}
                 bagsRef={bagsRef}
+                onViewRoute={onViewRoute}
               />
             );
           }}
@@ -2220,7 +2244,14 @@ export default function RightPanel({
   const bagsRef = useRef(null);
   bagsRef.current = simulationPanelData?.bags;
 
-  const derivedEnvios = simulationPanelData?.derivedEnvios ?? { planificados: [], enVuelos: [], entregados: [] };
+  const rawEnvios = simulationPanelData?.derivedEnvios;
+  const derivedEnvios = rawEnvios
+    ? {
+        planificados: rawEnvios.planificados ?? [],
+        enVuelos: rawEnvios.enVuelos ?? [],
+        entregados: rawEnvios.entregados ?? rawEnvios.entregadosUltimas4h ?? [],
+      }
+    : { planificados: [], enVuelos: [], entregados: [] };
   const deferredEnvios = useDeferredValue(derivedEnvios);
 
   const enviosAirportOptions = useMemo(() => {
@@ -2402,7 +2433,7 @@ export default function RightPanel({
           kind: "maleta",
           label: `Maleta ${idMaleta}`,
           rutas: [{ idMaleta, escalas }],
-          legs: escalas.map((e) => ({ origen: e.origen, destino: e.destino, codigo: e.codigo })),
+          legs: escalas.map((e) => ({ origen: e.origen, destino: e.destino, codigo: e.codigo, colorIndex: 0 })),
         });
         const codes = new Set();
         escalas.forEach((e) => { if (e.origen) codes.add(e.origen); if (e.destino) codes.add(e.destino); });
@@ -2428,15 +2459,11 @@ export default function RightPanel({
           ? await obtenerRutasEnvioOperacionesDiaADia(idPedido)
           : await obtenerRutasEnvio(sessionId, idPedido);
         const grupos = agruparRutasEnvio(rutas);
-        const legSeen = new Set();
         const legs = [];
-        for (const g of grupos) {
+        for (let gi = 0; gi < grupos.length; gi++) {
+          const g = grupos[gi];
           for (const e of g.escalas) {
-            const lk = `${e.origen}-${e.destino}`;
-            if (!legSeen.has(lk)) {
-              legSeen.add(lk);
-              legs.push({ origen: e.origen, destino: e.destino, codigo: e.codigo });
-            }
+            legs.push({ origen: e.origen, destino: e.destino, codigo: e.codigo, colorIndex: gi });
           }
         }
         if (legs.length === 0) {
@@ -2471,6 +2498,15 @@ export default function RightPanel({
       return agruparRutasEnvio(rutas);
     },
     [sessionId, isOperacionesDiaADia]
+  );
+
+  const handleViewRoute = useCallback(
+    (routeGroup) => {
+      if (routeGroup?.maletas?.[0]) {
+        showMaletaRoute(routeGroup.maletas[0]);
+      }
+    },
+    [showMaletaRoute]
   );
 
   // Enfocar un almacen (req 5) o una UT (req 7) en el mapa desde el panel.
@@ -2559,28 +2595,8 @@ export default function RightPanel({
     }
   }, [activeTab, visibleFlights, flightSemaforo, flightOriginFilter, flightDestFilter, flightCodePattern, normalizedFlightCodePattern, normalizedQuery, query, flightStatusFilter, setMapDim]);
 
-  // Panel -> mapa: filtros de envios/pedidos. Se limita por aeropuertos de ruta
-  // porque las UT del panel son codigos de vuelo, no siempre ids de instancia.
   useEffect(() => {
-    if (activeTab !== "orders") return;
-    const active = envioOriginFilter !== "ALL" || envioDestFilter !== "ALL" || query.trim() !== "";
-    if (active) {
-      const codes = new Set();
-      for (const e of enviosFilteredForMap) {
-        if (e.origin) codes.add(e.origin);
-        if (e.dest) codes.add(e.dest);
-        for (const c of e.origenesRuta ?? []) codes.add(c);
-        for (const c of e.destinosRuta ?? []) codes.add(c);
-      }
-      const fitKey = `orders:${envioOriginFilter}|${envioDestFilter}|${normalizedQuery}`;
-      setMapDim((prev) => ({ ...prev, airports: codes, flights: null, fitKey }));
-    } else {
-      setMapDim((prev) => (prev.airports || prev.flights || prev.fitKey ? { ...prev, airports: null, flights: null, fitKey: null } : prev));
-    }
-  }, [activeTab, enviosFilteredForMap, envioOriginFilter, envioDestFilter, normalizedQuery, query, setMapDim]);
-
-  useEffect(() => {
-    if (activeTab === "airports" || activeTab === "flights" || activeTab === "orders") return;
+    if (activeTab === "airports" || activeTab === "flights") return;
     setMapDim((prev) => (prev.airports || prev.flights || prev.fitKey ? { ...prev, airports: null, flights: null, fitKey: null } : prev));
   }, [activeTab, setMapDim]);
 
@@ -2705,6 +2721,7 @@ export default function RightPanel({
           onDeselect={deselectEnvio}
           cityByIata={cityByIata}
           bagsRef={bagsRef}
+          onViewRoute={handleViewRoute}
           defaultOpen
         />
         <EnvioSeccion
@@ -2718,6 +2735,7 @@ export default function RightPanel({
           onDeselect={deselectEnvio}
           cityByIata={cityByIata}
           bagsRef={bagsRef}
+          onViewRoute={handleViewRoute}
           defaultOpen
         />
         <EnvioSeccion
@@ -2731,6 +2749,7 @@ export default function RightPanel({
           onDeselect={deselectEnvio}
           cityByIata={cityByIata}
           bagsRef={bagsRef}
+          onViewRoute={handleViewRoute}
         />
       </div>
     ),

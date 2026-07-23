@@ -6,6 +6,7 @@ import { ScatterplotLayer, LineLayer, IconLayer, TextLayer, PathLayer } from "@d
 import { PathStyleExtension } from "@deck.gl/extensions";
 import "maplibre-gl/dist/maplibre-gl.css";
 import { tokens } from "../../utils/tokens";
+import { ROUTE_HEX_COLORS } from "../../utils/routeColors";
 import { useFetch } from "../../hooks/useFetch";
 import { listAirports } from "../../api/airports";
 import { listFlights } from "../../api/flights";
@@ -361,7 +362,7 @@ function AirportMap({
         const o = airportsByIata.get(leg.origen);
         const d = airportsByIata.get(leg.destino);
         if (!o || !d) return null;
-        return { id: `${leg.origen}-${leg.destino}-${i}`, oLng: o.lng, oLat: o.lat, dLng: d.lng, dLat: d.lat };
+        return { id: `${leg.origen}-${leg.destino}-${i}`, oLng: o.lng, oLat: o.lat, dLng: d.lng, dLat: d.lat, colorIndex: leg.colorIndex ?? 0 };
       })
       .filter(Boolean);
   }, [mapHighlight, airportsByIata]);
@@ -773,7 +774,7 @@ function AirportMap({
           data: highlightGeometry,
           getSourcePosition: (d) => [d.oLng, d.oLat],
           getTargetPosition: (d) => [d.dLng, d.dLat],
-          getColor: hexToRgba(tokens.info, 255),
+          getColor: (d) => hexToRgba(ROUTE_HEX_COLORS[(d.colorIndex ?? 0) % ROUTE_HEX_COLORS.length], 255),
           getWidth: 3.5,
           widthUnits: "pixels",
         })
